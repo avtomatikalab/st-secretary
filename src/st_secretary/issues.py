@@ -16,13 +16,16 @@ SEVERITY_ORDER = {ERROR: 0, WARNING: 1, FIXED: 2, INFO: 3}
 @dataclass(frozen=True)
 class Issue:
     severity: str
-    text: str
+    text: str  # что не так — коротко
     source: str = ""  # файл или раздел
     team: str = ""
     person: str = ""
     field: str = ""
     before: str = ""
     after: str = ""
+    why: str = ""  # почему это замечание: правило, откуда взялось значение
+    todo: str = ""  # что сделать человеку
+    row: int = 0  # строка файла, как её видно в Excel (0 — замечание не к строке)
 
     @property
     def label(self) -> str:

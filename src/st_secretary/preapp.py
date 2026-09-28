@@ -1,7 +1,8 @@
 """Обработка предварительных заявок: чистка, сверка с карточкой соревнования, проверки допуска.
 
 Принцип: всё, что система исправила сама, попадает в отчёт как «Исправлено» — секретарь видит
-каждую правку. То, что исправить нельзя без человека, — «Проверить» или «Ошибка».
+каждую правку. То, что исправить нельзя без человека, — «Проверить» или «Ошибка», и у каждого такого
+замечания есть «почему» (правило или откуда взялось значение) и «что сделать».
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from st_secretary.textclean import (
     PersonName,
     clean_spaces,
     edit_distance,
+    from_years,
     normalize_name,
     normalize_sex,
     normalize_team,
@@ -27,7 +29,11 @@ from st_secretary.textclean import (
     parse_birth_date,
     sex_from_patronymic,
     split_contacts,
+    years,
 )
+
+ASK = "Уточните у представителя команды (телефон — в шапке заявки)"
+QUAL_HOW = ", ".join(q.label for q in Qual)
 
 
 @dataclass
@@ -115,11 +121,15 @@ def process(apps: list[RawApplication], comp: Competition) -> PreappResult:
     for app in apps:
         src = app.path.name
         if app.problems:
-            for p in app.problems:
-                issues.append(Issue(ERROR, p, source=src))
+            for text, why in app.problems:
+                issues.append(Issue(ERROR, text, source=src, why=why,
+                                    todo="Попросите команду прислать заявку по бланку или заполните её в программе "
+                                         "(кнопка «Исправить заявку» откроет пустую форму для этого файла)."))
             continue
         if not app.rows:
-            issues.append(Issue(ERROR, "в заявке нет ни одного участника", source=src))
+            issues.append(Issue(ERROR, "в заявке нет ни одного участника", source=src,
+                                why="В таблице участников не заполнена ни одна строка в колонке «Фамилия, имя».",
+                                todo="Попросите команду прислать заполненную заявку или впишите участников в программе."))
             continue
         t = _team_header(app, comp, known_territories, issues)
         teams.append(t)
@@ -140,8 +150,11 @@ def _team_header(app: RawApplication, comp: Competition, known: Counter, issues:
     head_team = normalize_team(app.team)
     team = head_team or _most_common(row_teams)
     if not head_team:
-        issues.append(Issue(WARNING, "в шапке заявки не указано название команды — взято из строк участников",
-                            source=src, team=team, field="Команда"))
+        issues.append(Issue(WARNING, "в шапке заявки не указано название команды", source=src, team=team,
+                            field="Команда",
+                            why=f"Название взято из колонки «Команда» у участников: «{team}».",
+                            todo="Проверьте, что название верное, — так оно будет написано в протоколах. "
+                                 "Если нет — исправьте в заявке."))
     for raw_t, clean_t in zip((r.values["team"] for r in app.rows), row_teams):
         if clean_t and clean_t != team:
             issues.append(Issue(FIXED, f"название команды в строке «{clean_spaces(raw_t)}» приведено к «{team}»",
@@ -156,8 +169,11 @@ def _team_header(app: RawApplication, comp: Competition, known: Counter, issues:
     territory = _most_common(row_terr) or head_terr
     territory = _fix_territory_typo(territory, comp, known, src, team, issues)
     if head_terr and head_terr != territory and _fix_territory_typo(head_terr, comp, known, src, team, []) != territory:
-        issues.append(Issue(WARNING, f"территория в шапке «{head_terr}», в строках «{territory}» — "
-                                     "уточните, как писать в протоколах", source=src, team=team, field="Территория"))
+        issues.append(Issue(WARNING, f"территория в шапке «{head_terr}», а у участников «{territory}»", source=src,
+                            team=team, field="Территория",
+                            why=f"В протоколах у команды одна территория. Пока взята та, что у участников: «{territory}».",
+                            todo="Уточните у представителя, как писать территорию (как принято в Положении: населённый "
+                                 "пункт или субъект РФ), и исправьте в заявке."))
     for raw_terr in {clean_spaces(r.values['territory']) for r in app.rows}:
         if raw_terr and raw_terr != territory and normalize_territory(raw_terr) == territory:
             issues.append(Issue(FIXED, f"территория «{raw_terr}» записана как «{territory}»", source=src, team=team,
@@ -167,11 +183,19 @@ def _team_header(app: RawApplication, comp: Competition, known: Counter, issues:
     phone, email = split_contacts(app.contacts)
     if not phone and not email:
         issues.append(Issue(WARNING, "нет контактов представителя (телефон, e-mail)", source=src, team=team,
-                            field="Контакты"))
+                            field="Контакты",
+                            why="В шапке заявки пустое поле «Контактный телефон, адрес эл. почты». Если в заявке "
+                                "найдутся ошибки, связаться с командой будет трудно.",
+                            todo="Найдите телефон представителя (в письме с заявкой, у организаторов) и впишите его "
+                                 "в заявку."))
     declared = _to_int(app.declared_count)
     if declared is not None and declared != len(app.rows):
         issues.append(Issue(WARNING, f"в шапке указано участников: {declared}, в таблице: {len(app.rows)}",
-                            source=src, team=team, field="Кол-во участников"))
+                            source=src, team=team, field="Кол-во участников",
+                            why="Возможно, участника забыли вписать в таблицу — или состав изменили, а число в шапке "
+                                "не поправили.",
+                            todo=f"Уточните состав у представителя. {'Добавьте участника' if declared > len(app.rows) else 'Уберите лишнего'} "
+                                 "или исправьте число в шапке заявки."))
     return TeamApplication(src, team, territory, rep.full, phone, email, declared)
 
 
@@ -200,15 +224,18 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
     name = normalize_name(v["fio"])
     who = name.full or clean_spaces(v["fio"])
 
-    def add(sev, text, fld="", before="", after=""):
-        issues.append(Issue(sev, text, source=src, team=t.team, person=who, field=fld, before=before, after=after))
+    def add(sev, text, fld="", before="", after="", why="", todo=""):
+        issues.append(Issue(sev, text, source=src, team=t.team, person=who, field=fld, before=before, after=after,
+                            why=why, todo=todo, row=row))
 
     for f in name.fixes:
         if f.startswith("дата"):
             continue
         add(FIXED, f"ФИО: {f}", "ФИО", clean_spaces(v["fio"]), name.full)
-    for d in name.doubts:
-        add(WARNING, f"ФИО: {d}", "ФИО")
+    for text, why in name.doubts:
+        add(WARNING, f"ФИО: {text}", "ФИО", why=why,
+            todo="Сверьте ФИО с документом участника или уточните у представителя и исправьте в заявке. "
+                 "Если всё верно — ничего делать не нужно.")
 
     # дата рождения
     raw_birth = v["birth"]
@@ -218,9 +245,13 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
             "Дата рождения", clean_spaces(v["fio"]), name.extracted_birth)
     pd = parse_birth_date(raw_birth, today=comp.date_from)
     if pd.problem:
-        add(ERROR, f"дата рождения: {pd.problem}", "Дата рождения", clean_spaces(raw_birth))
+        add(ERROR, f"дата рождения: {pd.problem}", "Дата рождения", clean_spaces(raw_birth), why=pd.why,
+            todo="Уточните дату рождения у представителя команды и исправьте в заявке: день.месяц.год, "
+                 "например 05.03.2008. На комиссии по допуску сверьте с документом.")
     elif pd.note:
-        add(WARNING, f"дата рождения: {pd.note}", "Дата рождения", clean_spaces(raw_birth))
+        add(WARNING, f"дата рождения: {pd.note}", "Дата рождения", clean_spaces(raw_birth), why=pd.why,
+            todo="Уточните полную дату рождения у представителя и впишите её в заявку." if pd.year_only else
+                 "Сверьте дату с документом участника. Если она верна — ничего делать не нужно.")
     elif pd.value and isinstance(raw_birth, str) and "/" in raw_birth:
         add(FIXED, f"дата «{clean_spaces(raw_birth)}» прочитана как день/месяц/год: {pd.value:%d.%m.%Y}",
             "Дата рождения", clean_spaces(raw_birth), f"{pd.value:%d.%m.%Y}")
@@ -234,7 +265,10 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
         if raw_q and raw_q != qual.label:
             add(FIXED, f"разряд «{raw_q}» записан как «{qual.label}»", "Разряд", raw_q, qual.label)
     except ValueError:
-        add(ERROR, f"не распознан разряд «{clean_spaces(v['qual'])}»", "Разряд", clean_spaces(v["qual"]))
+        add(ERROR, f"не распознан разряд «{clean_spaces(v['qual'])}»", "Разряд", clean_spaces(v["qual"]),
+            why=f"Разряд записывают так: {QUAL_HOW} (понятны и «2 юн», «кмс», «1 разряд»). Это написание программа "
+                "не узнаёт, а угадывать нельзя — от разряда зависят допуск и ранг соревнований.",
+            todo="Уточните разряд у представителя и выберите его из списка в заявке.")
 
     # пол
     sex = normalize_sex(v["sex"])
@@ -243,16 +277,25 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
         sex = by_patr
         add(FIXED, f"пол не указан — определён по отчеству: «{sex}»", "Пол", clean_spaces(v["sex"]), sex)
     elif sex is None:
-        add(ERROR, "не указан пол", "Пол", clean_spaces(v["sex"]))
+        raw_sex = clean_spaces(v["sex"])
+        add(ERROR, "не указан пол" if not raw_sex else f"пол «{raw_sex}» не понятен", "Пол", raw_sex,
+            why="Пол нужен для зачётов и для проверки состава команды (мужчин и женщин не менее…). "
+                "Определить его по отчеству не получилось: отчества нет или оно необычное.",
+            todo="Уточните у представителя и выберите «м» или «ж» в заявке.")
     elif by_patr and by_patr != sex:
-        add(WARNING, f"указан пол «{sex}», а отчество «{name.patronymic}» — {'мужское' if by_patr == 'м' else 'женское'}",
-            "Пол", sex)
+        kind = "мужское" if by_patr == "м" else "женское"
+        add(WARNING, f"указан пол «{sex}», а отчество «{name.patronymic}» — {kind}", "Пол", sex,
+            why=f"Отчество «{name.patronymic}» — {kind}, а в колонке «Пол» стоит «{sex}». Обычно это опечатка в колонке "
+                "«Пол»; реже — ошибка в отчестве. От пола зависит проверка состава команды.",
+            todo=f"{ASK} и исправьте пол или отчество в заявке.")
 
     # группа и класс → зачёт
     group = clean_spaces(v["group"])
     cls = _to_int(v["cls"])
     if cls is None and clean_spaces(v["cls"]):
-        add(ERROR, f"класс дистанции «{clean_spaces(v['cls'])}» не число", "Класс")
+        add(ERROR, f"класс дистанции «{clean_spaces(v['cls'])}» не число", "Класс",
+            why="Класс дистанции записывают цифрой от 1 до 6 — так же, как в карточке соревнования.",
+            todo="Выберите зачёт участника из списка в заявке.")
     classes = sorted({z.distance_class for z in comp.zachety})
     if not group and len(comp.zachety) == 1:
         group = comp.zachety[0].group
@@ -267,8 +310,12 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
         group = zachet.group
     else:
         avail = ", ".join(z.key for z in comp.zachety)
-        add(ERROR, f"группа «{group or '—'}» и класс «{cls or '—'}» не совпадают ни с одним зачётом ({avail})",
-            "Группа/класс")
+        add(ERROR, f"группа «{group or '—'}» и класс «{cls or '—'}» не совпадают ни с одним зачётом соревнования",
+            "Группа/класс",
+            why=f"В карточке соревнования есть зачёты: {avail}. Участник должен попасть ровно в один из них — "
+                "иначе его не будет ни в стартовом протоколе, ни в сводке для СЕКРЕТАРЬ_ST.",
+            todo="Уточните у представителя, в каком зачёте выступает участник, и выберите зачёт в заявке. Если по "
+                 "Положению такой зачёт есть, а в карточке его нет, — добавьте зачёт в карточку.")
 
     # участие в дистанциях (колонки L–O)
     personal, pair, pair_num, team_dist = (clean_spaces(v[k]) for k in ("personal", "pair", "pair_num", "team_dist"))
@@ -277,7 +324,10 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
         add(FIXED, "участие в дистанции-группе не отмечено — проставлено «1» (соревнования только командные)",
             "Участие в группе", "", "1")
     if not (personal or pair or team_dist):
-        add(ERROR, "не указано, в какой дистанции участвует (личная, связки, группа)", "Участие")
+        add(ERROR, "не указано, в какой дистанции участвует (личная, связки, группа)", "Участие",
+            why="В колонках «Участие в личной дистанции», «…в дистанции связок» и «…в дистанции-группа» нет ни "
+                "одной отметки — участник не попадёт ни в один стартовый протокол.",
+            todo=f"{ASK} и отметьте дистанции в заявке.")
 
     e = Entry(src, row, num, t.team, t.territory, t.representative, name, pd.value, birth_year, qual, sex,
               group, cls, clean_spaces(v["chip"]), personal, pair, pair_num, team_dist, zachet)
@@ -290,20 +340,36 @@ def _admission(e: Entry, comp: Competition, add) -> None:
     age = e.age_in(comp.year)
     if z is None or age is None:
         return
+    by_year = f"Возраст считается по году рождения: сколько исполняется в {comp.year} году."
     if z.age_from and age < z.age_from:
         if z.age_from_by_gsk and age >= z.age_from_by_gsk:
-            add(WARNING, f"{age} лет в {comp.year} г.: в зачёт {z.key} — с {z.age_from} лет; по Положению "
-                         f"допуск с {z.age_from_by_gsk} лет только по решению ГСК", "Возраст")
+            add(WARNING, f"в {comp.year} г. исполняется {years(age)}, а в зачёт {z.key} — с {from_years(z.age_from)}: "
+                         "допуск только по решению ГСК", "Возраст",
+                why=f"По Положению (карточка соревнования) в зачёт {z.key} допускаются с {from_years(z.age_from)}, "
+                    f"а с {from_years(z.age_from_by_gsk)} — по решению ГСК. {by_year}",
+                todo="Если дата рождения верна, в заявке ничего исправлять не нужно. Вынесите участника на комиссию "
+                     "по допуску: ГСК решает, допускать ли его, и решение записывается в протокол комиссии.")
         else:
-            add(ERROR, f"{age} лет в {comp.year} г.: в зачёт {z.key} допускаются с {z.age_from} лет", "Возраст")
+            add(ERROR, f"в {comp.year} г. исполняется {years(age)}: в зачёт {z.key} допускаются с {from_years(z.age_from)}",
+                "Возраст",
+                why=f"Минимальный возраст для зачёта {z.key} — из Положения (карточка соревнования). {by_year}",
+                todo="Проверьте дату рождения. Если она верна — в этом зачёте участник выступать не может: "
+                     "уточните у представителя замену или другой зачёт.")
     if z.age_to and age > z.age_to:
-        add(ERROR, f"{age} лет в {comp.year} г.: в зачёт {z.key} — не старше {z.age_to} лет", "Возраст")
+        add(ERROR, f"в {comp.year} г. исполняется {years(age)}: в зачёт {z.key} — не старше {from_years(z.age_to)}",
+            "Возраст",
+            why=f"Предельный возраст для зачёта {z.key} — из Положения (карточка соревнования). {by_year}",
+            todo="Проверьте дату рождения. Если она верна — уточните у представителя другой зачёт или замену.")
     if e.qual is not None and e.qual < z.min_qual:
-        add(ERROR, f"разряд {e.qual.label} ниже требуемого для зачёта {z.key} ({z.min_qual.label})", "Разряд")
+        add(ERROR, f"разряд {e.qual.label} ниже требуемого для зачёта {z.key} ({z.min_qual.label})", "Разряд",
+            why=f"Для зачёта {z.key} по Положению нужен разряд не ниже {z.min_qual.label} (карточка соревнования).",
+            todo="Уточните у представителя: возможно, разряд уже повышен, а в заявке указан старый — тогда на "
+                 "комиссии нужен документ о разряде. Если разряд верный — в этом зачёте участник выступать не может.")
     if z.admission_profile and e.birth and e.qual is not None:
         for i in check_athlete(z.admission_profile, z.distance_class, e.birth, e.qual, comp.year):
             # возрастные группы Правил мягче, чем в Положении: предупреждаем, а решение — за ГСК
-            add(WARNING if "возрастную группу" in i.text else i.severity, f"Правила: {i.text}", "Допуск")
+            add(WARNING if "возрастную группу" in i.text else i.severity, f"Правила: {i.text}", "Допуск",
+                why=i.why, todo=i.todo)
 
 
 def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> None:
@@ -311,6 +377,10 @@ def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> 
     for e in t.entries:
         if e.zachet:
             by_zachet.setdefault(e.zachet.key, []).append(e)
+
+    def add(sev, text, fld, why, todo):
+        issues.append(Issue(sev, text, source=t.source, team=t.team, field=fld, why=why, todo=todo))
+
     for key, members in by_zachet.items():
         z = members[0].zachet
         if discipline_by_code(z.discipline_code).rank_format != "group":
@@ -319,25 +389,36 @@ def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> 
         men = sum(1 for e in members if e.sex == "м")
         women = sum(1 for e in members if e.sex == "ж")
         if z.team_size and n != z.team_size:
-            issues.append(Issue(ERROR if n < z.team_size else WARNING,
-                                f"в команде {n} чел., по Положению — {z.team_size}", source=t.source, team=t.team,
-                                field="Состав команды"))
+            add(ERROR if n < z.team_size else WARNING, f"в команде {n} чел., по Положению — {z.team_size}",
+                "Состав команды",
+                f"В зачёте {z.key} команда выступает составом {z.team_size} чел. (карточка соревнования, из Положения).",
+                "Уточните у представителя, кого ещё заявляют, и добавьте участников в заявку — без полного состава "
+                "команда не допускается." if n < z.team_size else
+                "Уточните у представителя, кто выступает в основном составе, и уберите лишних из заявки "
+                "(если Положение разрешает запасных — отметьте это на комиссии).")
+        rule = "Требование к составу команды — из Положения (карточка соревнования). Пол берётся из колонки «Пол», " \
+               "а если она пустая — по отчеству."
         if men < z.min_men:
-            issues.append(Issue(ERROR, f"мужчин в команде {men}, нужно не менее {z.min_men}", source=t.source,
-                                team=t.team, field="Состав команды"))
+            add(ERROR, f"мужчин в команде {men}, нужно не менее {z.min_men}", "Состав команды", rule,
+                "Проверьте пол участников в заявке. Если он указан верно — состав нужно менять: уточните у представителя.")
         if women < z.min_women:
-            issues.append(Issue(ERROR, f"женщин в команде {women}, нужно не менее {z.min_women}", source=t.source,
-                                team=t.team, field="Состав команды"))
+            add(ERROR, f"женщин в команде {women}, нужно не менее {z.min_women}", "Состав команды", rule,
+                "Проверьте пол участников в заявке. Если он указан верно — состав нужно менять: уточните у представителя.")
         if z.admission_profile == "psr":
             adults = [e for e in members if e.birth and full_years(e.birth, comp.date_from) >= 18]
             if not adults:
-                issues.append(Issue(ERROR, "в команде нет участника 18 лет и старше — руководителем команды быть "
-                                           "некому (Правила, часть 4, п. 2.1.5)", source=t.source, team=t.team,
-                                    field="Руководитель"))
+                add(ERROR, "в команде нет участника 18 лет и старше", "Руководитель",
+                    "Руководителем команды на дистанции может быть только участник, которому на день начала "
+                    f"соревнований ({comp.date_from:%d.%m.%Y}) исполнилось 18 лет (Правила, часть 4, п. 2.1.5). "
+                    "Считаются полные годы — поэтому нужна полная дата рождения.",
+                    "Проверьте даты рождения. Если они верны — команде нужен совершеннолетний участник: уточните "
+                    "у представителя.")
             rep = [e for e in members if e.name.full == t.representative]
             if rep and rep[0].birth and full_years(rep[0].birth, comp.date_from) < 18:
-                issues.append(Issue(ERROR, "представитель участвует в команде, но ему нет 18 лет",
-                                    source=t.source, team=t.team, field="Руководитель"))
+                add(ERROR, "представитель участвует в команде, но ему нет 18 лет", "Руководитель",
+                    f"Представитель указан и среди участников, но на {comp.date_from:%d.%m.%Y} ему не исполнилось 18 лет.",
+                    "Уточните у представителя, кто руководитель команды: им может быть только совершеннолетний "
+                    "участник.")
 
 
 def _cross_checks(teams: list[TeamApplication], issues: list[Issue]) -> None:
@@ -346,14 +427,24 @@ def _cross_checks(teams: list[TeamApplication], issues: list[Issue]) -> None:
         for e in t.entries:
             key = (e.name.full.lower().replace("ё", "е"), e.birth or e.birth_year)
             if key in seen and seen[key] is not t:
-                issues.append(Issue(ERROR, f"участник заявлен и в команде «{seen[key].team}» — на соревновании "
-                                           "можно выступать только за одну команду (раздел 3, п. 8.1)",
-                                    source=t.source, team=t.team, person=e.name.full, field="Дубль"))
+                other = seen[key]
+                issues.append(Issue(
+                    ERROR, f"участник заявлен и в команде «{other.team}»", source=t.source, team=t.team,
+                    person=e.name.full, field="Дубль", row=e.row,
+                    why=f"Тот же человек (ФИО и дата рождения совпадают) есть в заявке команды «{other.team}», файл "
+                        f"«{other.source}». На соревновании можно выступать только за одну команду "
+                        "(Правила, раздел 3, п. 8.1).",
+                    todo="Свяжитесь с представителями обеих команд и уберите участника из одной из заявок."))
             seen.setdefault(key, t)
     names = Counter(t.team.lower() for t in teams)
     for t in teams:
         if names[t.team.lower()] > 1:
-            issues.append(Issue(WARNING, "команда с таким названием прислала больше одной заявки", source=t.source,
-                                team=t.team, field="Команда"))
+            issues.append(Issue(
+                WARNING, "команда с таким названием прислала больше одной заявки", source=t.source, team=t.team,
+                field="Команда",
+                why="Возможно, это исправленная заявка под другим именем файла — или две разные команды выбрали "
+                    "одинаковое название.",
+                todo="Если заявка повторная — уберите старый файл кнопкой «Убрать» на вкладке «Файлы заявок». "
+                     "Если команды разные — попросите одну из них уточнить название (например, «Ураган-1» и «Ураган-2»)."))
     if not teams:
         issues.append(Issue(INFO, "нет ни одной обработанной заявки"))

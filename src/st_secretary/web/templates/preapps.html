@@ -2,11 +2,13 @@
 {% from "_icons.html" import icon %}
 {% from "_form.html" import issue_list %}
 {% from "_files.html" import files_table %}
+{% from "_issues.html" import issue_item %}
 {% block title %}Предзаявки — СТ-Секретарь{% endblock %}
 {% block content %}
 <h1>Предварительные заявки</h1>
 <p class="lead">Добавьте файлы заявок команд — система сразу проверит их и покажет, что исправить.
-  Исходные файлы не меняются: всё, что исправлено, видно в списке замечаний.</p>
+  Файлы команд сами по себе не меняются: всё, что поправила система, видно в списке замечаний, а если заявку
+  исправить в программе, прежний вариант файла сохранится в папке «Предзаявки\Прежние версии».</p>
 
 {% if card_errors or blocked %}
 <div class="panel panel-err">
@@ -29,6 +31,8 @@
 <div class="dz-alt">
   <span class="muted">Или скопируйте файлы в папку заявок и обновите страницу (F5):</span>
   <form method="post" action="{{ base }}/open/preapps"><button class="btn btn-ghost btn-small" type="submit">{{ icon("folder", 18) }}Открыть папку «Предзаявки»</button></form>
+  {% if comp and not blocked %}<span class="muted">Команда прислала состав текстом?</span>
+  <a class="btn btn-ghost btn-small" href="{{ base }}/preapps/new">{{ icon("plus", 18) }}Заполнить заявку вручную</a>{% endif %}
 </div>
 
 {% if result %}
@@ -45,7 +49,9 @@
   <h2>Что дальше</h2>
   <ol class="next-steps">
     <li>Разберите <b class="text-err">ошибки</b> и то, что нужно <b class="text-warn">проверить</b> — ниже, по командам,
-      рядом телефоны представителей. Исправленную заявку просто перетащите сюда ещё раз.</li>
+      рядом телефоны представителей. У каждого замечания написано, почему оно появилось и что сделать.
+      Исправить можно прямо здесь — кнопка «Исправить» откроет заявку в форме; или перетащите сюда исправленный файл
+      от команды.</li>
     <li>Откройте сводку и перенесите участников в СЕКРЕТАРЬ_ST — по одной команде.
       <div class="actions">
         <form method="post" action="{{ base }}/preapps/summary" data-busy="Готовлю сводку…">
@@ -81,6 +87,7 @@
     <button type="button" class="chip chip-fixed" data-filter="fixed" aria-pressed="false">Исправлено системой <b>{{ t[FIXED] }}</b></button>
   </div>
   {% for g in view.groups %}
+  {% set edit_url = base ~ "/preapps/edit?file=" ~ (g.file|urlencode) %}
   <article class="team">
     <header class="team-head">
       <div class="team-title">
@@ -91,6 +98,7 @@
         {% if g.counts[ERROR] %}<span class="badge badge-error">Ошибок: {{ g.counts[ERROR] }}</span>{% endif %}
         {% if g.counts[WARNING] %}<span class="badge badge-warning">Проверить: {{ g.counts[WARNING] }}</span>{% endif %}
         {% if not g.counts[ERROR] and not g.counts[WARNING] %}<span class="badge badge-fixed">{{ icon("check", 14) }} Всё в порядке</span>{% endif %}
+        <a class="btn btn-small" href="{{ edit_url }}">{{ icon("edit", 16) }}Исправить заявку</a>
       </div>
       {% if g.team %}
       <div class="team-contact">{{ icon("phone", 16) }}
@@ -101,16 +109,7 @@
     </header>
     {% if g.issues %}
     <ul class="issue-list">
-      {% for i in g.issues %}
-      <li class="issue sev-{{ i.severity }}" data-sev="{{ i.severity }}"{% if i.severity == FIXED %} hidden{% endif %}>
-        <span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>
-        <div class="issue-body">
-          {% if i.person %}<b>{{ i.person }}</b> — {% endif %}{{ i.text }}
-          {% if i.after %}<div class="change">было: <del>{{ i.before or "пусто" }}</del> → стало: <ins>{{ i.after }}</ins></div>
-          {% elif i.before %}<div class="change">в заявке: «{{ i.before }}»</div>{% endif %}
-        </div>
-      </li>
-      {% endfor %}
+      {% for i in g.issues %}{{ issue_item(i, edit_url ~ ("#p-" ~ i.row if i.row else "#team")) }}{% endfor %}
     </ul>
     {% endif %}
     {% if not g.counts[ERROR] and not g.counts[WARNING] %}
@@ -130,7 +129,7 @@
       {% for e in g.team.entries %}{% set w = g.worst.get(e.name.full) %}
       <tr{% if w in (ERROR, WARNING) %} class="sev-{{ w }}"{% endif %}>
         <td>{{ e.num_in_team }}</td>
-        <td>{{ e.name.full }}</td>
+        <td><a href="{{ base }}/preapps/edit?file={{ g.file|urlencode }}#p-{{ e.row }}" title="Открыть заявку в форме">{{ e.name.full }}</a></td>
         <td>{% if e.birth %}{{ e.birth|d }}{% elif e.birth_year %}{{ e.birth_year }}{% else %}—{% endif %}</td>
         <td>{{ e.qual.label if e.qual is not none else "?" }}</td>
         <td>{{ e.sex or "?" }}</td>
@@ -151,7 +150,7 @@
 {% elif files %}
 <div class="panel">
   <h2>Файлы заявок ({{ files|length }})</h2>
-  {{ files_table(plain_rows, base) }}
+  {{ files_table(plain_rows, base, editable=False) }}
 </div>
 {% endif %}
 {% endblock %}

@@ -271,16 +271,50 @@ input:focus, select:focus, textarea:focus { outline: 3px solid var(--focus); out
 .team-contact { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: .92rem; }
 .team-file { grid-column: 1 / -1; font-size: .8rem; color: var(--muted); }
 .issue-list { list-style: none; margin: 0; padding: 0; }
-.issue { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: baseline; padding: 10px 18px; border-bottom: 1px solid var(--line); border-left: 4px solid transparent; }
+.issue { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 18px; border-bottom: 1px solid var(--line); border-left: 4px solid transparent; }
 .issue:last-child { border-bottom: 0; }
 .issue.sev-error { border-left-color: var(--err); }
 .issue.sev-warning { border-left-color: #d9a21b; }
 .issue.sev-fixed { border-left-color: #58a86f; }
 .issue .badge { justify-self: start; }
+.issue-where { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.issue-why, .issue-todo { font-size: .9rem; margin: 4px 0 0; line-height: 1.4; max-width: 860px; }
+.issue-why { color: var(--muted); }
+.issue-why b, .issue-todo b { color: var(--text); }
+.issue-fix { align-self: center; }
 .change { font-size: .85rem; color: var(--muted); margin-top: 2px; }
 .change del { color: var(--err); text-decoration: line-through; }
 .change ins { color: var(--ok); text-decoration: none; font-weight: 600; }
 .team-ok { display: flex; align-items: center; gap: 8px; margin: 0; padding: 12px 18px; color: var(--ok); font-size: .92rem; }
+.team-counts .btn { margin-left: 6px; }
+.row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+
+/* ---------- заявка в форме ---------- */
+.file-line { display: flex; align-items: center; gap: 6px; margin: 0 0 16px; }
+.check-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.issue-list-boxed { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); margin: 0 0 8px; }
+.howto-edit summary { cursor: pointer; font-weight: 600; color: var(--primary); }
+.howto-edit ul { margin: 10px 0 0; display: grid; gap: 6px; }
+.people-form { table-layout: fixed; min-width: 900px; counter-reset: person; }
+.people-form .c-num { width: 34px; } .people-form .c-fio { width: auto; } .people-form .c-birth { width: 118px; }
+.people-form .c-qual { width: 82px; } .people-form .c-sex { width: 64px; } .people-form .c-zachet { width: 132px; }
+.people-form .c-small { width: 70px; } .people-form .c-chip { width: 84px; } .people-form .c-act { width: 44px; }
+.people-form td { padding: 6px 4px; }
+.people-form input[type=text] { padding: 8px 8px; }
+.people-form tbody.person { counter-increment: person; scroll-margin-top: calc(var(--top) + 60px); }
+#team { scroll-margin-top: calc(var(--top) + 20px); }
+.people-form td.num { color: var(--muted); font-weight: 600; text-align: center; }
+.people-form td.num::before { content: counter(person); }
+.people-form select { padding: 8px 6px; }
+.people-form tbody.person:target td { background: var(--info-bg); }
+.person-issues > td { padding-top: 0 !important; }
+.person-issues .issue-list { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.person-issues .issue { padding: 8px 14px; grid-template-columns: 100px minmax(0, 1fr); }
+.person.has-issues > tr:first-child td { border-bottom: 0; }
+input.mk-error, select.mk-error { border: 2px solid var(--err); background: var(--err-bg); }
+input.mk-warning, select.mk-warning { border: 2px solid #d9a21b; background: var(--warn-bg); }
+input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
+.add-person { margin-top: 12px; }
 
 /* ---------- средний экран: поля зачёта по три в ряд ---------- */
 @media (max-width: 1280px) {
@@ -299,7 +333,8 @@ input:focus, select:focus, textarea:focus { outline: 3px solid var(--focus); out
   .pill-local span { display: none; }
   .team-head { grid-template-columns: 1fr; }
   .team-counts { justify-content: flex-start; }
-  .issue { grid-template-columns: 1fr; gap: 4px; }
+  .issue, .person-issues .issue { grid-template-columns: 1fr; gap: 4px; }
+  .issue-fix { justify-self: start; }
 }
 
 @media print {

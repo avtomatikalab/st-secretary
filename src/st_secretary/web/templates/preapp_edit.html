@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_issues.html" import issue_item %}
+
+{# Подсветка поля по замечанию: красная — ошибка, жёлтая — проверить, зелёная — исправлено системой. #}
+{% macro mk(m, invalid=False) %}{% if invalid %}is-invalid{% elif m %}mk-{{ m.sev }}{% endif %}{% endmacro %}
+{% macro mk_title(m) %}{% if m %} title="{{ m.title }}"{% endif %}{% endmacro %}
+
+{% macro choice(name, value, options, label, m=None, empty="—") -%}
+<select name="{{ name }}" aria-label="{{ label }}" class="{{ mk(m) }}"{{ mk_title(m) }}>
+  <option value="">{{ empty }}</option>
+  {# значение не из списка не теряем молча — показываем как есть, проверка объяснит, что с ним не так #}
+  {% if value and value not in options|map("first")|list %}<option value="{{ value }}" selected>{{ value }} (не из списка)</option>{% endif %}
+  {% for v, t in options %}<option value="{{ v }}"{% if v == value %} selected{% endif %}>{{ t }}</option>{% endfor %}
+</select>
+{%- endmacro %}
+
+{% macro text(name, value, label, m=None, errors={}, placeholder="", cls="") -%}
+<input type="text" name="{{ name }}" value="{{ value }}" aria-label="{{ label }}"{% if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+       class="{{ mk(m, errors.get(name)) }} {{ cls }}"{{ mk_title(m) }}>
+{%- if errors.get(name) %}<p class="field-error">{{ errors[name] }}</p>{% endif %}
+{%- endmacro %}
+
+{% macro head_field(name, label, value, errors, m=None, hint="", cls="span-6", required=False, inputmode="") -%}
+{% set fname = "h-" ~ name %}
+<div class="field {{ cls }}{% if errors.get(fname) %} has-error{% endif %}">
+  <label for="f-{{ fname }}">{{ label }}{% if required %}<span class="req" title="обязательное поле">*</span>{% endif %}</label>
+  <input id="f-{{ fname }}" name="{{ fname }}" type="text" value="{{ value }}" class="{{ mk(m) }}"{{ mk_title(m) }}{% if inputmode %} inputmode="{{ inputmode }}"{% endif %}>
+  {% if errors.get(fname) %}<p class="field-error">{{ errors[fname] }}</p>{% endif %}
+  {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro person(i, r, ch, errors, m={}, issues=[]) -%}
+{% set p = "p-" ~ i ~ "-" %}
+<tbody class="person{% if issues %} has-issues{% endif %}" data-row{% if r.row %} id="p-{{ r.row }}"{% endif %}>
+  <tr>
+    <td class="num" aria-hidden="true"></td>
+    <td>{{ text(p ~ "fio", r.fio, "Фамилия Имя Отчество", m.fio, errors, "Фамилия Имя Отчество") }}</td>
+    <td>{{ text(p ~ "birth", r.birth, "Дата рождения", m.birth, errors, "дд.мм.гггг") }}</td>
+    <td>{{ choice(p ~ "qual", r.qual, ch.quals, "Разряд", m.qual) }}</td>
+    <td>{{ choice(p ~ "sex", r.sex, ch.sexes, "Пол", m.sex) }}</td>
+    <td>{{ choice(p ~ "zachet", r.zachet, ch.zachety, "Зачёт", m.zachet) }}</td>
+    {% if ch.show.personal %}<td>{{ text(p ~ "personal", r.personal, "Участие в личной дистанции", m.personal) }}</td>{% endif %}
+    {% if ch.show.pair %}<td>{{ text(p ~ "pair", r.pair, "Участие в дистанции связок", m.pair) }}</td>
+    <td>{{ text(p ~ "pair_num", r.pair_num, "Номер связки", m.pair_num) }}</td>{% endif %}
+    {% if ch.show.team_dist %}<td>{{ text(p ~ "team_dist", r.team_dist, "Участие в дистанции-группа: номер группы", m.team_dist) }}</td>{% endif %}
+    <td>{{ text(p ~ "chip", r.chip, "Номер чипа") }}</td>
+    <td class="cell-action"><button type="button" class="icon-btn" data-remove-row data-confirm="Удалить участника из заявки?" title="Удалить участника" aria-label="Удалить участника">×</button></td>
+  </tr>
+  {% if issues %}
+  {# ровно столько колонок, сколько в таблице: лишние в table-layout: fixed сжимают остальные #}
+  {% set span = 7 + (1 if ch.show.personal else 0) + (2 if ch.show.pair else 0) + (1 if ch.show.team_dist else 0) %}
+  <tr class="person-issues"><td></td><td colspan="{{ span }}"><ul class="issue-list">{% for x in issues %}{{ issue_item(x, show_person=False) }}{% endfor %}</ul></td></tr>
+  {% endif %}
+</tbody>
+{%- endmacro %}
+
+{% block title %}{{ form.head.team or "Новая заявка" }} — предзаявка — СТ-Секретарь{% endblock %}
+{% block content %}
+<a class="back" href="{{ base }}/preapps">← Все предварительные заявки</a>
+<div class="page-head">
+  <div>
+    <h1>{% if file %}Заявка{% if form.head.team %} команды «{{ form.head.team }}»{% endif %}{% else %}Новая заявка{% endif %}</h1>
+    {% if file %}<p class="muted file-line">{{ icon("file", 16) }} {{ file }}</p>{% endif %}
+  </div>
+  {% if file %}
+  <form method="post" action="{{ base }}/preapps/open">
+    <input type="hidden" name="name" value="{{ file }}">
+    <button class="btn btn-ghost" type="submit">{{ icon("table") }}Открыть файл в Excel</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if conflict %}
+<div class="panel panel-warn" role="alert">
+  <h2>{{ icon("alert") }} Файл заявки изменился, пока была открыта эта страница</h2>
+  <p>Возможно, команда прислала новую версию или файл поправили в Excel. Ваши правки на этой странице пока не сохранены.</p>
+  <div class="actions">
+    <button class="btn btn-primary" type="submit" form="preappform" name="force" value="1">Сохранить мои правки всё равно</button>
+    <a class="btn" href="{{ base }}/preapps/edit?file={{ file|urlencode }}">Показать файл заново (мои правки пропадут)</a>
+  </div>
+  <p class="hint">Если сохранить, изменённый файл не пропадёт — он будет перенесён в «Предзаявки\Прежние версии».</p>
+</div>
+{% endif %}
+{% if save_error %}<div class="flash flash-err" role="alert">{{ icon("alert") }}<div>{{ save_error }}</div></div>{% endif %}
+{% if errors %}<div class="flash flash-err" role="alert">{{ icon("alert") }}<div>Заявка не сохранена: {{ errors.get("_rows") or "проверьте поля, отмеченные красным." }}</div></div>{% endif %}
+
+{% if checked %}
+  {% if counts[ERROR] or counts[WARNING] %}
+  <div class="panel {% if counts[ERROR] %}panel-err{% else %}panel-warn{% endif %}" id="team">
+    <h2>Проверка заявки</h2>
+    <p class="check-counts">
+      {% if counts[ERROR] %}<span class="badge badge-error">Ошибок: {{ counts[ERROR] }}</span>{% endif %}
+      {% if counts[WARNING] %}<span class="badge badge-warning">Проверить: {{ counts[WARNING] }}</span>{% endif %}
+      {% if row_issues %}<span class="muted">Замечания по участникам — ниже, прямо под их строками; поля с замечаниями обведены.</span>{% endif %}
+    </p>
+    {% if head_issues %}<ul class="issue-list issue-list-boxed">{% for x in head_issues %}{{ issue_item(x) }}{% endfor %}</ul>{% endif %}
+    {% if team and (team.phone or team.email) %}
+    <p class="team-contact">{{ icon("phone", 16) }} Представитель: {{ team.representative or "не указан" }}{% if team.phone %}, <a href="tel:{{ team.phone|replace(' ', '')|replace('-', '') }}">{{ team.phone }}</a>{% endif %}{% if team.email %}, <a href="mailto:{{ team.email }}">{{ team.email }}</a>{% endif %}</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="flash flash-ok" id="team">{{ icon("check-circle") }}<div>Заявка проверена — ошибок нет, проверять нечего.</div></div>
+  {% endif %}
+{% endif %}
+
+<details class="panel panel-muted howto-edit"{% if not file %} open{% endif %}>
+  <summary>Как исправлять заявку здесь</summary>
+  <ul>
+    <li>В полях — заявка так, как её поняла программа. То, что система поправила сама, уже поправлено: такие поля
+      обведены <span class="text-ok">зелёным</span>, наведите на поле мышь — будет видно, что было в файле.</li>
+    <li><span class="text-err">Красная</span> рамка — ошибка, <span class="text-warn">жёлтая</span> — нужно проверить;
+      объяснение — под строкой участника.</li>
+    <li>Нажмите «Сохранить и проверить»: заявка запишется в файл Excel в папке «Предзаявки» и проверится заново.
+      Прежний вариант файла не пропадёт — он переносится в «Предзаявки\Прежние версии».</li>
+  </ul>
+</details>
+
+<form id="preappform" method="post" action="{{ base }}/preapps/save" data-guard>
+  <input type="hidden" name="file" value="{{ file }}">
+  <input type="hidden" name="version" value="{{ version }}">
+  {% set hm = marks.get(0, {}) %}
+
+  <section class="panel">
+    <h2>Команда</h2>
+    <p class="hint req-legend"><span class="req">*</span> — обязательное поле</p>
+    <div class="grid">
+      {{ head_field("team", "Название команды", form.head.team, errors, hm.team, required=True,
+                    hint="Так команда будет названа в протоколах") }}
+      {{ head_field("territory", "Территория", form.head.territory, errors, hm.territory,
+                    hint="Как писать в протоколах: «Красноярск», «Томск»") }}
+      {{ head_field("representative", "Представитель (ФИО)", form.head.representative, errors, hm.representative) }}
+      {{ head_field("contacts", "Телефон, e-mail представителя", form.head.contacts, errors, hm.contacts, inputmode="tel") }}
+      {{ head_field("declared", "Участников в делегации", form.head.declared, errors, hm.declared, cls="span-3",
+                    inputmode="numeric") }}
+    </div>
+  </section>
+
+  <section class="panel" id="people">
+    <h2>Участники</h2>
+    <p class="muted">Номер участника в команде ставится по порядку строк. Пустые строки не сохраняются.</p>
+    <div class="table-wrap">
+    <table class="tbl form-tbl people-form" id="people-rows" data-next="{{ form.rows|length }}">
+      <colgroup>
+        <col class="c-num"><col class="c-fio"><col class="c-birth"><col class="c-qual"><col class="c-sex"><col class="c-zachet">
+        {% if ch.show.personal %}<col class="c-small">{% endif %}
+        {% if ch.show.pair %}<col class="c-small"><col class="c-small">{% endif %}
+        {% if ch.show.team_dist %}<col class="c-small">{% endif %}
+        <col class="c-chip"><col class="c-act">
+      </colgroup>
+      <thead><tr>
+        <th>№</th><th>Фамилия Имя Отчество</th><th>Дата рождения</th><th>Разряд</th><th>Пол</th><th>Зачёт</th>
+        {% if ch.show.personal %}<th title="Участие в личной дистанции">Личная</th>{% endif %}
+        {% if ch.show.pair %}<th title="Участие в дистанции связок">Связка</th><th title="Номер связки, если связок больше одной">№ связки</th>{% endif %}
+        {% if ch.show.team_dist %}<th title="Участие в дистанции-группа: номер группы (обычно 1)">Группа, №</th>{% endif %}
+        <th title="Номер чипа, если чип свой">Чип</th><th></th>
+      </tr></thead>
+      {% for r in form.rows %}{{ person(loop.index0, r, ch, errors, marks.get(r.row, {}) if r.row else {}, row_issues.get(r.row, []) if r.row else []) }}{% endfor %}
+    </table>
+    </div>
+    <button type="button" class="btn add-person" data-add-row="people-rows" data-template="tpl-person">{{ icon("plus") }}Добавить участника</button>
+  </section>
+
+  <div class="savebar">
+    <button class="btn btn-primary btn-big" type="submit">{{ icon("check") }}Сохранить и проверить</button>
+    <a class="btn btn-ghost" href="{{ base }}/preapps">Отмена</a>
+    <span class="muted savebar-note">{% if file %}Сохраняется в «{{ file.rsplit('.', 1)[0] }}.xlsx», прежний вариант — в «Прежние версии»{% else %}Сохраняется новым файлом в папке «Предзаявки»{% endif %}</span>
+  </div>
+</form>
+
+<template id="tpl-person">{{ person("__i__", empty_row, ch, {}) }}</template>
+{% endblock %}

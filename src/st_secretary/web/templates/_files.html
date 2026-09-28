@@ -1,6 +1,6 @@
 {% from "_icons.html" import icon %}
-{# Таблица файлов заявок с кнопкой «Убрать». rows — [{file, team, counts}]. #}
-{% macro files_table(rows, base) -%}
+{# Таблица файлов заявок с кнопками «Открыть» и «Убрать». rows — [{file, team, counts}]. #}
+{% macro files_table(rows, base, editable=True) -%}
 <div class="table-wrap">
 <table class="tbl">
   <thead><tr><th>Файл</th><th>Команда</th><th>Участников</th><th>Ошибок</th><th>Проверить</th><th></th></tr></thead>
@@ -13,10 +13,13 @@
     <td>{% if g.counts and g.counts[ERROR] %}<span class="badge badge-error">{{ g.counts[ERROR] }}</span>{% endif %}</td>
     <td>{% if g.counts and g.counts[WARNING] %}<span class="badge badge-warning">{{ g.counts[WARNING] }}</span>{% endif %}</td>
     <td class="cell-action">
-      <form method="post" action="{{ base }}/preapps/remove" data-confirm="Убрать заявку «{{ g.file }}» из обработки? Файл не удаляется — он переносится в папку «Предзаявки\Убранные».">
-        <input type="hidden" name="name" value="{{ g.file }}">
-        <button class="btn btn-ghost btn-small" type="submit">{{ icon("archive", 16) }}Убрать</button>
-      </form>
+      <div class="row-actions">
+        {% if editable %}<a class="btn btn-ghost btn-small" href="{{ base }}/preapps/edit?file={{ g.file|urlencode }}">{{ icon("edit", 16) }}Открыть</a>{% endif %}
+        <form method="post" action="{{ base }}/preapps/remove" data-confirm="Убрать заявку «{{ g.file }}» из обработки? Файл не удаляется — он переносится в папку «Предзаявки\Убранные».">
+          <input type="hidden" name="name" value="{{ g.file }}">
+          <button class="btn btn-ghost btn-small" type="submit">{{ icon("archive", 16) }}Убрать</button>
+        </form>
+      </div>
     </td>
   </tr>
   {% endfor %}

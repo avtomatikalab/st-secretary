@@ -71,6 +71,42 @@ def test_cleaning_and_checks(tmp_path, psr_card):
     assert "участник заявлен и в команде «Лесовики»" in texts(r, ERROR, "Сосна")
 
 
+def test_every_error_and_warning_explains_why_and_what_to_do(tmp_path, psr_card):
+    r = process(build(tmp_path), psr_card)
+    for i in r.issues:
+        if i.severity in (ERROR, WARNING):
+            assert i.why and i.todo, i.text
+    date_err = next(i for i in r.issues if "не существует" in i.text)
+    assert "1995 год не високосный" in date_err.why and "представител" in date_err.todo
+    assert date_err.row == 12 and date_err.person == "Кузьмин Олег Игоревич"  # строка файла, как видно в Excel
+    gsk = next(i for i in r.issues if "по решению ГСК" in i.text)
+    assert "16 лет" in gsk.why and "комиссию по допуску" in gsk.todo
+    assert "исполняется 16 лет" in gsk.text
+
+
+def test_written_application_reads_back_the_same(tmp_path, psr_card):
+    """Заявка, записанная программой, читается и проверяется так же, как исходная."""
+    from st_secretary.importers.preapp_xlsx import write_preapplication
+
+    head = {"team": "Лесовики", "territory": "Красноярск", "representative": "Иванов Пётр Сергеевич",
+            "contacts": "89131234567", "declared": "2"}
+    rows = [{"fio": "Иванов Пётр Сергеевич", "birth": date(1989, 10, 17), "qual": "II", "sex": "м", "group": "М/Ж",
+             "cls": "3", "team_dist": "1"},
+            {"fio": "Смирнова Анна Олеговна", "birth": "29.02.1995", "qual": "КМС", "sex": "ж", "group": "М/Ж",
+             "cls": "3", "team_dist": "1", "chip": "0123"}]
+    p = write_preapplication(tmp_path / "w.xlsx", head, rows, "Исправлено в программе", ["б/р", "II", "КМС"])
+    app = read_preapplication(p)
+    assert (app.team, app.territory, app.declared_count) == ("Лесовики", "Красноярск", 2)
+    assert [r.values["fio"] for r in app.rows] == ["Иванов Пётр Сергеевич", "Смирнова Анна Олеговна"]
+    assert app.rows[1].values["chip"] == "0123"  # ведущий ноль не теряется
+    r = process([app], psr_card)
+    t = r.teams[0]
+    assert t.entries[0].birth == date(1989, 10, 17) and t.entries[0].qual.label == "II"
+    assert all(e.zachet and e.zachet.key == "М/Ж_3" and e.team == "Лесовики" for e in t.entries)
+    assert "такой даты не существует" in texts(r, ERROR)  # ошибочная дата сохранена как есть и видна
+    assert not texts(r, FIXED)  # программа пишет уже чистые данные — исправлять нечего
+
+
 def test_host_territory_is_never_changed(tmp_path, psr_card):
     rows = [["Т", "Краснорярск", "Иванов Пётр Сергеевич", f"Иванов{i} Пётр Сергеевич", "01.01.1990", "б/р",
              "м" if i else "ж", "М/Ж", 3] for i in range(3)]

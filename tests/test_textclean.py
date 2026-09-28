@@ -5,6 +5,7 @@ import pytest
 from st_secretary.textclean import (
     clean_spaces,
     edit_distance,
+    from_years,
     normalize_name,
     normalize_phone,
     normalize_team,
@@ -12,6 +13,7 @@ from st_secretary.textclean import (
     parse_birth_date,
     sex_from_patronymic,
     split_contacts,
+    years,
 )
 
 TODAY = date(2025, 9, 20)
@@ -39,7 +41,7 @@ def test_case_and_spaces():
     ("Орлов Пётр", "нет отчества"),
 ])
 def test_name_doubts(fio, doubt):
-    assert any(doubt in d for d in normalize_name(fio).doubts)
+    assert any(doubt in text and why for text, why in normalize_name(fio).doubts)
 
 
 @pytest.mark.parametrize("patr, sex", [("Сергеевич", "м"), ("Ильич", "м"), ("Олеговна", "ж"),
@@ -62,6 +64,20 @@ def test_birth_dates(raw, expected):
 def test_nonexistent_date_is_an_error():
     p = parse_birth_date("29.02.1995", today=TODAY)
     assert p.value is None and "не существует" in p.problem
+    assert "1995 год не високосный" in p.why
+
+
+@pytest.mark.parametrize("raw, why", [("31.04.2001", "В апреле 30 дней"),
+                                      ("12.25.2000", "переставлены местами — тогда это 25.12.2000"),
+                                      ("00.05.2001", "Дня с номером 0")])
+def test_why_date_does_not_exist(raw, why):
+    assert why in parse_birth_date(raw, today=TODAY).why
+
+
+@pytest.mark.parametrize("n, text, frm", [(1, "1 год", "1 года"), (21, "21 год", "21 года"), (22, "22 года", "22 лет"),
+                                          (11, "11 лет", "11 лет"), (25, "25 лет", "25 лет")])
+def test_years_words(n, text, frm):
+    assert years(n) == text and from_years(n) == frm
 
 
 @pytest.mark.parametrize("raw, fragment", [("", "не указана"), ("12.03.25", "двумя цифрами"),

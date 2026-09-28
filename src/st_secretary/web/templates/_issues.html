@@ -1,0 +1,15 @@
+{% from "_icons.html" import icon %}
+{# Одно замечание: что не так, почему и что сделать. fix_url — куда ведёт кнопка «Исправить». #}
+{% macro issue_item(i, fix_url="", show_person=True) -%}
+<li class="issue sev-{{ i.severity }}" data-sev="{{ i.severity }}"{% if i.severity == FIXED %} hidden{% endif %}>
+  <span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>
+  <div class="issue-body">
+    <div class="issue-what">{% if show_person and i.person %}<b>{{ i.person }}</b> — {% endif %}{{ i.text }}{% if i.row %} <span class="issue-where">строка {{ i.row }} в файле</span>{% endif %}</div>
+    {% if i.after %}<div class="change">было: <del>{{ i.before or "пусто" }}</del> → стало: <ins>{{ i.after }}</ins></div>
+    {% elif i.before and i.before not in i.text %}<div class="change">в заявке: «{{ i.before }}»</div>{% endif %}
+    {% if i.why %}<p class="issue-why"><b>Почему:</b> {{ i.why }}</p>{% endif %}
+    {% if i.todo %}<p class="issue-todo"><b>Что сделать:</b> {{ i.todo }}</p>{% endif %}
+  </div>
+  {% if fix_url and i.severity in (ERROR, WARNING) %}<a class="btn btn-ghost btn-small issue-fix" href="{{ fix_url }}">{{ icon("edit", 16) }}Исправить</a>{% endif %}
+</li>
+{%- endmacro %}

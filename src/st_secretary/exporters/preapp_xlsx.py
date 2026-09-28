@@ -87,8 +87,9 @@ def _summary(ws, r: PreappResult, comp: Competition):
     ws.append([])
     steps = [
         "Как перенести в СЕКРЕТАРЬ_ST:",
-        "1. Откройте лист «Проверка» и разберите красные строки — это ошибки, их нужно исправить в исходной заявке "
-        "или уточнить у представителя. Жёлтые — проверьте. Зелёные система исправила сама — просмотрите.",
+        "1. Откройте лист «Проверка» и разберите красные строки — это ошибки, их нужно исправить в заявке "
+        "или уточнить у представителя. Жёлтые — проверьте. Зелёные система исправила сама — просмотрите. "
+        "Для каждого замечания в колонках «Почему» и «Что сделать» написано, в чём дело и как поступить.",
         "2. На листе «Заявка для СЕКРЕТАРЬ» выделите строки ОДНОЙ команды, колонки A–O, и скопируйте.",
         "3. В книге СЕКРЕТАРЬ_ST на листе «Заявка» встаньте в ячейку A2 → Специальная вставка → Значения.",
         "4. Проверьте, что колонка «Зачет» (P) в СЕКРЕТАРЬ_ST заполнилась так же, как колонка P здесь, "
@@ -135,14 +136,15 @@ def _sekretar_sheet(ws, r: PreappResult):
 
 
 def _issues_sheet(ws, r: PreappResult):
-    _head(ws, ["Уровень", "Команда", "Участник", "Поле", "Что", "Было", "Стало", "Файл"],
-          [12, 22, 32, 16, 70, 24, 24, 26])
+    _head(ws, ["Уровень", "Команда", "Участник", "Поле", "Что", "Почему", "Что сделать", "Было", "Стало", "Файл",
+               "Строка"], [12, 22, 32, 16, 50, 60, 60, 24, 24, 26, 8])
     for i in sorted(r.issues, key=lambda x: (SEVERITY_ORDER[x.severity], x.team, x.person)):
-        ws.append([SEVERITY_LABEL[i.severity], i.team, i.person, i.field, i.text, i.before, i.after, i.source])
+        ws.append([SEVERITY_LABEL[i.severity], i.team, i.person, i.field, i.text, i.why, i.todo, i.before, i.after,
+                   i.source, i.row or None])
         for c in ws[ws.max_row]:
             c.border, c.alignment = BOX, WRAP
         ws.cell(ws.max_row, 1).fill = FILL[i.severity]
-    ws.auto_filter.ref = f"A1:H{ws.max_row}"
+    ws.auto_filter.ref = f"A1:K{ws.max_row}"
 
 
 def _teams_sheet(ws, r: PreappResult):

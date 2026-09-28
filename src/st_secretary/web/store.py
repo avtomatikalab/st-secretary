@@ -3,8 +3,9 @@
     данные/
       2025-09-20 Чемпионат г. Красноярска по спортивному туризму/
         Карточка_соревнования.xlsx   ← её можно открыть и поправить в Excel
-        Предзаявки/                  ← файлы заявок команд как есть
+        Предзаявки/                  ← файлы заявок команд (и исправленные в программе)
           Убранные/                  ← заявки, убранные из обработки (не удаляются)
+          Прежние версии/            ← файл до исправления или до замены новым — с датой и временем
         Сводка_предзаявок.xlsx       ← создаётся по кнопке
 
 Папку можно открыть в Проводнике, скопировать на флешку, передать коллеге. Персональные данные
@@ -13,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from dataclasses import dataclass
@@ -22,12 +24,13 @@ from pathlib import Path
 from st_secretary.competition import Competition
 from st_secretary.exporters.preapp_xlsx import write_preapp_report
 from st_secretary.importers.card_xlsx import load_card, write_card
-from st_secretary.importers.preapp_xlsx import read_preapplication
+from st_secretary.importers.preapp_xlsx import read_preapplication, write_preapplication
 from st_secretary.preapp import PreappResult, process
 
 CARD = "Карточка_соревнования.xlsx"
 PREAPPS = "Предзаявки"
 REMOVED = "Убранные"
+VERSIONS = "Прежние версии"
 SUMMARY = "Сводка_предзаявок.xlsx"
 EXCEL = (".xlsx", ".xls")
 
@@ -80,16 +83,71 @@ class CompFolder:
                        if p.is_file() and p.suffix.lower() in EXCEL and not p.name.startswith("~$")),
                       key=lambda p: p.name.lower())
 
+    def preapp_path(self, name: str) -> Path | None:
+        """Файл заявки по имени — только из папки «Предзаявки» этого соревнования."""
+        p = self.preapp_dir / Path(str(name).replace("\\", "/")).name
+        return p if name and p.suffix.lower() in EXCEL and not p.name.startswith("~$") and p.is_file() else None
+
+    @staticmethod
+    def file_version(path: Path) -> str:
+        """Метка версии файла: меняется, когда файл сохранили — здесь или в Excel."""
+        return str(path.stat().st_mtime_ns)
+
+    def keep_version(self, path: Path) -> Path:
+        """Перенести файл заявки в «Предзаявки/Прежние версии» с датой и временем в имени — не удалять."""
+        dest_dir = self.preapp_dir / VERSIONS
+        dest_dir.mkdir(exist_ok=True)
+        stamp = f"{datetime.now():%Y-%m-%d %H-%M-%S}"
+        dest, n = dest_dir / f"{path.stem} ({stamp}){path.suffix}", 2
+        while dest.exists():
+            dest, n = dest_dir / f"{path.stem} ({stamp} {n}){path.suffix}", n + 1
+        shutil.move(path, dest)
+        return dest
+
+    def _unique(self, path: Path) -> Path:
+        out, n = path, 2
+        while out.exists():
+            out, n = path.with_name(f"{path.stem} ({n}){path.suffix}"), n + 1
+        return out
+
     def add_preapp(self, filename: str, data: bytes) -> bool:
-        """Сохранить файл заявки. True — заменён файл с тем же именем (команда прислала исправленную)."""
+        """Сохранить файл заявки. True — заменён файл с тем же именем (команда прислала исправленную);
+        прежний вариант переносится в «Прежние версии»."""
         name = safe_name(Path(filename.replace("\\", "/")).name)
         if Path(name).suffix.lower() not in EXCEL or name.startswith("~$"):
             raise ValueError(f"«{name}» — не файл Excel")
         self.preapp_dir.mkdir(exist_ok=True)
         target = self.preapp_dir / name
         replaced = target.exists()
+        if replaced:
+            self.keep_version(target)
         target.write_bytes(data)
         return replaced
+
+    def save_preapp(self, name: str | None, head: dict, rows: list[dict], qual_labels: list[str] | None = None) -> str:
+        """Записать заявку из формы программы. name — файл, который исправляли (None — новая заявка).
+        Прежний файл переносится в «Прежние версии»; .xls сохраняется как .xlsx. Возвращает имя файла."""
+        self.preapp_dir.mkdir(exist_ok=True)
+        now = datetime.now()
+        old = self.preapp_path(name) if name else None
+        if old is not None:
+            target = old.with_suffix(".xlsx")
+            if target.name.lower() != old.name.lower() and target.exists():  # был .xls, а .xlsx с тем же именем занят
+                target = self._unique(target)
+            note = (f"Исправлено в программе СТ-Секретарь {now:%d.%m.%Y %H:%M}. "
+                    f"Прежний вариант файла — в папке «{PREAPPS}\\{VERSIONS}».")
+        else:
+            target = self._unique(self.preapp_dir / f"{safe_name(head.get('team', ''), 80) or 'Заявка'}.xlsx")
+            note = f"Заполнено в программе СТ-Секретарь {now:%d.%m.%Y %H:%M}."
+        tmp = self.preapp_dir / f"~$сохранение {now:%H%M%S%f}.xlsx"  # «~$» — такие файлы в список заявок не попадают
+        write_preapplication(tmp, head, rows, note, qual_labels)
+        try:
+            if old is not None:
+                self.keep_version(old)  # файл открыт в Excel → PermissionError, ничего не изменилось
+            os.replace(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
+        return target.name
 
     def remove_preapp(self, name: str) -> Path:
         """Убрать заявку из обработки: файл переносится в «Предзаявки/Убранные», а не удаляется."""

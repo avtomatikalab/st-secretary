@@ -189,11 +189,102 @@ def test_preapps_upload_check_summary_remove(client, tmp_path, psr_card, opened)
 
     r = client.post(b + "/preapps/upload", files=[("files", ("Лесовики.xlsx", data, XLSX))])
     assert "заменено исправленными: 1" in r.text
+    assert len(list((f.preapp_dir / "Прежние версии").iterdir())) == 1  # прежний вариант не затёрт
 
     r = client.post(b + "/preapps/remove", data={"name": "Лесовики.xlsx"})
     assert "убрана из обработки" in r.text
     assert not (f.preapp_dir / "Лесовики.xlsx").exists()
     assert (f.preapp_dir / "Убранные" / "Лесовики.xlsx").is_file()  # не удалена, а перенесена
+
+
+def test_issue_explains_why_and_links_to_form(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
+    r = client.get(base(f) + "/preapps")
+    assert "Почему:" in r.text and "1995 год не високосный" in r.text and "Что сделать:" in r.text
+    assert "строка 12 в файле" in r.text
+    assert "/preapps/edit?file=%D0%9B%D0%B5%D1%81%D0%BE%D0%B2%D0%B8%D0%BA%D0%B8.xlsx#p-12" in r.text
+
+
+def preapp_url(f, name="Лесовики.xlsx"):
+    return base(f) + "/preapps/edit?file=" + quote(name)
+
+
+def test_edit_application_in_form(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
+    page = client.get(preapp_url(f))
+    assert page.status_code == 200 and "Заявка команды «Лесовики»" in page.text
+    data = FormFields(page.text, "preappform").fields
+    assert data["h-team"] == "Лесовики" and data["p-2-birth"] == "29.02.1995" and data["p-2-zachet"] == "М/Ж_3"
+    assert data["p-0-birth"] == "17.10.1989" and data["p-0-qual"] == "II" and data["p-1-sex"] == "ж"
+    assert 'id="p-12"' in page.text and "mk-error" in page.text  # строка с ошибкой отмечена
+
+    r = client.post(base(f) + "/preapps/save", data=data | {"p-2-birth": "28.02.1995"}, follow_redirects=False)
+    assert r.status_code == 303 and "done=psaved" in r.headers["location"]
+    page = client.get(r.headers["location"])
+    assert "Прежние версии" in page.text and "Заявка проверена — ошибок нет" in page.text
+    [old] = (f.preapp_dir / "Прежние версии").iterdir()  # файл команды не пропал
+    assert old.name.startswith("Лесовики (") and [p.name for p in f.preapp_files()] == ["Лесовики.xlsx"]
+    result = client.app.state.store.preapps(f, psr_card)
+    assert result.count("error") == 0 and len(result.entries) == 3
+    assert [e.name.full for e in result.entries] == ["Иванов Пётр Сергеевич", "Смирнова Анна Олеговна",
+                                                    "Кузьмин Олег Игоревич"]
+
+    # удалить участника, добавить нового
+    data = FormFields(page.text, "preappform").fields
+    data = {k: v for k, v in data.items() if not k.startswith("p-1-")}
+    data |= {"p-7-fio": "Орлова Мария Ивановна", "p-7-birth": "01.02.2000", "p-7-qual": "III", "p-7-sex": "ж",
+             "p-7-zachet": "М/Ж_3", "p-7-team_dist": "1"}
+    client.post(base(f) + "/preapps/save", data=data)
+    names = [e.name.full for e in client.app.state.store.preapps(f, psr_card).entries]
+    assert names == ["Иванов Пётр Сергеевич", "Кузьмин Олег Игоревич", "Орлова Мария Ивановна"]
+
+
+def test_unchanged_form_save_keeps_application(client, tmp_path, psr_card):
+    """Открыли заявку и сохранили, ничего не меняя, — участники, даты, разряды, зачёты те же."""
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
+    store = client.app.state.store
+
+    def snapshot():
+        r = store.preapps(f, psr_card)
+        return [(e.name.full, e.birth, e.qual, e.sex, e.zachet, e.team_dist) for e in r.entries], \
+            [(t.team, t.territory, t.representative, t.phone, t.email) for t in r.teams], r.count("error")
+
+    before = snapshot()
+    data = FormFields(client.get(preapp_url(f)).text, "preappform").fields
+    assert client.post(base(f) + "/preapps/save", data=data, follow_redirects=False).status_code == 303
+    assert snapshot() == before
+
+
+def test_new_application_and_form_errors(client, psr_card):
+    f = client.app.state.store.create(psr_card)
+    page = client.get(base(f) + "/preapps/new")
+    assert page.status_code == 200 and "Новая заявка" in page.text
+    data = FormFields(page.text, "preappform").fields
+    r = client.post(base(f) + "/preapps/save", data=data)
+    assert r.status_code == 422 and "Впишите название команды" in r.text
+    data |= {"h-team": "Ураган", "h-territory": "Красноярск", "p-0-birth": "01.01.1990"}
+    r = client.post(base(f) + "/preapps/save", data=data)
+    assert r.status_code == 422 and "Впишите ФИО или удалите строку" in r.text and 'value="Ураган"' in r.text
+    data |= {"p-0-fio": "Петров Иван Ильич", "p-0-sex": "м", "p-0-zachet": "М/Ж_3"}
+    r = client.post(base(f) + "/preapps/save", data=data, follow_redirects=False)
+    assert r.status_code == 303 and "done=pcreated" in r.headers["location"]
+    assert [p.name for p in f.preapp_files()] == ["Ураган.xlsx"]
+    assert "Заявка сохранена в файл «Ураган.xlsx»" in client.get(r.headers["location"]).text
+
+
+def test_application_changed_meanwhile_is_not_overwritten(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
+    data = FormFields(client.get(preapp_url(f)).text, "preappform").fields | {"h-team": "Лесовики-2"}
+    os.utime(f.preapp_dir / "Лесовики.xlsx", ns=(10**18, 10**18))  # команда прислала новую версию
+    r = client.post(base(f) + "/preapps/save", data=data)
+    assert r.status_code == 409 and "Файл заявки изменился" in r.text
+    r = client.post(base(f) + "/preapps/save", data=data | {"force": "1"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert client.app.state.store.preapps(f, psr_card).teams[0].team == "Лесовики-2"
 
 
 def test_preapps_wait_for_card_without_errors(client, tmp_path, psr_card):
@@ -203,6 +294,7 @@ def test_preapps_wait_for_card_without_errors(client, tmp_path, psr_card):
     r = client.get(base(f) + "/preapps")
     assert "Сначала исправьте карточку" in r.text and "Лесовики.xlsx" in r.text
     assert client.post(base(f) + "/preapps/summary").status_code == 409
+    assert client.get(preapp_url(f)).status_code == 409
 
 
 def test_overview_steps_and_errors(client, psr_card, opened):
