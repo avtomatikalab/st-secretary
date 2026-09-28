@@ -1,6 +1,37 @@
 """Командная строка: понятные сообщения вместо технических трассировок."""
 
-from st_secretary.cli import main
+import io
+import threading
+
+from st_secretary.cli import Loading, main
+
+
+class Console(io.StringIO):
+    """Как окно консоли: isatty() — да."""
+
+    def isatty(self):
+        return True
+
+
+def test_loading_animation_runs_in_console_and_is_erased():
+    out = Console()
+    shown = threading.Event()
+    loading = Loading("Загружаю программу", out)
+    loading._draw = (lambda draw: lambda i: (draw(i), shown.set()))(loading._draw)
+    loading.start()
+    assert shown.wait(2)
+    loading.stop()
+    loading.stop()  # второй раз — ничего не ломает
+    text = out.getvalue()
+    assert "Загружаю программу..." in text and "[====" in text and " с" in text
+    assert text.endswith("\r")  # строка с полоской стёрта — дальше пишется обычный текст
+    assert {len(loading.frame(i)) for i in range(40)} == {Loading.WIDTH + 2}  # полоска не «прыгает»
+
+
+def test_loading_prints_nothing_outside_console():
+    out = io.StringIO()
+    Loading("Загружаю программу", out).start().stop()
+    assert out.getvalue() == ""
 
 
 def test_missing_folder_and_card_are_explained(tmp_path, capsys):

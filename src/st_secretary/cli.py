@@ -14,6 +14,7 @@ import os
 import socket
 import sys
 import threading
+import time
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -120,6 +121,60 @@ def cmd_preapp(a) -> int:
 HOST = "127.0.0.1"  # только этот компьютер: в заявках персональные данные
 
 
+class Loading:
+    """Бегущая полоска в консоли, пока программа запускается, — чтобы было видно, что она не зависла.
+
+    Рисуется только в окне консоли; в файл или другую программу (тесты, журнал) ничего лишнего не пишется.
+    Только ASCII-символы: шрифты консоли Windows показывают их всегда.
+    """
+
+    WIDTH = 14  # ширина дорожки, по которой бегает полоска
+
+    def __init__(self, text: str, stream=None):
+        self.text = text
+        self.stream = stream or sys.stdout
+        self.live = bool(getattr(self.stream, "isatty", lambda: False)())
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._t0 = time.monotonic()
+        self._shown = 0  # длина нарисованной строки — чтобы стереть её целиком
+
+    def start(self) -> Loading:
+        if self.live:
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+        return self
+
+    def frame(self, i: int) -> str:
+        run = self.WIDTH - 4
+        pos = i % (2 * run)
+        pos = pos if pos < run else 2 * run - pos  # туда и обратно
+        return "[" + " " * pos + "====" + " " * (run - pos) + "]"
+
+    def _draw(self, i: int) -> None:
+        line = f"  {self.frame(i)}  {self.text}... {int(time.monotonic() - self._t0)} с"
+        self.stream.write("\r" + line.ljust(self._shown))
+        self.stream.flush()
+        self._shown = len(line)
+
+    def _run(self) -> None:
+        i = 0
+        self._draw(i)
+        while not self._stop.wait(0.1):
+            i += 1
+            self._draw(i)
+
+    def stop(self) -> None:
+        """Убрать полоску (можно вызывать несколько раз)."""
+        if self._thread is None:
+            return
+        self._stop.set()
+        self._thread.join()
+        self._thread = None
+        self.stream.write("\r" + " " * self._shown + "\r")
+        self.stream.flush()
+
+
 def _already_running(port: int) -> bool:
     try:
         with urllib.request.urlopen(f"http://{HOST}:{port}/health", timeout=1) as r:
@@ -140,37 +195,53 @@ def _free_port(start: int) -> int:
 
 
 def cmd_web(a) -> int:
+    loading = Loading("Загружаю программу").start()  # первая загрузка библиотек бывает небыстрой
     try:
-        import uvicorn
+        try:
+            import uvicorn
 
-        from st_secretary.web.app import create_app
-    except ImportError as e:
-        raise UserError(f"Не установлены библиотеки для работы в браузере ({e.name}). Выполните: uv sync") from None
+            from st_secretary.web.app import create_app
+        except ImportError as e:
+            raise UserError(f"Не установлены библиотеки для работы в браузере ({e.name}). Выполните: uv sync") from None
 
-    if _already_running(a.port):  # второй запуск — просто открыть уже работающую программу
-        url = f"http://{HOST}:{a.port}/"
-        print(f"СТ-Секретарь уже работает: {url}")
-        print("Его окно открыто отдельно — работайте в нём. Открываю страницу в браузере.")
-        if not a.no_browser:
-            webbrowser.open(url)
-        return 0
-    data = Path(a.data).resolve()
-    data.mkdir(parents=True, exist_ok=True)
-    port = _free_port(a.port)
-    url = f"http://{HOST}:{port}/"
-    servers: list = []  # сервер создаётся после приложения, а кнопке «Выключить» нужен именно он
-    app = create_app(data, shutdown=lambda: setattr(servers[0], "should_exit", True))
-    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="warning"))
-    servers.append(server)
-    print("СТ-Секретарь работает.")
-    print(f"  Адрес в браузере: {url}")
-    print(f"  Папка с данными:  {data}")
-    print()
-    print("Это окно — сама программа: пока оно открыто, страница в браузере работает.")
-    print("Выключить программу: кнопка «Выключить» вверху страницы или просто закройте это окно.")
-    if not a.no_browser:
-        threading.Timer(1.0, webbrowser.open, [url]).start()
-    server.run()
+        if _already_running(a.port):  # второй запуск — просто открыть уже работающую программу
+            loading.stop()
+            url = f"http://{HOST}:{a.port}/"
+            print(f"СТ-Секретарь уже работает: {url}")
+            print("Его окно открыто отдельно — работайте в нём. Открываю страницу в браузере.")
+            if not a.no_browser:
+                webbrowser.open(url)
+            return 0
+        data = Path(a.data).resolve()
+        data.mkdir(parents=True, exist_ok=True)
+        port = _free_port(a.port)
+        url = f"http://{HOST}:{port}/"
+        servers: list = []  # сервер создаётся после приложения, а кнопке «Выключить» нужен именно он
+        app = create_app(data, shutdown=lambda: setattr(servers[0], "should_exit", True))
+        server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="warning"))
+        servers.append(server)
+        loading.text = "Запускаю сервер"
+
+        def announce_when_ready():
+            """Сообщение и браузер — только когда сервер действительно отвечает."""
+            while not server.started:
+                if server.should_exit:
+                    return
+                time.sleep(0.1)
+            loading.stop()
+            print("СТ-Секретарь работает.")
+            print(f"  Адрес в браузере: {url}")
+            print(f"  Папка с данными:  {data}")
+            print()
+            print("Это окно — сама программа: пока оно открыто, страница в браузере работает.")
+            print("Выключить программу: кнопка «Выключить» вверху страницы или просто закройте это окно.")
+            if not a.no_browser:
+                webbrowser.open(url)
+
+        threading.Thread(target=announce_when_ready, daemon=True).start()
+        server.run()
+    finally:
+        loading.stop()
     print()
     print("СТ-Секретарь выключен. Всё сохранено в папке с данными.")
     return 0

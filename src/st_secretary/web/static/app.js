@@ -116,6 +116,44 @@
     });
   });
 
+  // --- Карточка и форма заявки: запомнить команду — список заявок потом откроется сразу на ней.
+  var mark = document.querySelector("[data-team-anchor]");
+  if (mark) {
+    try { sessionStorage.setItem("lastTeam:" + mark.dataset.listPath, mark.dataset.teamAnchor); } catch (e) { /* нет */ }
+  }
+
+  // --- Список заявок: открыть на команде, с которой вернулись (метка #t-… в адресе или память вкладки),
+  //     чтобы не крутить страницу; если команду скрывает фильтр — на следующей видимой.
+  var teamList = document.querySelector("[data-team-list]");
+  if (teamList) {
+    var id = location.hash.slice(1);
+    if (!id) {
+      var from = "";
+      try { from = new URL(document.referrer).pathname; } catch (e) { /* пришли не со страницы программы */ }
+      if (from.indexOf(location.pathname + "/") === 0) {  // из карточки или формы заявки этого соревнования
+        try { id = sessionStorage.getItem("lastTeam:" + location.pathname) || ""; } catch (e) { /* нет */ }
+      }
+    }
+    var target = id ? document.getElementById(id) : null;
+    if (target && target.matches("article.team")) {
+      var tab = document.getElementById(teamList.getAttribute("aria-labelledby"));
+      if (teamList.hidden && tab) tab.click();  // была открыта другая вкладка — вернуть «Команды»
+      var t = target;
+      while (t && (t.hidden || !t.matches("article.team"))) t = t.nextElementSibling;
+      if (!t) {  // ниже видимых нет — ближайшая выше
+        t = target;
+        while (t && (t.hidden || !t.matches("article.team"))) t = t.previousElementSibling;
+      }
+      if (t) {
+        var go = function () { t.scrollIntoView({ block: "start" }); };
+        go();
+        window.addEventListener("load", go);  // браузер может сам прокрутить к метке позже — поправить
+        t.classList.add("is-recent");
+        setTimeout(function () { t.classList.remove("is-recent"); }, 2500);
+      }
+    }
+  }
+
   // --- Фильтр замечаний: ошибки / проверить / проверено / исправлено.
   document.querySelectorAll("[data-filter]").forEach(function (chip) {
     chip.addEventListener("click", function () {

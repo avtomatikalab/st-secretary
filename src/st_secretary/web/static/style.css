@@ -304,7 +304,18 @@ input:focus, select:focus, textarea:focus { outline: 3px solid var(--focus); out
 .toggle input { width: 18px; height: 18px; }
 .filter-empty { padding: 20px; text-align: center; background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--radius); }
 
-.team { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; box-shadow: var(--shadow); }
+.team { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; box-shadow: var(--shadow);
+        scroll-margin-top: calc(var(--top) + 12px); transition: box-shadow .4s, border-color .4s; }
+.team.is-recent { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow); }
+
+/* карточка команды: соседние команды */
+.team-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-bottom: 12px; }
+.team-nav .back { margin: 0; }
+.team-nav-pos { font-size: .85rem; }
+.team-nav-side { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-left: auto; font-size: .9rem; }
+.team-nav-link { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; text-decoration: none; }
+.team-nav-link .status-badge { font-size: .7rem; padding: 1px 8px; }
+.team-next { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 4px 0 24px; }
 .team-head { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 14px 18px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
 .team-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .team-counts { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }

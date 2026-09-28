@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import shutil
@@ -68,6 +69,11 @@ def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
 
+def team_anchor(file: str) -> str:
+    """Метка команды в списке заявок (#t-…): по ней страница открывается сразу на этой команде."""
+    return "t-" + hashlib.sha1(file.encode("utf-8")).hexdigest()[:10]
+
+
 def _with_done(url: str, done: str) -> str:
     """Адрес с сообщением о сделанном (?done=…); якорь (#…) сохраняется."""
     parts = urlsplit(url)
@@ -127,6 +133,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.filters["d"] = _fmt_date
     templates.env.filters["from_years"] = from_years
+    templates.env.filters["team_anchor"] = team_anchor
     # Метка для адресов стилей и скриптов: меняется вместе с файлами, чтобы браузер не держал старую версию.
     static_version = f"{__version__}-{max(int(p.stat().st_mtime) for p in (HERE / 'static').iterdir())}"
     templates.env.globals.update(steps=STEPS, step_url=_step_url, version=static_version, labels=SEVERITY_LABEL,
@@ -396,7 +403,14 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         for i in issues:
             if i.row and i.severity in (ERROR, WARNING, CHECKED) and i.row not in worst:
                 worst[i.row] = i.severity
+        # соседние команды — в том же порядке, что в списке заявок: идти по заявкам подряд, не возвращаясь к списку
+        order = [p.name for p in f.preapp_files()]
+        names = {t.source: t.team for t in result.teams}
+        at = order.index(path.name)
+        near = {k: {"file": order[j], "title": names.get(order[j], order[j]), "review": reviews[order[j]]}
+                for k, j in (("prev", at - 1), ("next", at + 1)) if 0 <= j < len(order)}
         return page(request, "preapp_team.html", active="preapps", file=path.name, team=team, issues=issues,
+                    prev_team=near.get("prev"), next_team=near.get("next"), position=(at + 1, len(order)),
                     review=reviews[path.name], counts=Counter(i.severity for i in issues), worst=worst,
                     show=pf.columns(comp, [vars(e) for e in team.entries] if team else []),
                     here=team_url(f, path.name), **comp_ctx(f))

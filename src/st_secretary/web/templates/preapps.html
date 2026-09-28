@@ -80,7 +80,7 @@
   <button class="tab" role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false" type="button">Файлы заявок ({{ files|length }})</button>
 </div>
 
-<section class="tabpanel" id="panel-issues" role="tabpanel" aria-labelledby="tab-issues">
+<section class="tabpanel" id="panel-issues" role="tabpanel" aria-labelledby="tab-issues" data-team-list>
   {% set bf = view.by_filter %}
   <div class="filter-bar" role="group" aria-label="Какие команды показывать">
     <span class="filter-label">Показать:</span>
@@ -96,7 +96,7 @@
   <p class="filter-empty muted" hidden>Таких команд сейчас нет.</p>
   {% for g in view.groups %}
   {% set card_url = base ~ "/preapps/team?file=" ~ (g.file|urlencode) %}
-  {% set anchor = "t-" ~ loop.index %}
+  {% set anchor = g.file|team_anchor %}
   <article class="team" id="{{ anchor }}" data-status="{{ g.review.status }}">
     <header class="team-head">
       <div class="team-title">

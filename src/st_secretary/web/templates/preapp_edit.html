@@ -59,7 +59,7 @@
 {% block title %}{{ form.head.team or "Новая заявка" }} — предзаявка — СТ-Секретарь{% endblock %}
 {% block content %}
 {% set card_url = base ~ "/preapps/team?file=" ~ (file|urlencode) %}
-{% if file %}<a class="back" href="{{ card_url }}">← Карточка команды</a>
+{% if file %}<a class="back" href="{{ card_url }}" data-team-anchor="{{ file|team_anchor }}" data-list-path="{{ base }}/preapps">← Карточка команды</a>
 {% else %}<a class="back" href="{{ base }}/preapps">← Все предварительные заявки</a>{% endif %}
 <div class="page-head">
   <div>

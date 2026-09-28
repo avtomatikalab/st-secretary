@@ -323,6 +323,28 @@ def sosna(tmp_path):
                             ]).read_bytes()
 
 
+def test_back_to_list_lands_on_the_team_and_next_team_link(client, tmp_path, psr_card):
+    from st_secretary.web.app import team_anchor
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    anchor = team_anchor("Лесовики.xlsx")
+    assert f'id="{anchor}"' in client.get(base(f) + "/preapps").text  # у команды в списке — постоянная метка
+    card = client.get(preapp_url(f, page="team")).text
+    assert f'href="{base(f)}/preapps#{anchor}"' in card  # «← Все заявки» ведёт прямо к этой команде
+    assert "команда 1 из 2" in card and "Следующая команда: Сосна" in card
+    assert preapp_url(f, "Сосна.xlsx", "team").replace(" ", "%20") in card
+    last = client.get(preapp_url(f, "Сосна.xlsx", "team")).text
+    assert "Это последняя команда в списке" in last and "Предыдущая:" in last
+    # «Проверено» в списке возвращает к той же команде
+    result, _ = client.app.state.store.review(f, psr_card)
+    [warn] = [i for i in result.issues if i.source == "Сосна.xlsx" and i.severity == "warning"]
+    r = client.post(base(f) + "/preapps/check", follow_redirects=False,
+                    data={"file": "Сосна.xlsx", "key": issue_key(warn), "back": f"{base(f)}/preapps#{team_anchor('Сосна.xlsx')}"})
+    assert r.headers["location"].endswith("#" + team_anchor("Сосна.xlsx"))
+
+
 def test_team_card_is_read_only_with_edit_button(client, tmp_path, psr_card):
     f = client.app.state.store.create(psr_card)
     f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))

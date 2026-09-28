@@ -2,9 +2,21 @@
 {% from "_icons.html" import icon %}
 {% from "_issues.html" import issue_item, status_badge %}
 {% block title %}{{ team.team if team else file }} — карточка команды — СТ-Секретарь{% endblock %}
+{% macro team_link(t, arrow) -%}
+<a class="team-nav-link" href="{{ base }}/preapps/team?file={{ t.file|urlencode }}">{% if arrow == "prev" %}← {% endif %}{{ t.title }} {{ status_badge(t.review) }}{% if arrow == "next" %} →{% endif %}</a>
+{%- endmacro %}
+
 {% block content %}
 {% set edit_url = base ~ "/preapps/edit?file=" ~ (file|urlencode) %}
-<a class="back" href="{{ base }}/preapps">← Все предварительные заявки</a>
+{% set list_url = base ~ "/preapps#" ~ (file|team_anchor) %}
+<nav class="team-nav" aria-label="Команды по порядку" data-team-anchor="{{ file|team_anchor }}" data-list-path="{{ base }}/preapps">
+  <a class="back" href="{{ list_url }}">← Все предварительные заявки</a>
+  <span class="team-nav-pos muted">команда {{ position[0] }} из {{ position[1] }}</span>
+  <span class="team-nav-side">
+    {% if prev_team %}<span class="muted">Предыдущая:</span> {{ team_link(prev_team, "prev") }}{% endif %}
+    {% if next_team %}<span class="muted">Следующая:</span> {{ team_link(next_team, "next") }}{% endif %}
+  </span>
+</nav>
 
 <div class="page-head team-card-head">
   <div>
@@ -107,4 +119,11 @@
     в программе (прежний файл сохранится в «Предзаявки\Прежние версии»), или попросите команду прислать заявку по бланку.</p>
   {% endif %}
 </section>
+
+<div class="team-next">
+  {% if next_team %}
+  <a class="btn btn-primary btn-big" href="{{ base }}/preapps/team?file={{ next_team.file|urlencode }}">Следующая команда: {{ next_team.title }} →</a>
+  {% else %}<span class="muted">Это последняя команда в списке.</span>{% endif %}
+  <a class="btn btn-ghost" href="{{ list_url }}">Вернуться к списку заявок</a>
+</div>
 {% endblock %}
