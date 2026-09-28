@@ -1,0 +1,55 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}СТ-Секретарь{% endblock %}</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css?v={{ version }}">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">{{ icon("logo", 26) }}<span>СТ-Секретарь</span></a>
+  {% if folder is defined and folder %}
+  <div class="topbar-title" title="{{ comp.title if comp else folder.id }}">{{ comp.title if comp else folder.id }}</div>
+  {% else %}<div class="topbar-title"></div>{% endif %}
+  <div class="pill-local" title="Программа работает на этом ноутбуке. Интернет не нужен. Данные никуда не отправляются.">
+    {{ icon("laptop", 18) }}<span>Работает без интернета</span>
+  </div>
+</header>
+
+{% set with_nav = folder is defined and folder %}
+<div class="layout{% if not with_nav %} wide{% endif %}">
+  {% if with_nav %}
+  <nav class="sidebar" aria-label="Шаги работы">
+    <a class="side-comp{% if active == '' %} is-active{% endif %}" href="{{ base }}">
+      <small>Соревнование</small>
+      <strong>{{ comp.title if comp else folder.id }}</strong>
+      {% if comp %}<span>{{ comp.dates_text }}</span>{% endif %}
+    </a>
+    <ol class="steps">
+      {% for s in steps %}
+      <li><a href="{{ step_url(base, s) }}" class="{% if s.slug == active %}is-active{% endif %}{% if not s.ready %} is-soon{% endif %}"{% if s.slug == active %} aria-current="page"{% endif %}>
+        <span class="step-num">{{ loop.index }}</span>
+        <span class="step-text">{{ s.title }}{% if not s.ready %}<small>скоро · этап {{ s.stage }}</small>{% endif %}</span>
+      </a></li>
+      {% endfor %}
+    </ol>
+    <div class="side-foot">
+      <form method="post" action="{{ base }}/open/folder">
+        <button class="btn btn-ghost" type="submit">{{ icon("folder") }}Папка соревнования</button>
+      </form>
+      <a class="btn btn-ghost" href="/">{{ icon("back") }}Все соревнования</a>
+    </div>
+  </nav>
+  {% endif %}
+  <main class="content">
+    {% if flash %}
+    <div class="flash flash-{{ flash.kind }}" role="status">{{ icon("check-circle" if flash.kind == "ok" else "alert") }}<div>{{ flash.text }}</div></div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="/static/app.js?v={{ version }}"></script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_form.html" import main_fields, input, select, issue_list %}
+
+{% macro official_row(i, o, errors, ch, fixed=False) -%}
+{% set rk = "g-" ~ i ~ "-role" %}
+<tr data-row>
+  <td class="role-cell">
+    {% if fixed %}<input type="hidden" name="{{ rk }}" value="{{ o.role }}"><span>{{ o.role }}</span>
+    {% else %}<input type="text" name="{{ rk }}" value="{{ o.role }}" list="dl-roles" placeholder="Должность" aria-label="Должность"{% if errors.get(rk) %} class="is-invalid"{% endif %}>
+      {% if errors.get(rk) %}<p class="field-error">{{ errors[rk] }}</p>{% endif %}
+    {% endif %}
+  </td>
+  <td><input type="text" name="g-{{ i }}-fio" value="{{ o.fio }}" placeholder="Фамилия Имя Отчество" aria-label="ФИО полностью"></td>
+  <td>
+    <select name="g-{{ i }}-category" aria-label="Судейская категория">
+      <option value="">—</option>
+      {% if o.category and o.category not in ch.categories|map("first")|list %}<option value="{{ o.category }}" selected>{{ o.category }} (не из списка)</option>{% endif %}
+      {% for v, t in ch.categories %}<option value="{{ v }}"{% if v == o.category %} selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select>
+  </td>
+  <td><input type="text" name="g-{{ i }}-territory" value="{{ o.territory }}" placeholder="г. Красноярск" aria-label="Территория"></td>
+  <td class="cell-action">{% if not fixed %}<button type="button" class="icon-btn" data-remove-row data-confirm="Удалить эту строку?" title="Удалить строку" aria-label="Удалить строку">×</button>{% endif %}</td>
+</tr>
+{%- endmacro %}
+
+{% macro zachet_block(i, z, errors, ch) -%}
+{% set p = "z-" ~ i ~ "-" %}
+<div class="zachet" data-row>
+  <div class="zachet-head">
+    <h3>{% if z.group and z.distance_class %}Зачёт {{ z.group }}_{{ z.distance_class }}{% else %}Новый зачёт{% endif %}</h3>
+    <button type="button" class="btn btn-ghost btn-small" data-remove-row data-confirm="Удалить этот зачёт?">Удалить зачёт</button>
+  </div>
+  <div class="grid">
+    {{ input(p ~ "group", "Группа", z.group, errors, cls="span-3", list="dl-groups", hint="как в предзаявке: М/Ж, МУЖЧИНЫ…") }}
+    {{ select(p ~ "distance_class", "Класс", z.distance_class, ch.classes, errors, cls="span-2", empty="—") }}
+    {{ select(p ~ "discipline_code", "Дисциплина (по ВРВС)", z.discipline_code, ch.disciplines, errors, cls="span-7", empty="— выберите дисциплину —") }}
+    {{ input(p ~ "age_from", "Возраст от", z.age_from, errors, type="number", cls="span-3", hint="лет в год соревнований") }}
+    {{ input(p ~ "age_to", "Возраст до", z.age_to, errors, type="number", cls="span-3", hint="пусто — без ограничения") }}
+    {{ input(p ~ "age_from_by_gsk", "По решению ГСК — с", z.age_from_by_gsk, errors, type="number", cls="span-3", hint="если Положение разрешает младше") }}
+    {{ select(p ~ "min_qual", "Разряд не ниже", z.min_qual, ch.quals, errors, cls="span-3") }}
+    {{ input(p ~ "team_size", "Состав команды, чел.", z.team_size, errors, type="number", cls="span-3") }}
+    {{ input(p ~ "min_men", "Мужчин не менее", z.min_men, errors, type="number", cls="span-2") }}
+    {{ input(p ~ "min_women", "Женщин не менее", z.min_women, errors, type="number", cls="span-2") }}
+    {{ input(p ~ "fee", "Взнос, ₽", z.fee, errors, type="number", cls="span-3") }}
+    {{ select(p ~ "fee_per", "Взнос за", z.fee_per, ch.fee_per, errors, cls="span-2") }}
+  </div>
+</div>
+{%- endmacro %}
+
+{% block title %}Карточка — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Карточка соревнования</h1>
+<p class="lead">Всё, что вводится здесь, попадает в шапки и подписи документов, проверку заявок и расчёт разрядов.
+  Карточка хранится в файле Excel в папке соревнования — её можно открыть и там.</p>
+
+{% if card_errors and not form %}
+<div class="panel panel-err">
+  <h2>{{ icon("error") }} Файл карточки заполнен с ошибками</h2>
+  {{ issue_list(card_errors) }}
+  <p>Откройте карточку в Excel, исправьте, сохраните файл и обновите эту страницу (клавиша F5).</p>
+  <form method="post" action="{{ base }}/open/card"><button class="btn btn-primary" type="submit">{{ icon("table") }}Открыть карточку в Excel</button></form>
+</div>
+{% endif %}
+
+{% if form %}
+  {% if conflict %}
+  <div class="panel panel-warn" role="alert">
+    <h2>{{ icon("alert") }} Карточку изменили в Excel, пока была открыта эта страница</h2>
+    <p>Если сохранить сейчас, изменения, сделанные в Excel, пропадут. Ваши правки на этой странице пока не сохранены.</p>
+    <div class="actions">
+      <button class="btn btn-primary" type="submit" form="cardform" name="force" value="1">Сохранить мои правки всё равно</button>
+      <a class="btn" href="{{ base }}/card">Показать карточку из Excel (мои правки пропадут)</a>
+    </div>
+  </div>
+  {% endif %}
+  {% if save_error %}<div class="flash flash-err" role="alert">{{ icon("alert") }}<div>{{ save_error }}</div></div>{% endif %}
+  {% if errors %}<div class="flash flash-err" role="alert">{{ icon("alert") }}<div>Карточка не сохранена: проверьте поля, отмеченные красным ({{ errors|length }}).</div></div>{% endif %}
+
+  {% if not errors and not conflict and not save_error %}
+    {% if issues %}
+    <div class="panel {% if issues|selectattr('severity', 'equalto', ERROR)|list %}panel-err{% else %}panel-warn{% endif %}">
+      <h2>Проверка карточки</h2>
+      {{ issue_list(issues) }}
+    </div>
+    {% else %}
+    <div class="flash flash-ok">{{ icon("check-circle") }}<div>Карточка заполнена, замечаний нет.</div></div>
+    {% endif %}
+  {% endif %}
+
+  <form id="cardform" method="post" action="{{ base }}/card" data-guard>
+    <input type="hidden" name="version" value="{{ card_version }}">
+
+    <section class="panel" id="main">
+      <h2>Основные реквизиты</h2>
+      {{ main_fields(form.main, errors, ch) }}
+    </section>
+
+    <section class="panel" id="gsk">
+      <h2>Главная судейская коллегия</h2>
+      <p class="muted">Подписи протоколов берутся отсюда: «И.О. Фамилия, категория, территория». Пустые строки не сохраняются.</p>
+      <div class="table-wrap">
+      <table class="tbl form-tbl gsk-tbl">
+        <colgroup><col class="c-role"><col class="c-fio"><col class="c-cat"><col class="c-terr"><col class="c-act"></colgroup>
+        <thead><tr><th>Должность</th><th>ФИО полностью</th><th>Категория</th><th>Территория</th><th></th></tr></thead>
+        <tbody id="gsk-rows" data-next="{{ form.officials|length }}">
+          {% for o in form.officials %}
+          {{ official_row(loop.index0, o, errors, ch, fixed=(loop.index0 < ch.roles|length and o.role == ch.roles[loop.index0])) }}
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      <button type="button" class="btn" data-add-row="gsk-rows" data-template="tpl-official">{{ icon("plus") }}Добавить судью</button>
+    </section>
+
+    <section class="panel" id="zachety">
+      <h2>Зачёты</h2>
+      <p class="muted">Зачёт — группа участников на дистанции определённого класса. Название как в СЕКРЕТАРЬ_ST: группа_класс, например «М/Ж_3».</p>
+      <div id="z-rows" data-next="{{ form.zachety|length }}">
+        {% for z in form.zachety %}{{ zachet_block(loop.index0, z, errors, ch) }}{% endfor %}
+      </div>
+      <button type="button" class="btn" data-add-row="z-rows" data-template="tpl-zachet">{{ icon("plus") }}Добавить зачёт</button>
+    </section>
+
+    <div class="savebar">
+      <button class="btn btn-primary btn-big" type="submit">{{ icon("check") }}Сохранить карточку</button>
+      <button class="btn btn-ghost" type="submit" form="open-card-form">{{ icon("table") }}Открыть в Excel</button>
+      <span class="muted savebar-note">Сохраняется в «Карточка_соревнования.xlsx» в папке соревнования</span>
+    </div>
+  </form>
+  <form id="open-card-form" method="post" action="{{ base }}/open/card"></form>
+
+  <datalist id="dl-roles">{% for r in ch.roles %}<option value="{{ r }}">{% endfor %}</datalist>
+  <datalist id="dl-groups">{% for g in ch.groups %}<option value="{{ g }}">{% endfor %}</datalist>
+  <template id="tpl-official">{{ official_row("__i__", {"role": "", "fio": "", "category": "", "territory": ""}, {}, ch) }}</template>
+  <template id="tpl-zachet">{{ zachet_block("__i__", empty_zachet, {}, ch) }}</template>
+{% endif %}
+{% endblock %}

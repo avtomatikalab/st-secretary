@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_form.html" import issue_list %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Соревнования</h1>
+    <p class="lead">Каждое соревнование — отдельная папка на этом компьютере: карточка, заявки команд, сводки.</p>
+  </div>
+  <a class="btn btn-primary btn-big" href="/new">{{ icon("plus") }}Новое соревнование</a>
+</div>
+
+{% if import_errors %}
+<div class="panel panel-err">
+  <h2>{{ icon("error") }} Карточку загрузить не получилось</h2>
+  <ul>{% for e in import_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  <p class="muted">Исправьте файл в Excel и загрузите ещё раз.</p>
+</div>
+{% endif %}
+
+{% if items %}
+<div class="comp-list">
+  {% for it in items %}
+  <a class="comp-card" href="{{ it.base }}">
+    <div class="comp-date">{% if it.comp %}{{ it.comp.date_from|d }}{% endif %}</div>
+    <div class="comp-main">
+      <strong>{{ it.comp.title if it.comp else it.folder.id }}</strong>
+      {% if it.comp %}
+      <span>{{ it.comp.place }} · {{ it.comp.zachety|map(attribute="key")|join(", ") or "зачёты не заданы" }}</span>
+      {% else %}
+      <span class="text-err">Карточка не читается — откройте, чтобы увидеть, что исправить</span>
+      {% endif %}
+    </div>
+    <div class="comp-stat"><b>{{ it.files }}</b><span>заявок</span></div>
+    {{ icon("arrow") }}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+  {{ icon("logo", 48) }}
+  <h2>Пока нет ни одного соревнования</h2>
+  <p>Создайте новое — заполните название, даты и место. Или загрузите карточку, которую уже заполнили в Excel.</p>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Уже есть карточка в Excel?</h2>
+  <p class="muted">Файл «Карточка_соревнования.xlsx» с листами «Карточка», «ГСК», «Зачёты».</p>
+  <form class="inline-form" method="post" action="/import" enctype="multipart/form-data" data-busy="Загружаю…">
+    <input type="file" name="card" accept=".xlsx" required>
+    <button class="btn" type="submit">{{ icon("upload") }}Загрузить карточку</button>
+  </form>
+</div>
+
+<div class="data-dir">
+  <span>Данные хранятся в папке: <code>{{ data_dir }}</code></span>
+  <form method="post" action="/open-data"><button class="btn btn-ghost" type="submit">{{ icon("folder") }}Открыть папку</button></form>
+</div>
+{% endblock %}

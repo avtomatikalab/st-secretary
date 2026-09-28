@@ -1,0 +1,227 @@
+"""Интерфейс в браузере: страницы открываются, карточка сохраняется без потерь, заявки проверяются."""
+
+import os
+import re
+from dataclasses import replace
+from html.parser import HTMLParser
+from urllib.parse import quote
+
+import pytest
+
+pytest.importorskip("fastapi")
+from fastapi.testclient import TestClient  # noqa: E402
+
+from st_secretary.importers.card_xlsx import load_card, write_card  # noqa: E402
+from st_secretary.web.app import create_app  # noqa: E402
+
+from conftest import make_application  # noqa: E402
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+MAIN = {"title": "Чемпионат города N по спортивному туризму", "kind": "Чемпионат", "level": "MUNICIPAL",
+        "date_from": "2025-09-20", "date_to": "2025-09-21", "place": "окрестности г. N",
+        "host_territory": "Красноярск", "organizers": "Федерация спортивного туризма", "calendar_number": "",
+        "norms_edition": "2022-2025", "percent_method": "POINTS_RELATIVE_TO_WINNER", "preapp_deadline": "2025-09-17"}
+
+
+class FormFields(HTMLParser):
+    """Поля формы так, как их отправит браузер (содержимое <template> — заготовки строк — не отправляется)."""
+
+    def __init__(self, html: str, form_id: str):
+        super().__init__()
+        self.form_id, self.inside, self.tpl = form_id, False, 0
+        self.fields: dict[str, str] = {}
+        self._select = self._textarea = None
+        self._first = None
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "form" and a.get("id") == self.form_id:
+            self.inside = True
+        if tag == "template":
+            self.tpl += 1
+        if not self.inside or self.tpl:
+            return
+        if tag == "input" and a.get("name") and a.get("type") not in ("file", "submit"):
+            self.fields[a["name"]] = a.get("value") or ""
+        elif tag == "select":
+            self._select, self._first = a.get("name"), None
+        elif tag == "option" and self._select:
+            if self._first is None:
+                self._first = a.get("value", "")
+                self.fields[self._select] = self._first
+            if "selected" in a:
+                self.fields[self._select] = a.get("value", "")
+        elif tag == "textarea":
+            self._textarea = a.get("name")
+            self.fields[self._textarea] = ""
+
+    def handle_endtag(self, tag):
+        if tag == "template":
+            self.tpl -= 1
+        elif tag == "form":
+            self.inside = False
+        elif tag == "select":
+            self._select = None
+        elif tag == "textarea":
+            self._textarea = None
+
+    def handle_data(self, data):
+        if self._textarea and self.inside and not self.tpl:
+            self.fields[self._textarea] += data
+
+
+@pytest.fixture
+def opened():
+    return []
+
+
+@pytest.fixture
+def client(tmp_path, opened):
+    return TestClient(create_app(tmp_path / "данные", opener=opened.append))
+
+
+def base(folder) -> str:
+    return "/c/" + quote(folder.id, safe="")
+
+
+def test_home_and_health(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "Пока нет ни одного соревнования" in r.text
+    assert client.get("/health").json()["app"] == "st-secretary"
+    assert client.get("/static/style.css").status_code == 200
+
+
+def test_new_competition_then_fill_card(client, tmp_path, psr_card):
+    r = client.post("/new", data=MAIN, follow_redirects=False)
+    assert r.status_code == 303
+    card_url = r.headers["location"].split("?")[0]
+    page = client.get(r.headers["location"])
+    assert "Соревнование создано" in page.text and "Главный секретарь" in page.text
+    folder = tmp_path / "данные" / "2025-09-20 Чемпионат города N по спортивному туризму"
+    assert (folder / "Карточка_соревнования.xlsx").is_file() and (folder / "Предзаявки").is_dir()
+
+    data = FormFields(page.text, "cardform").fields
+    roles = {v: k.split("-")[1] for k, v in data.items() if k.endswith("-role")}
+    js, gs = roles["Главный судья"], roles["Главный секретарь"]
+    data |= {f"g-{js}-fio": "Судьин Иван Петрович", f"g-{js}-category": "СС1К", f"g-{js}-territory": "г. Красноярск",
+             f"g-{gs}-fio": "Секретарёва Анна Ивановна", f"g-{gs}-category": "СС2К", f"g-{gs}-territory": "г. Красноярск",
+             "z-0-group": "М/Ж", "z-0-distance_class": "3", "z-0-discipline_code": "0840161811Я", "z-0-age_from": "22",
+             "z-0-age_from_by_gsk": "16", "z-0-team_size": "3", "z-0-min_men": "1", "z-0-min_women": "1",
+             "z-0-fee": "3000"}
+    r = client.post(card_url, data=data, follow_redirects=False)
+    assert r.status_code == 303
+    assert load_card(folder / "Карточка_соревнования.xlsx") == psr_card
+    assert "Карточка заполнена, замечаний нет" in client.get(r.headers["location"]).text
+
+
+def test_card_page_roundtrip_loses_nothing(client, psr_card):
+    """Открыли карточку и нажали «Сохранить», ничего не меняя, — файл тот же по содержанию."""
+    psr_card.officials.append(replace(psr_card.officials[0], role="Судья-информатор", fio="Инфо Олег Олегович",
+                                      category="судья без категории"))  # категория не из списка — не теряется
+    f = client.app.state.store.create(psr_card)
+    url = base(f) + "/card"
+    page = client.get(url).text
+    assert "(не из списка)" in page
+    r = client.post(url, data=FormFields(page, "cardform").fields, follow_redirects=False)
+    assert r.status_code == 303
+    assert load_card(f.card_path) == psr_card
+
+
+def test_errors_shown_next_to_fields_and_input_kept(client):
+    r = client.post("/new", data=MAIN | {"title": "", "date_to": "2025-09-19"})
+    assert r.status_code == 422
+    assert "обязательное поле" in r.text and "дата окончания раньше даты начала" in r.text
+    assert 'value="окрестности г. N"' in r.text  # введённое не пропало
+    assert client.app.state.store.all() == []
+
+
+def test_card_changed_in_excel_is_not_overwritten(client, psr_card):
+    f = client.app.state.store.create(psr_card)
+    url = base(f) + "/card"
+    data = FormFields(client.get(url).text, "cardform").fields | {"place": "моё место"}
+    write_card(f.card_path, replace(psr_card, place="место из Excel"))  # кто-то поправил в Excel
+    os.utime(f.card_path, ns=(10**18, 10**18))
+    r = client.post(url, data=data)
+    assert r.status_code == 409 and "изменили в Excel" in r.text
+    assert load_card(f.card_path).place == "место из Excel"
+    r = client.post(url, data=data | {"force": "1"}, follow_redirects=False)
+    assert r.status_code == 303 and load_card(f.card_path).place == "моё место"
+
+
+def test_zachet_field_errors(client, psr_card):
+    f = client.app.state.store.create(psr_card)
+    url = base(f) + "/card"
+    data = FormFields(client.get(url).text, "cardform").fields | {"z-0-distance_class": "", "z-0-fee": "три тысячи"}
+    r = client.post(url, data=data)
+    assert r.status_code == 422 and "нужно целое число" in r.text
+    assert load_card(f.card_path) == psr_card
+
+
+def lesoviki(tmp_path):
+    return make_application(tmp_path / "Лесовики.xlsx", "Лесовики", "Красноярск", "Иванов Пётр Сергеевич",
+                            "89131234567, les@mail.ru", 3, [
+                                ["Лесовики", "Красноярск", "Иванов Пётр Сергеевич", "Иванов Пётр Сергеевич",
+                                 "17.10.1989", "II", "м", "М/Ж", 3],
+                                ["Лесовики", "Красноярск", "Иванов Пётр Сергеевич", "Смирнова Анна Олеговна",
+                                 "12.03.2001", "КМС", "ж", "М/Ж", 3],
+                                ["Лесовики", "Красноярск", "Иванов Пётр Сергеевич", "Кузьмин Олег Игоревич",
+                                 "29.02.1995", "б/р", "м", "М/Ж", 3],
+                            ]).read_bytes()
+
+
+def test_preapps_upload_check_summary_remove(client, tmp_path, psr_card, opened):
+    f = client.app.state.store.create(psr_card)
+    b = base(f)
+    data = lesoviki(tmp_path)
+    r = client.post(b + "/preapps/upload", files=[("files", ("Лесовики.xlsx", data, XLSX)),
+                                                  ("files", ("заметки.txt", b"x", "text/plain"))])
+    assert "добавлено заявок: 1" in r.text and "пропущено файлов не Excel: 1" in r.text
+    assert "такой даты не существует" in r.text  # 29.02.1995 — ошибка видна
+    assert "+7 913 123-45-67" in r.text  # телефон представителя — рядом с замечаниями
+    assert re.search(r'<b>1</b><span>ошибок', r.text)
+
+    r = client.post(b + "/preapps/summary", follow_redirects=False)
+    assert r.status_code == 303 and opened == [f.summary_path] and f.summary_path.is_file()
+    r = client.get(b + "/preapps/summary.xlsx")
+    assert r.status_code == 200 and r.content[:2] == b"PK"
+
+    r = client.post(b + "/preapps/upload", files=[("files", ("Лесовики.xlsx", data, XLSX))])
+    assert "заменено исправленными: 1" in r.text
+
+    r = client.post(b + "/preapps/remove", data={"name": "Лесовики.xlsx"})
+    assert "убрана из обработки" in r.text
+    assert not (f.preapp_dir / "Лесовики.xlsx").exists()
+    assert (f.preapp_dir / "Убранные" / "Лесовики.xlsx").is_file()  # не удалена, а перенесена
+
+
+def test_preapps_wait_for_card_without_errors(client, tmp_path, psr_card):
+    psr_card.zachety = []
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
+    r = client.get(base(f) + "/preapps")
+    assert "Сначала исправьте карточку" in r.text and "Лесовики.xlsx" in r.text
+    assert client.post(base(f) + "/preapps/summary").status_code == 409
+
+
+def test_overview_steps_and_errors(client, psr_card, opened):
+    f = client.app.state.store.create(psr_card)
+    r = client.get(base(f))
+    assert "Дальше по порядку" in r.text and "Комиссия по допуску" in r.text and "И.П. Судьин, СС1К" in r.text
+    assert "Протокол комиссии по допуску" in client.get(base(f) + "/step/admission").text
+    assert client.get(base(f) + "/step/card").status_code == 404  # готовый шаг открывается не здесь
+    assert client.get("/c/нет такого").status_code == 404
+    assert "Страница не найдена" in client.get("/c/..%2F..%2Fsecret").text
+    client.post(base(f) + "/open/folder")
+    assert opened == [f.path]
+
+
+def test_import_card_from_excel(client, tmp_path, psr_card):
+    card = write_card(tmp_path / "card.xlsx", psr_card)
+    r = client.post("/import", files={"card": ("Карточка.xlsx", card.read_bytes(), XLSX)})
+    assert "Карточка загружена из Excel" in r.text and psr_card.title in r.text
+    [f] = client.app.state.store.all()
+    assert load_card(f.card_path) == psr_card
+    r = client.post("/import", files={"card": ("заявка.xlsx", b"not an excel file", XLSX)})
+    assert r.status_code == 422 and "не похож на карточку" in r.text

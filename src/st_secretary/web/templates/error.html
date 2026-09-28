@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ title }} — СТ-Секретарь{% endblock %}
+{% block content %}
+<div class="empty">
+  {{ icon("alert", 48) }}
+  <h1>{{ title }}</h1>
+  <p>{{ text }}</p>
+  {% if crash %}
+  <p class="muted">Ваши данные не пострадали. Если ошибка повторяется, пришлите разработчикам текст выше и опишите,
+    что делали перед этим.</p>
+  {% endif %}
+  <a class="btn btn-primary" href="/">На главную</a>
+</div>
+{% endblock %}

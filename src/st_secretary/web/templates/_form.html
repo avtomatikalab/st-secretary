@@ -1,0 +1,66 @@
+{# Поля формы. Ошибка показывается у поля; значение — всегда то, что ввёл человек. #}
+{% macro input(name, label, value, errors, type="text", hint="", required=False, cls="span-6", list=None, placeholder="") -%}
+<div class="field {{ cls }}{% if errors.get(name) %} has-error{% endif %}">
+  <label for="f-{{ name }}">{{ label }}{% if required %}<span class="req" title="обязательное поле">*</span>{% endif %}</label>
+  <input id="f-{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ value }}"{% if list %} list="{{ list }}"{% endif %}{% if placeholder %} placeholder="{{ placeholder }}"{% endif %}{% if type == "number" %} inputmode="numeric" min="0"{% endif %}>
+  {% if errors.get(name) %}<p class="field-error">{{ errors[name] }}</p>{% endif %}
+  {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro select(name, label, value, options, errors, hint="", required=False, cls="span-6", empty=None) -%}
+<div class="field {{ cls }}{% if errors.get(name) %} has-error{% endif %}">
+  <label for="f-{{ name }}">{{ label }}{% if required %}<span class="req" title="обязательное поле">*</span>{% endif %}</label>
+  <select id="f-{{ name }}" name="{{ name }}">
+    {% if empty is not none %}<option value="">{{ empty }}</option>{% endif %}
+    {# значение не из списка (например, вписано в Excel) не теряем молча — показываем как есть #}
+    {% if value and value not in options|map("first")|list %}<option value="{{ value }}" selected>{{ value }} (не из списка)</option>{% endif %}
+    {% for v, text in options %}<option value="{{ v }}"{% if v == value %} selected{% endif %}>{{ text }}</option>{% endfor %}
+  </select>
+  {% if errors.get(name) %}<p class="field-error">{{ errors[name] }}</p>{% endif %}
+  {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro textarea(name, label, value, errors, hint="", cls="span-12", rows=3) -%}
+<div class="field {{ cls }}{% if errors.get(name) %} has-error{% endif %}">
+  <label for="f-{{ name }}">{{ label }}</label>
+  <textarea id="f-{{ name }}" name="{{ name }}" rows="{{ rows }}">{{ value }}</textarea>
+  {% if errors.get(name) %}<p class="field-error">{{ errors[name] }}</p>{% endif %}
+  {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{# Основные реквизиты — одинаково на странице «Новое соревнование» и в карточке. #}
+{% macro main_fields(m, errors, ch) -%}
+<p class="hint req-legend"><span class="req">*</span> — обязательные поля</p>
+<div class="grid">
+  {{ input("title", "Наименование соревнований", m.title, errors, required=True, cls="span-12",
+           hint="Полностью, как в Положении: «Чемпионат г. Красноярска по спортивному туризму»") }}
+  {{ select("kind", "Вид соревнований", m.kind, ch.kinds, errors, required=True, cls="span-4") }}
+  {{ select("level", "Уровень (статус)", m.level, ch.levels, errors, required=True, cls="span-8",
+            hint="Влияет на разряды: I — не ниже соревнований субъекта РФ, II — не ниже муниципальных") }}
+  {{ input("date_from", "Дата начала", m.date_from, errors, type="date", required=True, cls="span-4") }}
+  {{ input("date_to", "Дата окончания", m.date_to, errors, type="date", required=True, cls="span-4") }}
+  {{ input("preapp_deadline", "Приём предзаявок до", m.preapp_deadline, errors, type="date", cls="span-4") }}
+  {{ input("place", "Место проведения", m.place, errors, required=True, cls="span-6",
+           hint="Как в шапке протоколов: «окрестности г. Красноярска»") }}
+  {{ input("host_territory", "Территория организаторов", m.host_territory, errors, required=True, cls="span-6",
+           hint="Как писать ваш населённый пункт в протоколах: «Красноярск». Эту территорию система никогда не «исправляет».") }}
+  {{ textarea("organizers", "Проводящие организации", m.organizers, errors, hint="Каждую — с новой строки") }}
+  {{ input("calendar_number", "Номер в календарном плане", m.calendar_number, errors, cls="span-4",
+           hint="ЕКП или календарь субъекта/МО, если есть") }}
+  {{ select("norms_edition", "Редакция разрядных норм", m.norms_edition, ch.norms, errors, required=True, cls="span-3") }}
+  {{ select("percent_method", "Методика «% от победителя»", m.percent_method, ch.percent, errors, cls="span-5",
+            hint="Для балльных дисциплин (ПСР, горные). «Не задана» — нормативы не считаются") }}
+</div>
+{%- endmacro %}
+
+{% macro issue_list(issues) -%}
+<ul class="issues-simple">
+  {% for i in issues %}
+  <li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>
+    <span>{% if i.field %}<b>{{ i.field }}:</b> {% endif %}{{ i.text }}</span></li>
+  {% endfor %}
+</ul>
+{%- endmacro %}

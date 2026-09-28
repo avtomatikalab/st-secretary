@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_form.html" import main_fields %}
+{% block title %}Новое соревнование — СТ-Секретарь{% endblock %}
+{% block content %}
+<a class="back" href="/">{{ icon("back", 18) }}Все соревнования</a>
+<h1>Новое соревнование</h1>
+<p class="lead">Сначала — основные реквизиты. Судейскую коллегию и зачёты заполните на следующем шаге.</p>
+
+{% if errors %}
+<div class="flash flash-err" role="alert">{{ icon("alert") }}<div>Проверьте поля, отмеченные красным.</div></div>
+{% endif %}
+
+<form method="post" action="/new" class="panel" data-guard>
+  {{ main_fields(form.main, errors, ch) }}
+  <div class="form-actions">
+    <button class="btn btn-primary btn-big" type="submit">Создать соревнование{{ icon("arrow") }}</button>
+    <a class="btn btn-ghost" href="/">Отмена</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,3 +1,5 @@
 * text=auto eol=lf
+# Командные файлы Windows работают надёжно только с переводами строк CRLF.
+*.bat text eol=crlf
 *.png binary
 *.jpg binary

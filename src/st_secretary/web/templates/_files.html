@@ -1,0 +1,26 @@
+{% from "_icons.html" import icon %}
+{# Таблица файлов заявок с кнопкой «Убрать». rows — [{file, team, counts}]. #}
+{% macro files_table(rows, base) -%}
+<div class="table-wrap">
+<table class="tbl">
+  <thead><tr><th>Файл</th><th>Команда</th><th>Участников</th><th>Ошибок</th><th>Проверить</th><th></th></tr></thead>
+  <tbody>
+  {% for g in rows %}
+  <tr>
+    <td>{{ icon("file", 16) }} {{ g.file }}</td>
+    <td>{% if g.team %}{{ g.team.team }}{% elif g.counts %}<span class="text-err">файл не прочитан — см. замечания</span>{% else %}—{% endif %}</td>
+    <td>{{ g.team.entries|length if g.team else "" }}</td>
+    <td>{% if g.counts and g.counts[ERROR] %}<span class="badge badge-error">{{ g.counts[ERROR] }}</span>{% endif %}</td>
+    <td>{% if g.counts and g.counts[WARNING] %}<span class="badge badge-warning">{{ g.counts[WARNING] }}</span>{% endif %}</td>
+    <td class="cell-action">
+      <form method="post" action="{{ base }}/preapps/remove" data-confirm="Убрать заявку «{{ g.file }}» из обработки? Файл не удаляется — он переносится в папку «Предзаявки\Убранные».">
+        <input type="hidden" name="name" value="{{ g.file }}">
+        <button class="btn btn-ghost btn-small" type="submit">{{ icon("archive", 16) }}Убрать</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{%- endmacro %}

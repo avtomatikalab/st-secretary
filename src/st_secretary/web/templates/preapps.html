@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_form.html" import issue_list %}
+{% from "_files.html" import files_table %}
+{% block title %}Предзаявки — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Предварительные заявки</h1>
+<p class="lead">Добавьте файлы заявок команд — система сразу проверит их и покажет, что исправить.
+  Исходные файлы не меняются: всё, что исправлено, видно в списке замечаний.</p>
+
+{% if card_errors or blocked %}
+<div class="panel panel-err">
+  <h2>{{ icon("error") }} Сначала исправьте карточку соревнования</h2>
+  <p>Без неё заявки не с чем сверять: зачёты, возраст, разряды берутся из карточки.</p>
+  {{ issue_list(blocked or card_errors) }}
+  <a class="btn btn-primary" href="{{ base }}/card">{{ icon("edit") }}Открыть карточку</a>
+</div>
+{% endif %}
+
+<form method="post" action="{{ base }}/preapps/upload" enctype="multipart/form-data" class="dropzone" data-dropzone>
+  {{ icon("upload", 40) }}
+  <p class="dz-title">Перетащите сюда файлы заявок</p>
+  <p class="muted">Excel (.xlsx или .xls) по бланку предзаявки, можно сразу несколько.
+    Исправленная заявка с тем же именем файла заменит прежнюю.</p>
+  <label class="btn btn-primary btn-big">{{ icon("file") }}Выбрать файлы<input type="file" name="files" multiple accept=".xlsx,.xls" class="visually-hidden"></label>
+  <p class="dz-busy">{{ icon("clock") }} Загружаю и проверяю…</p>
+  <noscript><button class="btn" type="submit">Загрузить</button></noscript>
+</form>
+<div class="dz-alt">
+  <span class="muted">Или скопируйте файлы в папку заявок и обновите страницу (F5):</span>
+  <form method="post" action="{{ base }}/open/preapps"><button class="btn btn-ghost btn-small" type="submit">{{ icon("folder", 18) }}Открыть папку «Предзаявки»</button></form>
+</div>
+
+{% if result %}
+{% set t = view.totals %}
+<div class="tiles">
+  <div class="tile"><b>{{ result.teams|length }}</b><span>команд{% if result.teams|length != files|length %} (файлов {{ files|length }}){% endif %}</span></div>
+  <div class="tile"><b>{{ result.entries|length }}</b><span>участников</span></div>
+  <div class="tile tile-error"><b>{{ t[ERROR] }}</b><span>ошибок — исправить до комиссии</span></div>
+  <div class="tile tile-warning"><b>{{ t[WARNING] }}</b><span>проверить — нужно решение</span></div>
+  <div class="tile tile-fixed"><b>{{ t[FIXED] }}</b><span>исправлено системой</span></div>
+</div>
+
+<div class="panel next">
+  <h2>Что дальше</h2>
+  <ol class="next-steps">
+    <li>Разберите <b class="text-err">ошибки</b> и то, что нужно <b class="text-warn">проверить</b> — ниже, по командам,
+      рядом телефоны представителей. Исправленную заявку просто перетащите сюда ещё раз.</li>
+    <li>Откройте сводку и перенесите участников в СЕКРЕТАРЬ_ST — по одной команде.
+      <div class="actions">
+        <form method="post" action="{{ base }}/preapps/summary" data-busy="Готовлю сводку…">
+          <button class="btn btn-primary" type="submit">{{ icon("table") }}Открыть сводку в Excel</button>
+        </form>
+        <a class="btn" href="{{ base }}/preapps/summary.xlsx">{{ icon("download") }}Скачать сводку</a>
+      </div>
+    </li>
+  </ol>
+  <details class="howto">
+    <summary>Как перенести в СЕКРЕТАРЬ_ST</summary>
+    <ol>
+      <li>В сводке на листе «Заявка для СЕКРЕТАРЬ» выделите строки <b>одной</b> команды, колонки A–O, и скопируйте.</li>
+      <li>В СЕКРЕТАРЬ_ST на листе «Заявка» встаньте в ячейку A2 → Специальная вставка → Значения.</li>
+      <li>Проверьте, что колонка «Зачет» (P) заполнилась так же, как колонка P в сводке, и нажмите «ИМПОРТ В БАЗУ».</li>
+      <li>Повторите для следующей команды. Колонку A (№) не меняйте — это номер участника в команде.</li>
+    </ol>
+  </details>
+</div>
+
+{% if view.general %}<div class="panel">{{ issue_list(view.general) }}</div>{% endif %}
+
+<div class="tabs" role="tablist" aria-label="Результаты проверки">
+  <button class="tab" role="tab" id="tab-issues" aria-controls="panel-issues" aria-selected="true" type="button">Замечания по командам</button>
+  <button class="tab" role="tab" id="tab-people" aria-controls="panel-people" aria-selected="false" type="button">Участники ({{ result.entries|length }})</button>
+  <button class="tab" role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false" type="button">Файлы заявок ({{ files|length }})</button>
+</div>
+
+<section class="tabpanel" id="panel-issues" role="tabpanel" aria-labelledby="tab-issues">
+  <div class="chips" aria-label="Что показывать">
+    <button type="button" class="chip chip-error" data-filter="error" aria-pressed="true">Ошибки <b>{{ t[ERROR] }}</b></button>
+    <button type="button" class="chip chip-warning" data-filter="warning" aria-pressed="true">Проверить <b>{{ t[WARNING] }}</b></button>
+    <button type="button" class="chip chip-fixed" data-filter="fixed" aria-pressed="false">Исправлено системой <b>{{ t[FIXED] }}</b></button>
+  </div>
+  {% for g in view.groups %}
+  <article class="team">
+    <header class="team-head">
+      <div class="team-title">
+        <h3>{{ g.team.team if g.team else g.file }}</h3>
+        {% if g.team %}<span class="muted">{{ g.team.territory }} · {{ g.team.entries|length }} чел.</span>{% endif %}
+      </div>
+      <div class="team-counts">
+        {% if g.counts[ERROR] %}<span class="badge badge-error">Ошибок: {{ g.counts[ERROR] }}</span>{% endif %}
+        {% if g.counts[WARNING] %}<span class="badge badge-warning">Проверить: {{ g.counts[WARNING] }}</span>{% endif %}
+        {% if not g.counts[ERROR] and not g.counts[WARNING] %}<span class="badge badge-fixed">{{ icon("check", 14) }} Всё в порядке</span>{% endif %}
+      </div>
+      {% if g.team %}
+      <div class="team-contact">{{ icon("phone", 16) }}
+        {{ g.team.representative or "представитель не указан" }}{% if g.team.phone %}, <a href="tel:{{ g.team.phone|replace(' ', '')|replace('-', '') }}">{{ g.team.phone }}</a>{% endif %}{% if g.team.email %}, <a href="mailto:{{ g.team.email }}">{{ g.team.email }}</a>{% endif %}
+      </div>
+      {% endif %}
+      <div class="team-file">{{ icon("file", 14) }} {{ g.file }}</div>
+    </header>
+    {% if g.issues %}
+    <ul class="issue-list">
+      {% for i in g.issues %}
+      <li class="issue sev-{{ i.severity }}" data-sev="{{ i.severity }}"{% if i.severity == FIXED %} hidden{% endif %}>
+        <span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>
+        <div class="issue-body">
+          {% if i.person %}<b>{{ i.person }}</b> — {% endif %}{{ i.text }}
+          {% if i.after %}<div class="change">было: <del>{{ i.before or "пусто" }}</del> → стало: <ins>{{ i.after }}</ins></div>
+          {% elif i.before %}<div class="change">в заявке: «{{ i.before }}»</div>{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if not g.counts[ERROR] and not g.counts[WARNING] %}
+    <p class="team-ok">{{ icon("check-circle", 18) }} Ошибок нет.{% if g.counts[FIXED] %} Система поправила мелочи ({{ g.counts[FIXED] }}) — включите «Исправлено системой», чтобы посмотреть.{% endif %}</p>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+
+<section class="tabpanel" id="panel-people" role="tabpanel" aria-labelledby="tab-people" hidden>
+  <div class="table-wrap">
+  <table class="tbl people">
+    <thead><tr><th>№</th><th>Фамилия Имя Отчество</th><th>Дата рождения</th><th>Разряд</th><th>Пол</th><th>Зачёт</th><th>Проверка</th></tr></thead>
+    {% for g in view.groups if g.team %}
+    <tbody>
+      <tr class="team-row"><th colspan="7">{{ g.team.team }} — {{ g.team.territory }}</th></tr>
+      {% for e in g.team.entries %}{% set w = g.worst.get(e.name.full) %}
+      <tr{% if w in (ERROR, WARNING) %} class="sev-{{ w }}"{% endif %}>
+        <td>{{ e.num_in_team }}</td>
+        <td>{{ e.name.full }}</td>
+        <td>{% if e.birth %}{{ e.birth|d }}{% elif e.birth_year %}{{ e.birth_year }}{% else %}—{% endif %}</td>
+        <td>{{ e.qual.label if e.qual is not none else "?" }}</td>
+        <td>{{ e.sex or "?" }}</td>
+        <td>{{ e.zachet.key if e.zachet else "—" }}</td>
+        <td>{% if w == ERROR %}<span class="badge badge-error">Ошибка</span>{% elif w == WARNING %}<span class="badge badge-warning">Проверить</span>{% else %}<span class="text-ok">{{ icon("check", 18) }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% endfor %}
+  </table>
+  </div>
+</section>
+
+<section class="tabpanel" id="panel-files" role="tabpanel" aria-labelledby="tab-files" hidden>
+  {{ files_table(view.groups, base) }}
+</section>
+
+{% elif files %}
+<div class="panel">
+  <h2>Файлы заявок ({{ files|length }})</h2>
+  {{ files_table(plain_rows, base) }}
+</div>
+{% endif %}
+{% endblock %}

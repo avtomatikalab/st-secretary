@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ step.title }} — СТ-Секретарь{% endblock %}
+{% block content %}
+<p class="eyebrow">{{ icon("clock", 18) }} В разработке · этап {{ step.stage }}</p>
+<h1>{{ step.title }}</h1>
+<p class="lead">{{ step.lead }}</p>
+<div class="panel">
+  <h2>Что здесь будет</h2>
+  <ul class="will">
+    {% for w in step.will %}<li>{{ icon("check", 20) }}<span>{{ w }}</span></li>{% endfor %}
+  </ul>
+</div>
+{% if step.now %}
+<div class="panel panel-muted">
+  <h2>А пока</h2>
+  <p>{{ step.now }}</p>
+</div>
+{% endif %}
+<p class="muted">Есть пожелания к этому шагу — расскажите разработчикам: лучше сразу сделать так, как удобно секретариату.</p>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_form.html" import issue_list %}
+{% block content %}
+{% if comp %}
+<h1>{{ comp.title }}</h1>
+<p class="lead">{{ comp.dates_text }} · {{ comp.place }} · {{ level_labels[comp.level] }}</p>
+{% else %}
+<h1>{{ folder.id }}</h1>
+<div class="panel panel-err">
+  <h2>{{ icon("error") }} Карточка соревнования не читается</h2>
+  {{ issue_list(card_errors) }}
+  <form method="post" action="{{ base }}/open/card"><button class="btn btn-primary" type="submit">{{ icon("table") }}Открыть карточку в Excel</button></form>
+</div>
+{% endif %}
+
+{% if comp %}
+{% set errs = card_issues|selectattr("severity", "equalto", ERROR)|list %}
+{% set warns = card_issues|selectattr("severity", "equalto", WARNING)|list %}
+<div class="overview-grid">
+  <a class="panel step-card" href="{{ base }}/card">
+    <div class="step-card-head"><span class="step-num">1</span><h2>Карточка соревнования</h2></div>
+    {% if errs %}<p class="status text-err">{{ icon("error") }} Ошибок: {{ errs|length }} — исправьте до работы с заявками</p>
+    {% elif warns %}<p class="status text-warn">{{ icon("alert") }} Заполнена, проверить: {{ warns|length }}</p>
+    {% else %}<p class="status text-ok">{{ icon("check-circle") }} Заполнена, замечаний нет</p>{% endif %}
+    <dl class="facts">
+      {% set gs = comp.official("Главный судья") %}{% set sec = comp.official("Главный секретарь") %}
+      <dt>Главный судья</dt><dd>{{ gs.signature if gs else "—" }}</dd>
+      <dt>Главный секретарь</dt><dd>{{ sec.signature if sec else "—" }}</dd>
+      <dt>Зачёты</dt><dd>{{ comp.zachety|map(attribute="key")|join(", ") or "—" }}</dd>
+      <dt>Разрядные нормы</dt><dd>{{ comp.norms_edition }}</dd>
+    </dl>
+    <span class="step-card-go">Открыть {{ icon("arrow", 18) }}</span>
+  </a>
+  <a class="panel step-card" href="{{ base }}/preapps">
+    <div class="step-card-head"><span class="step-num">2</span><h2>Предварительные заявки</h2></div>
+    {% if pre %}
+    <div class="mini-tiles">
+      <div><b>{{ pre.teams }}</b><span>команд</span></div>
+      <div><b>{{ pre.entries }}</b><span>участников</span></div>
+      <div class="{% if pre.errors %}text-err{% endif %}"><b>{{ pre.errors }}</b><span>ошибок</span></div>
+      <div class="{% if pre.warnings %}text-warn{% endif %}"><b>{{ pre.warnings }}</b><span>проверить</span></div>
+    </div>
+    {% elif files %}<p class="status">Файлов заявок: {{ files|length }}{% if errs %} — проверка после исправления карточки{% endif %}</p>
+    {% else %}<p class="status muted">Заявок пока нет. Добавьте файлы команд.</p>{% endif %}
+    {% if comp.preapp_deadline %}<p class="muted">Приём предзаявок до {{ comp.preapp_deadline|d }}</p>{% endif %}
+    <span class="step-card-go">Открыть {{ icon("arrow", 18) }}</span>
+  </a>
+</div>
+
+<h2 class="section-title">Дальше по порядку</h2>
+<p class="muted">Эти шаги появятся в следующих версиях. Нажмите, чтобы посмотреть, что в них будет.</p>
+<ol class="roadmap">
+  {% for s in steps if not s.ready %}
+  <li><a href="{{ step_url(base, s) }}">
+    <span class="step-num">{{ loop.index + 2 }}</span>
+    <div><b>{{ s.title }}</b><span>{{ s.lead }}</span></div>
+    <span class="soon">этап {{ s.stage }}</span>
+  </a></li>
+  {% endfor %}
+</ol>
+{% endif %}
+{% endblock %}
