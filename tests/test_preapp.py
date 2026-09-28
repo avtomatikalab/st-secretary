@@ -1,0 +1,132 @@
+"""Предзаявки: все дефекты, встреченные в реальных заявках, на выдуманных людях."""
+
+from datetime import date
+
+from openpyxl import load_workbook
+
+from st_secretary.cli import main
+from st_secretary.exporters.preapp_xlsx import write_preapp_report
+from st_secretary.importers.card_xlsx import write_card
+from st_secretary.importers.preapp_xlsx import read_preapplication
+from st_secretary.issues import ERROR, FIXED, WARNING
+from st_secretary.preapp import process
+
+from conftest import make_application
+
+
+def texts(result, severity=None, team=None):
+    return " | ".join(i.text for i in result.issues
+                      if (severity is None or i.severity == severity) and (team is None or i.team == team))
+
+
+def build(tmp_path):
+    a = make_application(tmp_path / "a.xlsx", "Лесовики", "Красноярск", "Иванов Пётр Сергеевич",
+                         "89131234567, les@mail.ru", 3, [
+                             ["Лесовики", "Красноярск", "Иванов Пётр Сергеевич", "Иванов ПётрСергеевич",
+                              "17.10.1989", "II", "м", "м/ж", 3],
+                             ["Лесов", "Краснорярск ", "Иванов Пётр Сергеевич", "Смирнова Анна Олеговна12.03.2001",
+                              None, "КМС", "ж", "М/Ж", None],
+                             ["Лесовики", "Красноярск", "Иванов Пётр Сергеевич", "Кузьмин Олег Игоревич",
+                              "29.02.1995", "б/р", "ж", None, 3],
+                         ])
+    b = make_application(tmp_path / "b.xlsx", " ", "г. Томск", "Орлова Мария Ивановна", None, 4, [
+        ["Сосна", "г.Томск", "Орлова Мария Ивановна", "Орлова МарияИвановна", "07/12/2000", "III", "ж", "М/Ж", 3],
+        ["Сосна", "г.Томск", "Орлова Мария Ивановна", "Пестов Юрий Андреевич", "01.01.2009", "2ю", "м", "М/Ж", 3],
+        ["Сосна", "г.Томск", "Орлова Мария Ивановна", "Смирнова Анна Олеговна", "12.03.2001", "?", "ж", "Ю/Д", 3],
+    ])
+    return [read_preapplication(a), read_preapplication(b)]
+
+
+def test_reading_skips_sample_and_empty_rows(tmp_path):
+    apps = build(tmp_path)
+    assert [len(a.rows) for a in apps] == [3, 3]
+    assert apps[0].team == "Лесовики" and apps[0].contacts.startswith("8913")
+
+
+def test_cleaning_and_checks(tmp_path, psr_card):
+    r = process(build(tmp_path), psr_card)
+    first, second = r.teams
+    # ФИО, даты, пол
+    assert [e.name.full for e in first.entries] == ["Иванов Пётр Сергеевич", "Смирнова Анна Олеговна", "Кузьмин Олег Игоревич"]
+    assert first.entries[1].birth == date(2001, 3, 12)
+    assert "перенесена в колонку даты" in texts(r, FIXED)
+    assert "такой даты не существует" in texts(r, ERROR)
+    assert "отчество «Игоревич» — мужское" in texts(r, WARNING)
+    # команда, территория, группа, класс
+    assert {e.team for e in first.entries} == {"Лесовики"} and "«Лесов» приведено к «Лесовики»" in texts(r, FIXED)
+    assert first.territory == "Красноярск"
+    assert all(e.group == "М/Ж" and e.distance_class == 3 for e in first.entries)
+    assert all(e.team_dist == "1" for e in first.entries)  # ПСР — только командная дистанция
+    assert first.phone == "+7 913 123-45-67" and first.email == "les@mail.ru"
+    # вторая заявка: пустая шапка, Томск, возраст, разряд, неизвестная группа
+    assert second.team == "Сосна" and second.territory == "Томск"
+    assert "не указано название команды" in texts(r, WARNING, "Сосна")
+    assert "по решению ГСК" in texts(r, WARNING, "Сосна")  # 16 лет в 2025 г.
+    assert "не распознан разряд" in texts(r, ERROR, "Сосна")
+    assert "«Ю/Д» и класс «3» не совпадают" in texts(r, ERROR, "Сосна")
+    assert "указано участников: 4, в таблице: 3" in texts(r, WARNING, "Сосна")
+    assert "нет контактов" in texts(r, WARNING, "Сосна")
+    assert "прочитана как день/месяц/год" in texts(r, FIXED, "Сосна")
+    # один человек в двух командах
+    assert "участник заявлен и в команде «Лесовики»" in texts(r, ERROR, "Сосна")
+
+
+def test_host_territory_is_never_changed(tmp_path, psr_card):
+    rows = [["Т", "Краснорярск", "Иванов Пётр Сергеевич", f"Иванов{i} Пётр Сергеевич", "01.01.1990", "б/р",
+             "м" if i else "ж", "М/Ж", 3] for i in range(3)]
+    typo = make_application(tmp_path / "t.xlsx", "Т", "Краснорярск", "Иванов Пётр Сергеевич", "89130000000", 3, rows)
+    ok = make_application(tmp_path / "o.xlsx", "О", "Красноярск", "Петров Иван Ильич", "89130000001", 1,
+                          [["О", "Красноярск", "Петров Иван Ильич", "Петров Иван Ильич", "01.01.1990", "б/р", "м",
+                            "М/Ж", 3]])
+    r = process([read_preapplication(typo), read_preapplication(ok)], psr_card)
+    assert {t.territory for t in r.teams} == {"Красноярск"}
+    assert "исправлена на «Краснорярск»" not in texts(r)
+
+
+def test_team_composition(tmp_path, psr_card):
+    rows = [["Мальчики", "Красноярск", "Сидоров Олег Петрович", n, "01.01.2008", "б/р", "м", "М/Ж", 3]
+            for n in ("Сидоров Олег Петрович", "Попов Иван Ильич")]
+    p = make_application(tmp_path / "m.xlsx", "Мальчики", "Красноярск", "Сидоров Олег Петрович", "89130000000", 2, rows)
+    r = process([read_preapplication(p)], psr_card)
+    t = texts(r, ERROR)
+    assert "в команде 2 чел., по Положению — 3" in t
+    assert "женщин в команде 0" in t
+    assert "нет участника 18 лет и старше" in t
+
+
+def test_broken_form_is_reported(tmp_path, psr_card):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active["A1"] = "что-то другое"
+    wb.save(tmp_path / "x.xlsx")
+    r = process([read_preapplication(tmp_path / "x.xlsx")], psr_card)
+    assert "не найдена таблица участников" in texts(r, ERROR)
+
+
+def test_report_workbook(tmp_path, psr_card):
+    r = process(build(tmp_path), psr_card)
+    out = write_preapp_report(r, psr_card, tmp_path / "svodka.xlsx")
+    wb = load_workbook(out)
+    assert wb.sheetnames == ["Итог", "Заявка для СЕКРЕТАРЬ", "Проверка", "Команды"]
+    z = wb["Заявка для СЕКРЕТАРЬ"]
+    assert z["A1"].value == "№ п/п" and z["E1"].value == "Фамилия Имя"
+    assert z["A2"].value.startswith("Лесовики")  # сразу под шапкой — строка команды, без пустой строки
+    first = [c.value for c in z[3]]
+    assert first[:10] == [1, "Лесовики", "Красноярск", "Иванов Пётр Сергеевич", "Иванов Пётр Сергеевич",
+                          first[5], "II", "м", "М/Ж", 3]
+    assert first[14] == 1 and first[15] == "М/Ж_3"  # номер группы — числом
+    assert z.cell(3, 6).number_format == "DD.MM.YYYY"
+    assert wb["Проверка"].max_row == len(r.issues) + 1
+
+
+def test_cli_end_to_end(tmp_path, psr_card, capsys):
+    folder = tmp_path / "zayavki"
+    folder.mkdir()
+    build(folder)
+    card = write_card(tmp_path / "card.xlsx", psr_card)
+    assert main(["preapp", str(folder), "--card", str(card), "--out", str(tmp_path / "s.xlsx")]) == 0
+    out = capsys.readouterr().out
+    assert "Заявок: 2, команд: 2, участников: 6" in out
+    assert (tmp_path / "s.xlsx").exists()
+    assert main(["card-check", str(card)]) == 0

@@ -6,7 +6,11 @@ readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = []
+# openpyxl — чтение и запись xlsx (карточка соревнования, предзаявки, сводки для секретаря).
+dependencies = ["openpyxl>=3.1"]
+
+[project.scripts]
+st-secretary = "st_secretary.cli:main"
 
 [project.optional-dependencies]
 # Чтение старых книг Excel (.xls): СЕКРЕТАРЬ_ST, протоколы прошлых лет.

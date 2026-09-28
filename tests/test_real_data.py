@@ -74,6 +74,34 @@ def test_norms_match_source_table(edition, file, sheet):
         assert {k: v for k, v in s.items() if k != "label"} == {q.name: v for q, v in o.thresholds.items()}, s["label"]
 
 
+PSR2025 = "Эталонные_данные/ПСР/2025_Чемпионат_Красноярска"
+PREAPPS_2025 = "С семинара/С семинара/секретариат/19-21.09.2025 комби/Предзаявки"
+
+
+def test_psr2025_preapplications():
+    """13 реальных предзаявок ЧГ Красноярска ПСР-2025: проверяем количество и виды замечаний (без ФИО)."""
+    from st_secretary.importers.card_xlsx import load_card
+    from st_secretary.importers.preapp_xlsx import read_preapplication
+    from st_secretary.issues import ERROR, WARNING
+    from st_secretary.preapp import process
+
+    card = DATA / PSR2025 / "Карточка_соревнования.xlsx"
+    if not card.exists():
+        pytest.skip("нет карточки ПСР-2025 в эталонных данных")
+    comp = load_card(card)
+    files = sorted((DATA / PREAPPS_2025).glob("*.xlsx"))
+    r = process([read_preapplication(p) for p in files], comp)
+    assert (len(files), len(r.teams), len(r.entries)) == (13, 13, 39)
+    errors = [i.text for i in r.issues if i.severity == ERROR]
+    assert len(errors) == 1 and "не существует" in errors[0]  # 29 февраля невисокосного года
+    warnings = [i.text for i in r.issues if i.severity == WARNING]
+    assert sum("по решению ГСК" in w for w in warnings) == 8  # моложе 22 лет
+    assert sum("мужское" in w for w in warnings) == 1  # пол не совпадает с отчеством
+    assert not any("исправлена на «Краснорярск»" in i.text for i in r.issues)
+    assert {t.territory for t in r.teams} == {"Красноярск", "Томск"}
+    assert all(e.zachet is not None for e in r.entries)
+
+
 def test_psr2024_reconciliation():
     sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
     from reconcile_psr2024 import reconcile

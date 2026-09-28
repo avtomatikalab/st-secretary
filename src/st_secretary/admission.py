@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
 
+from st_secretary.issues import Issue
 from st_secretary.qualification import Qual
 from st_secretary.reference import admission_profiles
-
-
-@dataclass(frozen=True)
-class Issue:
-    severity: str  # "error" — не допускается; "warning" — нужно решение ГСК или уточнение
-    text: str
 
 
 def age_in_year(birth: date, year: int) -> int:
