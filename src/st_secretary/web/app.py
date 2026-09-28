@@ -33,7 +33,7 @@ from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, SEV
 from st_secretary.qualification import Qual
 from st_secretary.textclean import from_years
 from st_secretary.web import preapp_form as pf
-from st_secretary.web.review import CHECK, DONE, FIX, STATUS_LABEL, issue_key
+from st_secretary.web.review import CHECK, DONE, FIX, SAVE, STATUS_LABEL, is_clean, issue_key
 from st_secretary.web.forms import card_to_form, choices, empty_zachet, form_from_data, form_to_card
 from st_secretary.web.steps import BY_SLUG, STEPS
 from st_secretary.web.store import SUMMARY, CompFolder, Store
@@ -116,8 +116,13 @@ def _flash(request: Request) -> dict | None:
         "locked": ("err", "Сводка сейчас открыта в Excel. Закройте её там и нажмите кнопку ещё раз."),
         "opened": ("ok", "Открываю…"),
     }
+    auto_done = done is not None and done.endswith("-done")  # заявка без замечаний — «Проверено» сразу
+    if auto_done:
+        done = done[:-len("-done")]
     if done in texts:
         kind, text = texts[done]
+        if auto_done:
+            text = text.replace(" — результат ниже.", ".") + " Замечаний нет — заявка сразу отмечена «Проверено»."
         return {"kind": kind, "text": text}
     return None
 
@@ -477,7 +482,12 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         if not errors and not conflict:
             try:
                 saved = f.save_preapp(name if path else None, head, rows, [q.label for q in Qual])
-                return _redirect(team_url(f, saved, done="psaved" if path else "pcreated"))
+                done = "psaved" if path else "pcreated"
+                result, _ = store.review(f, comp)  # проверка заново — уже с сохранённым файлом
+                if is_clean([i for i in result.issues if i.source == saved]):
+                    f.set_status(saved, DONE, by=SAVE)  # заявку только что смотрели, замечаний нет
+                    done += "-done"
+                return _redirect(team_url(f, saved, done=done))
             except PermissionError:
                 save_error = ("Файл заявки сейчас открыт в Excel, поэтому сохранить не получилось. Закройте его в "
                               "Excel и нажмите «Сохранить» ещё раз — всё, что вы ввели, осталось на странице.")

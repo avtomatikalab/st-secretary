@@ -246,6 +246,10 @@ def test_edit_application_in_form(client, tmp_path, psr_card):
     page = client.get(r.headers["location"])  # после сохранения — карточка команды
     assert "Карточка команды" in page.text and "Прежние версии" in page.text
     assert "Программа замечаний не нашла" in page.text and "проверять нечего" not in page.text
+    # замечаний не осталось — «Проверено» ставится сразу, и видно, что поставлен при сохранении
+    assert "сразу отмечена «Проверено»" in page.text and "Поставлен сам" in page.text
+    review = client.app.state.store.review(f, psr_card)[1]["Лесовики.xlsx"]
+    assert review.status == "done" and review.by == "save"
     [old] = (f.preapp_dir / "Прежние версии").iterdir()  # файл команды не пропал
     assert old.name.startswith("Лесовики (") and [p.name for p in f.preapp_files()] == ["Лесовики.xlsx"]
     result = client.app.state.store.preapps(f, psr_card)
@@ -310,10 +314,10 @@ def test_application_changed_meanwhile_is_not_overwritten(client, tmp_path, psr_
     assert client.app.state.store.preapps(f, psr_card).teams[0].team == "Лесовики-2"
 
 
-def sosna(tmp_path):
+def sosna(tmp_path, contacts="89137654321"):
     """Заявка без ошибок, но с «проверить»: участнику 16 лет — допуск только по решению ГСК."""
     return make_application(tmp_path / "Сосна.xlsx", "Сосна", "Красноярск", "Орлов Павел Ильич",
-                            "89137654321", 3, [
+                            contacts, 3, [
                                 ["Сосна", "Красноярск", "Орлов Павел Ильич", "Орлов Павел Ильич",
                                  "11.05.1985", "II", "м", "М/Ж", 3],
                                 ["Сосна", "Красноярск", "Орлов Павел Ильич", "Белова Ирина Петровна",
@@ -392,13 +396,24 @@ def test_check_marks_and_statuses(client, tmp_path, psr_card):
     client.post(base(f) + "/preapps/status", data={"file": "Лесовики.xlsx", "status": "check"})
     assert store.review(f, psr_card)[1]["Лесовики.xlsx"].status == "check"  # вручную можно и «Проверить»
 
-    # заявку изменили — «Проверено» снимается, а отметка у того же замечания остаётся
-    data = FormFields(client.get(preapp_url(f, "Сосна.xlsx")).text, "preappform").fields
-    client.post(base(f) + "/preapps/save", data=data | {"h-representative": "Петров Иван Ильич"})
+    # команда прислала новый файл — «Проверено» снимается, а отметка у того же замечания остаётся
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path, contacts="89130000000, sosna@mail.ru"))
     result, reviews = store.review(f, psr_card)
     assert reviews["Сосна.xlsx"].status == "check" and not reviews["Сосна.xlsx"].manual
     assert "снят: заявку с тех пор изменили" in reviews["Сосна.xlsx"].reset
     assert result.count("checked") == 1  # то же замечание — отметка «проверено» сохранилась
+
+    # сохранили в форме: неотмеченных «проверить» нет (отмеченное не мешает) — «Проверено» сразу
+    data = FormFields(client.get(preapp_url(f, "Сосна.xlsx")).text, "preappform").fields
+    r = client.post(base(f) + "/preapps/save", data=data, follow_redirects=False)
+    assert "done=psaved-done" in r.headers["location"]
+    review = store.review(f, psr_card)[1]["Сосна.xlsx"]
+    assert review.status == "done" and review.by == "save"
+    client.post(base(f) + "/preapps/check", data={"file": "Сосна.xlsx", "key": issue_key(warn), "on": "0"})
+    review = store.review(f, psr_card)[1]["Сосна.xlsx"]  # появилось неотмеченное «проверить» — статус снят
+    assert review.status == "check" and "появились замечания «Проверить»" in review.reset
+    client.post(base(f) + "/preapps/save", data=data)  # сохранили с неотмеченным «проверить» — сам не ставится
+    assert store.review(f, psr_card)[1]["Сосна.xlsx"].status == "check"
 
     # статус — в сводке Excel
     from openpyxl import load_workbook

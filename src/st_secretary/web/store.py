@@ -29,7 +29,7 @@ from st_secretary.exporters.preapp_xlsx import write_preapp_report
 from st_secretary.importers.card_xlsx import load_card, write_card
 from st_secretary.importers.preapp_xlsx import read_preapplication, write_preapplication
 from st_secretary.preapp import PreappResult, process
-from st_secretary.web.review import STATUSES, Review, apply_marks
+from st_secretary.web.review import HAND, STATUSES, Review, apply_marks
 
 CARD = "Карточка_соревнования.xlsx"
 PREAPPS = "Предзаявки"
@@ -197,13 +197,14 @@ class CompFolder:
         """Отпечаток содержимого: по нему видно, что заявку изменили после отметки."""
         return hashlib.sha1(path.read_bytes()).hexdigest()[:20]
 
-    def set_status(self, name: str, status: str) -> None:
+    def set_status(self, name: str, status: str, by: str = HAND) -> None:
+        """by — HAND (кнопкой) или SAVE (сам после сохранения заявки без замечаний)."""
         path = self.preapp_path(name)
         if path is None or status not in STATUSES:
             raise ValueError(name)
         data = self.marks()
         entry = data.setdefault(path.name, {})
-        entry.update(status=status, hash=self.file_hash(path), at=f"{datetime.now():%d.%m.%Y %H:%M}")
+        entry.update(status=status, hash=self.file_hash(path), at=f"{datetime.now():%d.%m.%Y %H:%M}", by=by)
         self._save_marks(data)
 
     def set_checked(self, name: str, keys: list[str], on: bool = True) -> None:
