@@ -149,7 +149,8 @@ def cmd_web(a) -> int:
 
     if _already_running(a.port):  # второй запуск — просто открыть уже работающую программу
         url = f"http://{HOST}:{a.port}/"
-        print(f"СТ-Секретарь уже запущен: {url}")
+        print(f"СТ-Секретарь уже работает: {url}")
+        print("Его окно открыто отдельно — работайте в нём. Открываю страницу в браузере.")
         if not a.no_browser:
             webbrowser.open(url)
         return 0
@@ -157,13 +158,21 @@ def cmd_web(a) -> int:
     data.mkdir(parents=True, exist_ok=True)
     port = _free_port(a.port)
     url = f"http://{HOST}:{port}/"
-    print("СТ-Секретарь запущен.")
+    servers: list = []  # сервер создаётся после приложения, а кнопке «Выключить» нужен именно он
+    app = create_app(data, shutdown=lambda: setattr(servers[0], "should_exit", True))
+    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="warning"))
+    servers.append(server)
+    print("СТ-Секретарь работает.")
     print(f"  Адрес в браузере: {url}")
     print(f"  Папка с данными:  {data}")
-    print("Не закрывайте это окно, пока работаете. Чтобы остановить программу — закройте окно.")
+    print()
+    print("Это окно — сама программа: пока оно открыто, страница в браузере работает.")
+    print("Выключить программу: кнопка «Выключить» вверху страницы или просто закройте это окно.")
     if not a.no_browser:
         threading.Timer(1.0, webbrowser.open, [url]).start()
-    uvicorn.run(create_app(data), host=HOST, port=port, log_level="warning")
+    server.run()
+    print()
+    print("СТ-Секретарь выключен. Всё сохранено в папке с данными.")
     return 0
 
 

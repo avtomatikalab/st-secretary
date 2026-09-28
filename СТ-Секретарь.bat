@@ -2,6 +2,7 @@
 rem ST-Secretary launcher: double-click to open the program in the browser.
 rem Competitions are stored in the "данные" folder next to this file.
 rem This file is saved in CP866 (the Russian Windows console code page) so that messages display correctly.
+rem The window never closes by itself: it is the program; the user stops it with the "Выключить" button or closes it.
 cd /d "%~dp0"
 title СТ-Секретарь
 
@@ -22,9 +23,12 @@ if errorlevel 1 (
 )
 
 echo Запускаю СТ-Секретарь... Первый запуск может занять пару минут.
+echo.
 "%UV%" run st-secretary web
-if errorlevel 1 (
-  echo.
+set "RC=%errorlevel%"
+echo.
+if not "%RC%"=="0" (
   echo Программа остановилась с ошибкой. Сообщение выше пригодится разработчикам.
-  pause
 )
+echo Это окно можно закрыть.
+pause

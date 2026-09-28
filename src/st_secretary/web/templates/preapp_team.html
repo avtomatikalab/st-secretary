@@ -12,7 +12,7 @@
     <h1>{{ team.team if team else file }} {{ status_badge(review) }}</h1>
     <p class="muted file-line">{% if team %}{{ team.territory }} · {{ team.entries|length }} чел. · {% endif %}{{ icon("file", 16) }} {{ file }}</p>
     {% if team %}
-    <p class="team-contact">{{ icon("phone", 16) }} {{ team.representative or "представитель не указан" }}{% if team.phone %}, <a href="tel:{{ team.phone|replace(' ', '')|replace('-', '') }}">{{ team.phone }}</a>{% endif %}{% if team.email %}, <a href="mailto:{{ team.email }}">{{ team.email }}</a>{% endif %}</p>
+    <p class="team-contact">{{ icon("phone", 16) }} <span class="muted">Представитель:</span> {{ team.representative or "не указан" }}{% if team.phone %}, <a href="tel:{{ team.phone|replace(' ', '')|replace('-', '') }}">{{ team.phone }}</a>{% endif %}{% if team.email %}, <a href="mailto:{{ team.email }}">{{ team.email }}</a>{% endif %}</p>
     {% endif %}
   </div>
   <div class="actions">
@@ -42,7 +42,8 @@
   <p class="hint status-note">
     {% if review.manual %}Выставлен вручную {{ review.at }}.
     {% elif review.status == FIX %}Выставлен сам: в заявке есть ошибки. Исправьте их — заявку можно отредактировать здесь или попросить команду прислать новую.
-    {% else %}Выставлен сам: ошибок нет. Посмотрите заявку и замечания «Проверить» и отметьте «Проверено».{% endif %}
+    {% elif counts[WARNING] %}Выставлен сам: ошибок нет, но есть замечания «Проверить» ({{ counts[WARNING] }}). Разберите их и отметьте «Проверено» — у каждого замечания или сразу у всей заявки.
+    {% else %}Выставлен сам: программа замечаний не нашла, но заявку ещё никто не отметил. Посмотрите участников — опечатки в именах и отчествах программа не замечает — и нажмите «Проверено».{% endif %}
     {% if counts[ERROR] %}«Проверено» можно будет поставить, когда в заявке не останется ошибок.{% endif %}
   </p>
   {% if review.reset %}<p class="status-reset">{{ icon("alert", 16) }} {{ review.reset }}</p>{% endif %}
@@ -59,7 +60,7 @@
   </div>
   {% endif %}
   {% if not counts[ERROR] and not counts[WARNING] %}
-  <p class="team-ok">{{ icon("check-circle", 18) }} Ошибок нет, проверять нечего{% if counts[CHECKED] or counts[FIXED] %} — проверенное и исправленное системой можно посмотреть, включив фильтры выше{% endif %}.</p>
+  <p class="team-ok">{{ icon("check-circle", 18) }} {% if counts[CHECKED] %}Ошибок нет, всё отмеченное «Проверить» проверено{% else %}Программа замечаний не нашла{% endif %}{% if counts[CHECKED] or counts[FIXED] %} — проверенное и исправленное системой можно посмотреть, включив фильтры выше{% endif %}.</p>
   {% endif %}
   {% if issues %}
   <ul class="issue-list issue-list-boxed">

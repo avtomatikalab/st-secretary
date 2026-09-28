@@ -109,8 +109,13 @@
         {{ status_badge(g.review) }}
       </div>
       {% if g.team %}
-      <div class="team-contact">{{ icon("phone", 16) }}
-        {{ g.team.representative or "представитель не указан" }}{% if g.team.phone %}, <a href="tel:{{ g.team.phone|replace(' ', '')|replace('-', '') }}">{{ g.team.phone }}</a>{% endif %}{% if g.team.email %}, <a href="mailto:{{ g.team.email }}">{{ g.team.email }}</a>{% endif %}
+      <div class="team-contact">{{ icon("phone", 16) }} <span class="muted">Представитель:</span>
+        {{ g.team.representative or "не указан" }}{% if g.team.phone %}, <a href="tel:{{ g.team.phone|replace(' ', '')|replace('-', '') }}">{{ g.team.phone }}</a>{% endif %}{% if g.team.email %}, <a href="mailto:{{ g.team.email }}">{{ g.team.email }}</a>{% endif %}
+      </div>
+      <div class="team-people"><span class="muted">Участники:</span>
+        {% for e in g.team.entries %}{% set w = g.worst.get(e.name.full) %}
+        <span class="person-name{% if w in (ERROR, WARNING) %} sev-{{ w }}{% endif %}"{% if w == ERROR %} title="Есть ошибка"{% elif w == WARNING %} title="Нужно проверить"{% endif %}>{{ e.name.full }}</span>
+        {% endfor %}
       </div>
       {% endif %}
       <div class="team-file">{{ icon("file", 14) }} {{ g.file }}</div>
@@ -125,8 +130,11 @@
     {% if g.counts[CHECKED] %}
     <p class="team-checked">{{ icon("check", 16) }} Проверено замечаний: {{ g.counts[CHECKED] }} — <a href="{{ card_url }}">посмотреть в карточке команды</a></p>
     {% endif %}
-    {% if not g.counts[ERROR] and not g.counts[WARNING] %}
-    <p class="team-ok">{{ icon("check-circle", 18) }} Ошибок нет, проверять нечего.{% if g.review.status != DONE %} Откройте карточку команды и отметьте заявку «Проверено».{% endif %}</p>
+    {% if g.review.status == DONE %}
+    <p class="team-ok">{{ icon("check-circle", 18) }} Заявка проверена{% if g.review.at %} {{ g.review.at }}{% endif %}.</p>
+    {% elif not g.counts[ERROR] and not g.counts[WARNING] %}
+    <p class="team-todo">{{ icon("info", 18) }} <span>Программа замечаний не нашла. Осталось посмотреть заявку — опечатки в именах
+      программа не замечает — и отметить «Проверено» в <a href="{{ card_url }}">карточке команды</a>.</span></p>
     {% endif %}
   </article>
   {% endfor %}

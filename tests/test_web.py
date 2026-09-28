@@ -93,6 +93,17 @@ def test_home_and_health(client):
     assert r.status_code == 200 and "Пока нет ни одного соревнования" in r.text
     assert client.get("/health").json()["app"] == "st-secretary"
     assert client.get("/static/style.css").status_code == 200
+    assert 'action="/shutdown"' not in r.text  # запущено не из окна программы — кнопки «Выключить» нет
+    assert client.post("/shutdown").status_code == 409
+
+
+def test_shutdown_button_stops_server_after_answering(tmp_path):
+    stopped = []
+    client = TestClient(create_app(tmp_path / "данные", opener=lambda p: None, shutdown=lambda: stopped.append(1)))
+    assert 'action="/shutdown"' in client.get("/").text
+    r = client.post("/shutdown")
+    assert r.status_code == 200 and "СТ-Секретарь выключен" in r.text and 'action="/shutdown"' not in r.text
+    assert stopped == [1]  # сервер останавливается после того, как страница отдана
 
 
 def test_new_competition_then_fill_card(client, tmp_path, psr_card):
@@ -186,6 +197,9 @@ def test_preapps_upload_check_summary_remove(client, tmp_path, psr_card, opened)
     assert "добавлено заявок: 1" in r.text and "пропущено файлов не Excel: 1" in r.text
     assert "такой даты не существует" in r.text  # 29.02.1995 — ошибка видна
     assert "+7 913 123-45-67" in r.text  # телефон представителя — рядом с замечаниями
+    people = r.text.split('class="team-people"')[1].split("</div>")[0]  # в списке команд — все участники
+    assert all(n in people for n in ("Иванов Пётр Сергеевич", "Смирнова Анна Олеговна", "Кузьмин Олег Игоревич"))
+    assert 'sev-error"' in people  # у кого ошибка — выделен
     assert re.search(r'<b>1</b><span>ошибок', r.text)
 
     r = client.post(b + "/preapps/summary", follow_redirects=False)
@@ -230,7 +244,8 @@ def test_edit_application_in_form(client, tmp_path, psr_card):
     r = client.post(base(f) + "/preapps/save", data=data | {"p-2-birth": "28.02.1995"}, follow_redirects=False)
     assert r.status_code == 303 and "/preapps/team?" in r.headers["location"] and "done=psaved" in r.headers["location"]
     page = client.get(r.headers["location"])  # после сохранения — карточка команды
-    assert "Карточка команды" in page.text and "Прежние версии" in page.text and "Ошибок нет" in page.text
+    assert "Карточка команды" in page.text and "Прежние версии" in page.text
+    assert "Программа замечаний не нашла" in page.text and "проверять нечего" not in page.text
     [old] = (f.preapp_dir / "Прежние версии").iterdir()  # файл команды не пропал
     assert old.name.startswith("Лесовики (") and [p.name for p in f.preapp_files()] == ["Лесовики.xlsx"]
     result = client.app.state.store.preapps(f, psr_card)

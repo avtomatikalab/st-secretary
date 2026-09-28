@@ -16,6 +16,12 @@
   <div class="pill-local" title="Программа работает на этом ноутбуке. Интернет не нужен. Данные никуда не отправляются.">
     {{ icon("laptop", 18) }}<span>Работает без интернета</span>
   </div>
+  {% if can_stop and not stopped %}
+  <form method="post" action="/shutdown" class="topbar-off"
+        data-confirm="Выключить СТ-Секретарь? Всё уже сохранено. Страница перестанет открываться, пока вы снова не запустите «СТ-Секретарь.bat».">
+    <button class="btn btn-ghost btn-small" type="submit" title="Остановить программу на этом компьютере">{{ icon("power", 18) }}<span>Выключить</span></button>
+  </form>
+  {% endif %}
 </header>
 
 {% set with_nav = folder is defined and folder %}

@@ -116,9 +116,11 @@ def _flash(request: Request) -> dict | None:
     return None
 
 
-def create_app(data_dir: str | Path, opener=None) -> FastAPI:
+def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
+    """shutdown — как остановить сервер (кнопка «Выключить»); None — кнопки нет (тесты, запуск не из окна)."""
     store = Store(data_dir)
     app = FastAPI(title="СТ-Секретарь", docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.shutdown = shutdown
     app.state.store = store
     app.state.opener = opener or open_in_os
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -132,8 +134,9 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
                                  ERROR=ERROR, WARNING=WARNING, CHECKED=CHECKED, FIXED=FIXED, INFO=INFO,
                                  issue_key=issue_key, status_label=STATUS_LABEL, CHECK=CHECK, FIX=FIX, DONE=DONE)
 
-    def page(request: Request, name: str, status_code: int = 200, **ctx):
-        return templates.TemplateResponse(request, name, {"flash": _flash(request), **ctx}, status_code=status_code)
+    def page(request: Request, name: str, status_code: int = 200, background=None, **ctx):
+        ctx = {"flash": _flash(request), "can_stop": app.state.shutdown is not None, **ctx}
+        return templates.TemplateResponse(request, name, ctx, status_code=status_code, background=background)
 
     def folder(cid: str) -> CompFolder:
         f = store.get(cid)
@@ -168,6 +171,14 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
     @app.get("/health")
     def health():
         return JSONResponse({"app": "st-secretary", "version": __version__})
+
+    @app.post("/shutdown")
+    def shutdown(request: Request):
+        """Кнопка «Выключить»: сначала отдать страницу «выключено», потом остановить сервер."""
+        if app.state.shutdown is None:
+            raise HTTPException(409, "Эту копию программы выключают там, где её запускали.")
+        log.info("Выключение по кнопке на странице")
+        return page(request, "stopped.html", stopped=True, background=BackgroundTask(app.state.shutdown))
 
     @app.post("/open-data")
     def open_data(request: Request):

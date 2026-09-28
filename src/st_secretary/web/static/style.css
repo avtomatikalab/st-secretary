@@ -53,6 +53,9 @@ code { background: var(--surface-2); border: 1px solid var(--line); border-radiu
   display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: .82rem; font-weight: 600;
   color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok-line); padding: 4px 12px; border-radius: 999px;
 }
+.topbar-off { margin: 0; }
+.topbar-off .btn { color: var(--muted); }
+.topbar-off .btn:hover { color: var(--err); background: var(--err-bg); }
 .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: calc(100vh - var(--top)); }
 .layout.wide { grid-template-columns: minmax(0, 1fr); }
 .content { padding: 28px 40px 60px; width: 100%; max-width: 1180px; }
@@ -307,6 +310,12 @@ input:focus, select:focus, textarea:focus { outline: 3px solid var(--focus); out
 .team-counts { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
 .team-contact { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: .92rem; }
 .team-file { grid-column: 1 / -1; font-size: .8rem; color: var(--muted); }
+.team-people { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: .92rem; }
+.person-name { padding: 1px 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line); }
+.person-name.sev-error { background: var(--err-bg); border-color: var(--err-line); color: var(--err); }
+.person-name.sev-warning { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn); }
+.team-todo { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 12px 18px; color: var(--info); font-size: .92rem; }
+.team-todo .ico { margin-top: 2px; }
 .issue-list { list-style: none; margin: 0; padding: 0; }
 .issue { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 18px; border-bottom: 1px solid var(--line); border-left: 4px solid transparent; }
 .issue:last-child { border-bottom: 0; }
@@ -374,7 +383,7 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .overview-grid { grid-template-columns: minmax(0, 1fr); }
   .grid > [class*=span-] { grid-column: span 12; }
-  .pill-local span { display: none; }
+  .pill-local span, .topbar-off span { display: none; }
   .team-head { grid-template-columns: 1fr; }
   .team-counts { justify-content: flex-start; }
   .issue, .person-issues .issue { grid-template-columns: 1fr; gap: 4px; }
