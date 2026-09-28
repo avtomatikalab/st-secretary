@@ -380,6 +380,49 @@ input.mk-warning, select.mk-warning { border: 2px solid #d9a21b; background: var
 input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .add-person { margin-top: 12px; }
 
+/* ---------- комиссия по допуску ---------- */
+.adm-tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 8px 32px; }
+.adm-tools .howto { grid-column: 1 / -1; }
+.adm-tool h2 { font-size: 1.05rem; margin-bottom: 4px; }
+.adm-tool p { font-size: .9rem; }
+.adm-settings fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 12px 0; padding: 10px 14px; display: grid; gap: 6px; }
+.adm-settings legend { font-weight: 600; padding: 0 6px; }
+.adm-start { max-width: 360px; margin: 12px 0; }
+.check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.check input, .adm-people .cb input { width: 20px; height: 20px; cursor: pointer; accent-color: var(--primary); }
+.adm-number { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--muted); }
+.adm-number input { width: 56px; min-height: 36px; padding: 4px 8px; font-weight: 700; text-align: center; }
+.adm-badge-admitted { background: var(--ok); }
+.adm-badge-pending { background: #b7791f; }
+.adm-badge-rejected { background: var(--err); }
+.adm-body { padding: 12px 18px 16px; display: grid; gap: 12px; }
+.adm-teamdocs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; font-size: .95rem; }
+.adm-people { font-size: .92rem; }
+.adm-people th.cb, .adm-people td.cb { text-align: center; width: 1%; white-space: nowrap; }
+.adm-people td { vertical-align: top; }
+.adm-people .adm-fio { font-weight: 600; min-width: 200px; }
+.adm-sub { display: block; font-weight: 400; font-size: .82rem; color: var(--muted); white-space: nowrap; }
+.adm-people tr.adm-admitted td { background: var(--ok-bg); }
+.adm-people tr.adm-rejected td { background: var(--err-bg); }
+.adm-decision { min-width: 220px; }
+.adm-decision select, .adm-decision input[type=text] { min-height: 36px; padding: 4px 8px; font-size: .88rem; margin-top: 4px; }
+.adm-status { display: inline-block; font-weight: 700; font-size: .85rem; }
+.adm-status-admitted { color: var(--ok); } .adm-status-pending { color: var(--warn); } .adm-status-rejected { color: var(--err); }
+.adm-why { font-size: .82rem; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+.adm-problems { list-style: none; margin: 0; padding: 0 !important; display: grid; gap: 4px; color: var(--warn); font-size: .9rem; font-weight: 600; }
+.adm-problems li { display: flex; gap: 6px; align-items: flex-start; }
+.adm-foot { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.adm-fee, .adm-team-decision, .adm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.adm-fee input { width: 100px; min-height: 36px; padding: 4px 8px; }
+.adm-fee select, .adm-team-decision select { width: auto; min-height: 36px; padding: 4px 8px; font-size: .9rem; }
+.adm-team-decision input { flex: 1; min-width: 240px; min-height: 36px; padding: 4px 10px; font-size: .9rem; }
+.adm-saved { font-size: .85rem; }
+.js .adm-save { display: none; }
+.js .adm-failed .adm-save { display: inline-flex; }
+.adm-reentries { font-size: .88rem; }
+.adm-reentries ul { margin: 4px 0 0; padding-left: 1.2rem !important; }
+.reentry-banner { border-left: 5px solid var(--info); }
+
 /* ---------- средний экран: поля зачёта по три в ряд ---------- */
 @media (max-width: 1280px) {
   .zachet .span-2, .zachet .span-3 { grid-column: span 4; }

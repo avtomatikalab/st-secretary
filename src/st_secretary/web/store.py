@@ -8,6 +8,8 @@
           Прежние версии/            ← файл до исправления или до замены новым — с датой и временем
         Отметки_предзаявок.json      ← статусы заявок и «проверено» у замечаний
         Сводка_предзаявок.xlsx       ← создаётся по кнопке
+        Комиссия_по_допуску.json     ← документы, решения, номера, взносы, перезаявки
+        Комиссия_по_допуску.xlsx     ← протокол комиссии и ведомость взносов, по кнопке
 
 Папку можно открыть в Проводнике, скопировать на флешку, передать коллеге. Персональные данные
 (даты рождения, телефоны) хранятся только в ней.
@@ -37,6 +39,8 @@ REMOVED = "Убранные"
 VERSIONS = "Прежние версии"
 MARKS = "Отметки_предзаявок.json"
 SUMMARY = "Сводка_предзаявок.xlsx"
+ADMISSION = "Комиссия_по_допуску.json"
+COMMISSION_REPORT = "Комиссия_по_допуску.xlsx"
 EXCEL = (".xlsx", ".xls")
 
 _BAD_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')  # недопустимы в именах файлов Windows
@@ -226,6 +230,33 @@ class CompFolder:
         if old != new and old in data:
             data[new] = data.pop(old)
             self._save_marks(data)
+        adm = self.admission()
+        if old != new and old in adm.get("teams", {}):
+            adm["teams"][new] = adm["teams"].pop(old)
+            self.save_admission(adm)
+
+    # ------------------------------------------------------------ комиссия по допуску
+
+    @property
+    def admission_path(self) -> Path:
+        return self.path / ADMISSION
+
+    @property
+    def commission_report_path(self) -> Path:
+        return self.path / COMMISSION_REPORT
+
+    def admission(self) -> dict:
+        """Отметки комиссии: {"settings": {...}, "teams": {файл заявки: {...}}} (см. commission.py)."""
+        try:
+            data = json.loads(self.admission_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def save_admission(self, data: dict) -> None:
+        tmp = self.path / f"~{ADMISSION}"
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.admission_path)
 
 
 class Store:

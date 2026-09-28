@@ -59,11 +59,12 @@
 {% block title %}{{ form.head.team or "Новая заявка" }} — предзаявка — СТ-Секретарь{% endblock %}
 {% block content %}
 {% set card_url = base ~ "/preapps/team?file=" ~ (file|urlencode) %}
-{% if file %}<a class="back" href="{{ card_url }}" data-team-anchor="{{ file|team_anchor }}" data-list-path="{{ base }}/preapps">← Карточка команды</a>
+{% if reentry %}<a class="back" href="{{ base }}/admission#{{ file|team_anchor }}">← Комиссия по допуску</a>
+{% elif file %}<a class="back" href="{{ card_url }}" data-team-anchor="{{ file|team_anchor }}" data-list-path="{{ base }}/preapps">← Карточка команды</a>
 {% else %}<a class="back" href="{{ base }}/preapps">← Все предварительные заявки</a>{% endif %}
 <div class="page-head">
   <div>
-    <h1>{% if file %}Редактирование заявки{% if form.head.team %} «{{ form.head.team }}»{% endif %}{% else %}Новая заявка{% endif %}</h1>
+    <h1>{% if reentry %}Перезаявка{% if form.head.team %} «{{ form.head.team }}»{% endif %}{% elif file %}Редактирование заявки{% if form.head.team %} «{{ form.head.team }}»{% endif %}{% else %}Новая заявка{% endif %}</h1>
     {% if file %}<p class="muted file-line">{{ icon("file", 16) }} {{ file }}</p>{% endif %}
   </div>
   {% if file %}
@@ -74,6 +75,18 @@
   </form>
   {% endif %}
 </div>
+
+{% if reentry %}
+<div class="panel reentry-banner" role="note">
+  <h2>{{ icon("edit") }} Перезаявка</h2>
+  <p>Измените состав или зачёты и нажмите «Сохранить». Программа запишет, что изменилось, и время подачи — {{ reentry.now }}.
+    По Правилам (п. 8.5) перезаявка подаётся письменно главному секретарю не позднее чем за 1 час до начала вида программы;
+    повторные перезаявки не принимаются.</p>
+  {% if not reentry.start %}<p class="hint">Время старта не задано — укажите его на странице комиссии («Какие документы проверять и время старта»), и программа будет следить за сроком.</p>{% endif %}
+  {% if reentry.late %}<p class="field-error">{{ icon("alert", 16) }} До старта ({{ reentry.start }}) меньше часа — по Правилам такая перезаявка не принимается. Решение — за ГСК.</p>{% endif %}
+  {% if reentry.earlier %}<p class="field-error">{{ icon("alert", 16) }} Команда уже подавала перезаявку ({{ reentry.earlier|map(attribute="at")|join(", ") }}) — повторные не принимаются. Решение — за ГСК.</p>{% endif %}
+</div>
+{% endif %}
 
 {% if conflict %}
 <div class="panel panel-warn" role="alert">
@@ -124,6 +137,7 @@
 <form id="preappform" method="post" action="{{ base }}/preapps/save" data-guard>
   <input type="hidden" name="file" value="{{ file }}">
   <input type="hidden" name="version" value="{{ version }}">
+  {% if reentry %}<input type="hidden" name="reentry" value="1">{% endif %}
   {% set hm = marks.get(0, {}) %}
 
   <section class="panel">
@@ -168,7 +182,7 @@
 
   <div class="savebar">
     <button class="btn btn-primary btn-big" type="submit">{{ icon("check") }}Сохранить и проверить</button>
-    <a class="btn btn-ghost" href="{{ card_url if file else base ~ '/preapps' }}">Отмена</a>
+    <a class="btn btn-ghost" href="{{ (base ~ '/admission#' ~ (file|team_anchor)) if reentry else (card_url if file else base ~ '/preapps') }}">Отмена</a>
     <span class="muted savebar-note">{% if file %}Сохраняется в «{{ file.rsplit('.', 1)[0] }}.xlsx», прежний вариант — в «Прежние версии»{% else %}Сохраняется новым файлом в папке «Предзаявки»{% endif %}</span>
   </div>
 </form>

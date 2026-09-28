@@ -1,0 +1,107 @@
+{# Одна команда на странице комиссии по допуску. Этот же блок сервер присылает после каждого изменения. #}
+{% from "_icons.html" import icon %}
+{% set anchor = t.file|team_anchor %}
+<article class="team adm-team" id="{{ anchor }}" data-status="{{ t.status }}">
+<form method="post" action="{{ base }}/admission/team" data-autosave>
+  <input type="hidden" name="file" value="{{ t.file }}">
+  <header class="team-head">
+    <div class="team-title">
+      <label class="adm-number" title="Номер команды (стартовый)">№ <input type="text" inputmode="numeric" name="number" value="{{ t.number if t.number is not none else '' }}" aria-label="Номер команды {{ t.title }}"></label>
+      <h3><a class="team-link" href="{{ base }}/preapps/team?file={{ t.file|urlencode }}">{{ t.title }}</a></h3>
+      {% if t.team %}<span class="muted">{{ t.team.territory }} · {{ t.persons|length }} чел.</span>{% endif %}
+    </div>
+    <div class="team-counts">
+      <span class="status-badge adm-badge-{{ t.status }}">{% if t.status == "admitted" %}{{ icon("check", 14) }} {% endif %}{{ t.label }}</span>
+    </div>
+    {% if t.team %}
+    <div class="team-contact">{{ icon("phone", 16) }} <span class="muted">Представитель:</span> {{ t.team.representative or "не указан" }}{% if t.team.phone %}, <a href="tel:{{ t.team.phone|replace(' ', '')|replace('-', '') }}">{{ t.team.phone }}</a>{% endif %}</div>
+    {% endif %}
+    {% if clash %}<div class="team-contact text-err">{{ icon("alert", 16) }} Номер {{ t.number }} уже у команды «{{ clash|join('», «') }}» — поменяйте.</div>{% endif %}
+  </header>
+
+  {% if t.team %}
+  <div class="adm-body">
+    {% if tdocs %}
+    <div class="adm-teamdocs">
+      <span class="muted">Документы команды:</span>
+      {% for d in tdocs %}
+      <label class="check" title="{{ d.title }}"><input type="checkbox" name="td-{{ d.key }}"{% if t.team_docs[d.key] %} checked{% endif %}> {{ d.title }}</label>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="table-wrap">
+    <table class="tbl adm-people">
+      <thead><tr>
+        <th>№</th><th>Участник</th>
+        {% for d in pdocs %}<th class="cb" title="{{ d.title }}">{{ d.short }}</th>{% endfor %}
+        <th>Решение</th>
+      </tr></thead>
+      <tbody>
+      {% for p in t.persons %}{% set i = loop.index0 %}{% set e = p.entry %}
+      <tr class="adm-row adm-{{ p.status }}">
+        <td>{{ e.num_in_team }}</td>
+        <td class="adm-fio">{{ e.name.full }}<input type="hidden" name="p-{{ i }}-key" value="{{ p.key }}">
+          <span class="adm-sub">{% if e.birth %}{{ e.birth|d }}{% elif e.birth_year %}{{ e.birth_year }}{% else %}дата рождения?{% endif %}
+            · {{ e.qual.label if e.qual is not none else "разряд?" }} · {{ e.zachet.key if e.zachet else "зачёт?" }}</span></td>
+        {% for d in pdocs %}
+        <td class="cb"><input type="checkbox" name="p-{{ i }}-d-{{ d.key }}"{% if p.docs[d.key] %} checked{% endif %} aria-label="{{ d.short }}: {{ e.name.full }}"></td>
+        {% endfor %}
+        <td class="adm-decision">
+          <span class="adm-status adm-status-{{ p.status }}">{{ p.label }}</span>
+          <select name="p-{{ i }}-decision" aria-label="Решение по участнику {{ e.name.full }}">
+            <option value="">по документам</option>
+            <option value="admitted"{% if p.decision == "admitted" %} selected{% endif %}>допустить решением комиссии</option>
+            <option value="rejected"{% if p.decision == "rejected" %} selected{% endif %}>не допускать</option>
+          </select>
+          {% if p.decision %}<input type="text" name="p-{{ i }}-reason" value="{{ p.reason }}" placeholder="{{ 'причина недопуска' if p.decision == 'rejected' else 'основание (например, решение ГСК)' }}" aria-label="Причина или основание решения">{% endif %}
+          {% if p.why %}<div class="adm-why">{{ p.why }}</div>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+
+    {% if t.problems and t.status != "rejected" %}
+    <ul class="adm-problems">{% for x in t.problems %}<li>{{ icon("alert", 16) }} {{ x }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <div class="adm-foot">
+      <div class="adm-fee">
+        <span class="muted">Взнос:</span> <b>{{ t.fee_due }} ₽</b>
+        <label>оплачено <input type="text" inputmode="numeric" name="fee_paid" value="{{ t.fee_paid or '' }}" placeholder="0" aria-label="Оплачено, рублей"> ₽</label>
+        <select name="fee_method" aria-label="Способ оплаты">
+          <option value="">способ оплаты</option>
+          {% for m in fee_methods %}<option value="{{ m }}"{% if m == t.fee_method %} selected{% endif %}>{{ m }}</option>{% endfor %}
+        </select>
+        <span class="badge {{ 'badge-fixed' if t.fee_status in ('оплачено', 'нет взноса') else 'badge-warning' }}">{{ t.fee_status }}</span>
+      </div>
+      <div class="adm-team-decision">
+        <span class="muted">Решение по команде:</span>
+        <select name="decision" aria-label="Решение по команде">
+          <option value="">по участникам и документам</option>
+          <option value="admitted"{% if t.decision == "admitted" %} selected{% endif %}>допустить решением комиссии</option>
+          <option value="rejected"{% if t.decision == "rejected" %} selected{% endif %}>не допускать</option>
+        </select>
+        <input type="text" name="note" value="{{ t.note }}" placeholder="замечание или решение комиссии — попадёт в протокол" aria-label="Замечание комиссии">
+      </div>
+      <div class="adm-actions">
+        <button class="btn btn-small btn-check" type="submit" name="do" value="all_docs">{{ icon("check", 16) }}Отметить все документы</button>
+        <a class="btn btn-ghost btn-small" href="{{ base }}/preapps/edit?file={{ t.file|urlencode }}&amp;reentry=1">{{ icon("edit", 16) }}Перезаявка</a>
+        <button class="btn btn-ghost btn-small adm-save" type="submit">Сохранить</button>
+        <span class="adm-saved muted" aria-live="polite"></span>
+      </div>
+      {% if t.reentries %}
+      <div class="adm-reentries">
+        <span class="muted">Перезаявки:</span>
+        <ul>{% for r in t.reentries %}<li{% if r.late or r.repeat %} class="text-err"{% endif %}>{{ r.at }} — {{ r.text }}{% if r.late %} (позже, чем за час до старта){% endif %}{% if r.repeat %} (повторная){% endif %}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="team-todo">{{ icon("alert", 18) }} <span>Заявку не удалось прочитать — откройте её в разделе «Предварительные заявки», исправьте или заполните в программе.</span></p>
+  {% endif %}
+</form>
+</article>

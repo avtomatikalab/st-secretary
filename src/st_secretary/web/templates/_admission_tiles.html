@@ -1,0 +1,8 @@
+{# Итоги комиссии — обновляются после каждого изменения. #}
+<div class="tiles adm-tiles" id="adm-tiles">
+  <div class="tile tile-fixed"><b>{{ totals.teams_ok }} из {{ totals.teams }}</b><span>команд допущено</span></div>
+  <div class="tile"><b>{{ totals.people_ok }} из {{ totals.people }}</b><span>участников допущено</span></div>
+  <div class="tile tile-warning"><b>{{ totals.people_wait }}</b><span>участников ждут — документы или решение</span></div>
+  <div class="tile tile-error"><b>{{ totals.people_no }}</b><span>не допущено</span></div>
+  <div class="tile"><b>{{ "{:,}".format(totals.fee_paid).replace(",", " ") }} ₽</b><span>взносов собрано из {{ "{:,}".format(totals.fee_due).replace(",", " ") }} ₽</span></div>
+</div>

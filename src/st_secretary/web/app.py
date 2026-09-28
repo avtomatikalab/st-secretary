@@ -9,12 +9,13 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
@@ -26,7 +27,9 @@ from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException
 
 from st_secretary import __version__
+from st_secretary import commission as cm
 from st_secretary.competition import LEVEL_LABELS
+from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.importers.card_xlsx import CardError, load_card
 from st_secretary.importers.preapp_xlsx import read_preapplication
 from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, SEVERITY_ORDER, WARNING, Issue
@@ -36,7 +39,7 @@ from st_secretary.web import preapp_form as pf
 from st_secretary.web.review import CHECK, DONE, FIX, SAVE, STATUS_LABEL, is_clean, issue_key
 from st_secretary.web.forms import card_to_form, choices, empty_zachet, form_from_data, form_to_card
 from st_secretary.web.steps import BY_SLUG, STEPS
-from st_secretary.web.store import SUMMARY, CompFolder, Store
+from st_secretary.web.store import COMMISSION_REPORT, SUMMARY, CompFolder, Store
 
 log = logging.getLogger("st_secretary.web")
 HERE = Path(__file__).parent
@@ -67,6 +70,14 @@ def _step_url(base: str, step) -> str:
 
 def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
+
+
+def _parse_dt(s: str) -> datetime | None:
+    """Дата и время из поля браузера («2025-09-20T10:00»)."""
+    try:
+        return datetime.fromisoformat(s) if s else None
+    except ValueError:
+        return None
 
 
 def team_anchor(file: str) -> str:
@@ -114,6 +125,18 @@ def _flash(request: Request) -> dict | None:
         "pcreated": ("ok", f"Заявка сохранена в файл «{q.get('file', '')}» в папке «Предзаявки» и проверена — "
                            "результат ниже."),
         "locked": ("err", "Сводка сейчас открыта в Excel. Закройте её там и нажмите кнопку ещё раз."),
+        "adm_saved": ("ok", "Отметки комиссии сохранены."),
+        "adm_settings": ("ok", "Настройки комиссии сохранены."),
+        "adm_numbers": ("ok", "Номера командам присвоены — их можно поправить вручную в поле «№» у команды."),
+        "adm_report": ("ok", "Протокол комиссии и ведомость взносов сохранены в папке соревнования и открываются "
+                             "в Excel."),
+        "adm_locked": ("err", "Файл «Комиссия_по_допуску.xlsx» сейчас открыт в Excel. Закройте его и нажмите "
+                              "кнопку ещё раз."),
+        "reentry": ("ok", "Перезаявка записана с временем подачи — она видна у команды ниже."),
+        "reentry_late": ("err", "Перезаявка записана, но подана позже, чем за час до старта: по Правилам (п. 8.5) "
+                                "такая перезаявка не принимается. Решение — за ГСК."),
+        "reentry_repeat": ("err", "Перезаявка записана, но она повторная: по Правилам (п. 8.5) повторные "
+                                  "перезаявки не принимаются. Решение — за ГСК."),
         "opened": ("ok", "Открываю…"),
     }
     auto_done = done is not None and done.endswith("-done")  # заявка без замечаний — «Проверено» сразу
@@ -246,7 +269,9 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
             pre = {"teams": len(r.teams), "entries": len(r.entries), "errors": r.count(ERROR),
                    "warnings": r.count(WARNING), "fixed": r.count(FIXED),
                    "done": sum(v.status == DONE for v in reviews.values()), "files": len(reviews)}
-        return page(request, "overview.html", active="", card_issues=card_issues, files=files, pre=pre, **ctx)
+        adm = adm_totals(commission(f, comp)[1]) if pre else None
+        return page(request, "overview.html", active="", card_issues=card_issues, files=files, pre=pre, adm=adm,
+                    **ctx)
 
     @app.post("/c/{cid}/open/{what}")
     def open_thing(request: Request, cid: str, what: str):
@@ -376,7 +401,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
                     issues: list[Issue] | None = None, errors: dict | None = None, status_code: int = 200, **extra):
         head_issues, row_issues, marks = pf.issue_marks(issues or [])
         counts = Counter(i.severity for i in issues or [])
-        return page(request, "preapp_edit.html", status_code=status_code, active="preapps", form=form,
+        active = extra.pop("active", "preapps")  # перезаявка открывается из комиссии — пункт меню тот же
+        return page(request, "preapp_edit.html", status_code=status_code, active=active, form=form,
                     errors=errors or {}, file=file, version=version, head_issues=head_issues, row_issues=row_issues,
                     marks=marks, counts=counts, checked=issues is not None, ch=pf.choices(comp, form),
                     empty_row=pf.empty_row(comp), **comp_ctx(f), **extra)
@@ -450,8 +476,17 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         back = back_to(request, f, str(data.get("back", "")), team_url(f, path.name))
         return _redirect(_with_done(back, "checked" if on else "unchecked"))
 
+    def reentry_info(f: CompFolder, name: str) -> dict:
+        """Для формы перезаявки: время сейчас, начало соревнований, не поздно ли, не повторная ли (п. 8.5)."""
+        data = f.admission()
+        start = _parse_dt(cm.settings(data)["start_at"])
+        now = datetime.now()
+        return {"now": now.strftime("%d.%m.%Y %H:%M"), "start": start.strftime("%d.%m.%Y %H:%M") if start else "",
+                "late": bool(start and (start - now).total_seconds() < 3600),
+                "earlier": data.get("teams", {}).get(name, {}).get("reentries", [])}
+
     @app.get("/c/{cid}/preapps/edit")
-    def preapp_edit(request: Request, cid: str, file: str = ""):
+    def preapp_edit(request: Request, cid: str, file: str = "", reentry: int = 0):
         f = folder(cid)
         comp = need_comp(f)
         path = need_file(f, file)
@@ -459,7 +494,9 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         team = next((t for t in result.teams if t.source == path.name), None)
         form = pf.app_to_form(read_preapplication(path), team, comp)
         return render_edit(request, f, comp, form, file=path.name, version=f.file_version(path),
-                           issues=[i for i in result.issues if i.source == path.name], team=team)
+                           issues=[i for i in result.issues if i.source == path.name], team=team,
+                           reentry=reentry_info(f, path.name) if reentry else None,
+                           **({"active": "admission"} if reentry else {}))
 
     @app.get("/c/{cid}/preapps/new")
     def preapp_new(request: Request, cid: str):
@@ -479,20 +516,40 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         conflict = not errors and path is not None and version and version != f.file_version(path) \
             and not data.get("force")
         save_error = None
+        reentry = bool(path and data.get("reentry"))
         if not errors and not conflict:
             try:
+                before = []
+                if reentry:  # состав до перезаявки — чтобы записать, что изменилось
+                    result, _ = store.review(f, comp)
+                    before = next((t.entries for t in result.teams if t.source == path.name), [])
                 saved = f.save_preapp(name if path else None, head, rows, [q.label for q in Qual])
                 done = "psaved" if path else "pcreated"
                 result, _ = store.review(f, comp)  # проверка заново — уже с сохранённым файлом
                 if is_clean([i for i in result.issues if i.source == saved]):
                     f.set_status(saved, DONE, by=SAVE)  # заявку только что смотрели, замечаний нет
                     done += "-done"
+                if reentry:
+                    rec = log_reentry(f, saved, before, rows)
+                    done = "reentry_late" if rec["late"] else "reentry_repeat" if rec["repeat"] else "reentry"
+                    return _redirect(f"{_base(f)}/admission?done={done}#{team_anchor(saved)}")
                 return _redirect(team_url(f, saved, done=done))
             except PermissionError:
                 save_error = ("Файл заявки сейчас открыт в Excel, поэтому сохранить не получилось. Закройте его в "
                               "Excel и нажмите «Сохранить» ещё раз — всё, что вы ввели, осталось на странице.")
         return render_edit(request, f, comp, form, file=name if path else "", version=version, errors=errors,
-                           status_code=422 if errors else 409, conflict=conflict, save_error=save_error)
+                           status_code=422 if errors else 409, conflict=conflict, save_error=save_error,
+                           reentry=reentry_info(f, name) if reentry else None)
+
+    def log_reentry(f: CompFolder, name: str, before: list, rows: list[dict]) -> dict:
+        data = f.admission()
+        tm = data.setdefault("teams", {}).setdefault(name, {})
+        start = _parse_dt(cm.settings(data)["start_at"])
+        rec = cm.reentry_record(before, [{"fio": r["fio"], "group": r["group"], "cls": r["cls"]} for r in rows],
+                                datetime.now(), start, tm.get("reentries", []))
+        tm.setdefault("reentries", []).append(rec)
+        f.save_admission(data)
+        return rec
 
     @app.post("/c/{cid}/preapps/open")
     async def preapp_open(request: Request, cid: str):
@@ -520,6 +577,140 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / SUMMARY
         f.write_summary(result, comp, tmp, statuses)
         return FileResponse(tmp, filename=SUMMARY, media_type=XLSX,
+                            background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
+
+    # ------------------------------------------------------------ комиссия по допуску
+
+    def commission(f: CompFolder, comp):
+        """Отметки комиссии и состояние допуска по каждой заявке (в порядке списка заявок)."""
+        result, _ = store.review(f, comp)
+        data = f.admission()
+        return data, cm.evaluate(result, [p.name for p in f.preapp_files()], comp, data)
+
+    def adm_totals(teams: list) -> dict:
+        people = [p for t in teams for p in t.persons]
+        return {"teams": len(teams), "teams_ok": sum(t.status == cm.ADMITTED for t in teams),
+                "teams_by": Counter(t.status for t in teams),
+                "people": len(people), "people_ok": sum(p.status == cm.ADMITTED for p in people),
+                "people_wait": sum(p.status == cm.PENDING for p in people),
+                "people_no": sum(p.status == cm.REJECTED for p in people),
+                "fee_due": sum(t.fee_due for t in teams), "fee_paid": sum(t.fee_paid for t in teams)}
+
+    def adm_parts(f: CompFolder, data: dict) -> dict:
+        pdocs, tdocs = cm.required_docs(data)
+        return {"pdocs": pdocs, "tdocs": tdocs, "adm_settings": cm.settings(data), "fee_methods": cm.FEE_METHODS,
+                "base": _base(f)}
+
+    @app.get("/c/{cid}/admission")
+    def admission_page(request: Request, cid: str):
+        f = folder(cid)
+        ctx = comp_ctx(f)
+        comp = ctx["comp"]
+        blocked = [i for i in comp.check() if i.severity == ERROR] if comp else ctx["card_errors"]
+        teams, data = [], f.admission()
+        if comp and not blocked:
+            data, teams = commission(f, comp)
+        return page(request, "admission.html", active="admission", blocked=blocked, teams=teams,
+                    totals=adm_totals(teams), all_person_docs=cm.PERSON_DOCS, all_team_docs=cm.TEAM_DOCS,
+                    **{**ctx, **adm_parts(f, data)})
+
+    @app.post("/c/{cid}/admission/team")
+    async def admission_team(request: Request, cid: str):
+        """Отметки по одной команде. Со страницы приходят сами при каждом изменении (ответ — обновлённый
+        блок команды); без скриптов — обычная форма с кнопкой «Сохранить»."""
+        f = folder(cid)
+        comp = need_comp(f)
+        form = await request.form()
+        path = need_file(f, str(form.get("file", "")))
+        data = f.admission()
+        pdocs, tdocs = cm.required_docs(data)
+        tm = data.setdefault("teams", {}).setdefault(path.name, {})
+        everything = form.get("do") == "all_docs"  # «Отметить все документы»
+        tm["team_docs"] = {**tm.get("team_docs", {}),
+                           **{d.key: everything or bool(form.get(f"td-{d.key}")) for d in tdocs}}
+        number = str(form.get("number", "")).strip()
+        tm["number"] = int(number) if number.isdigit() else None
+        paid = str(form.get("fee_paid", "")).replace(" ", "").replace(",", ".").strip()
+        tm["fee_paid"] = int(float(paid)) if paid.replace(".", "", 1).isdigit() else 0
+        tm["fee_method"] = str(form.get("fee_method", ""))
+        tm["decision"] = str(form.get("decision", "")) if form.get("decision") in (cm.ADMITTED, cm.REJECTED) else ""
+        tm["note"] = str(form.get("note", "")).strip()
+        people = tm.setdefault("people", {})
+        idx = sorted({int(k.split("-")[1]) for k in form.keys() if re.fullmatch(r"p-\d+-key", k)})
+        for i in idx:
+            pm = people.setdefault(str(form.get(f"p-{i}-key")), {})
+            pm["docs"] = {**pm.get("docs", {}),
+                          **{d.key: everything or bool(form.get(f"p-{i}-d-{d.key}")) for d in pdocs}}
+            decision = str(form.get(f"p-{i}-decision", ""))
+            pm["decision"] = decision if decision in (cm.ADMITTED, cm.REJECTED) else ""
+            pm["reason"] = str(form.get(f"p-{i}-reason", "")).strip() if pm["decision"] else ""
+        f.save_admission(data)
+        data, teams = commission(f, comp)
+        t = next(x for x in teams if x.file == path.name)
+        clash = [x.title for x in teams if x.number is not None and x.number == t.number and x.file != t.file]
+        if request.headers.get("x-autosave"):
+            parts = {**adm_parts(f, data), "clash": clash}
+            return JSONResponse({"team": templates.get_template("_admission_team.html").render(t=t, **parts),
+                                 "tiles": templates.get_template("_admission_tiles.html").render(
+                                     totals=adm_totals(teams), **parts),
+                                 "saved": datetime.now().strftime("%H:%M:%S"), "status": t.status,
+                                 "by": {"all": len(teams), **{s: sum(x.status == s for x in teams)
+                                                             for s in (cm.PENDING, cm.ADMITTED, cm.REJECTED)}}})
+        return _redirect(f"{_base(f)}/admission?done=adm_saved#{team_anchor(path.name)}")
+
+    @app.post("/c/{cid}/admission/settings")
+    async def admission_settings(request: Request, cid: str):
+        f = folder(cid)
+        form = await request.form()
+        data = f.admission()
+        data["settings"] = {"docs": [d.key for d in cm.PERSON_DOCS if form.get(f"doc-{d.key}")],
+                            "team_docs": [d.key for d in cm.TEAM_DOCS if form.get(f"tdoc-{d.key}")],
+                            "start_at": str(form.get("start_at", "")).strip()}
+        f.save_admission(data)
+        return _redirect(f"{_base(f)}/admission?done=adm_settings")
+
+    @app.post("/c/{cid}/admission/numbers")
+    async def admission_numbers(request: Request, cid: str):
+        """Номера командам по порядку списка: только тем, у кого нет, или всем заново."""
+        f = folder(cid)
+        comp = need_comp(f)
+        again = (await request.form()).get("mode") == "all"
+        data, teams = commission(f, comp)
+        taken = set() if again else {t.number for t in teams if t.number is not None}
+        n = 1
+        for t in teams:
+            if t.number is not None and not again:
+                continue
+            while n in taken:
+                n += 1
+            data.setdefault("teams", {}).setdefault(t.file, {})["number"] = n
+            taken.add(n)
+        f.save_admission(data)
+        return _redirect(f"{_base(f)}/admission?done=adm_numbers")
+
+    def commission_report(f: CompFolder, path: Path | None = None) -> Path:
+        comp = need_comp(f)
+        if not f.preapp_files():
+            raise HTTPException(409, "Пока нет ни одной заявки — добавьте их на странице «Предварительные заявки».")
+        data, teams = commission(f, comp)
+        return write_commission_report(teams, comp, data, path or f.commission_report_path)
+
+    @app.post("/c/{cid}/admission/report")
+    def admission_report_open(cid: str):
+        f = folder(cid)
+        try:
+            path = commission_report(f)
+        except PermissionError:
+            return _redirect(f"{_base(f)}/admission?done=adm_locked")
+        app.state.opener(path)
+        return _redirect(f"{_base(f)}/admission?done=adm_report")
+
+    @app.get("/c/{cid}/admission/report.xlsx")
+    def admission_report_download(cid: str):
+        f = folder(cid)
+        tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / COMMISSION_REPORT
+        commission_report(f, tmp)
+        return FileResponse(tmp, filename=COMMISSION_REPORT, media_type=XLSX,
                             background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
 
     # ------------------------------------------------------------ шаги в разработке

@@ -116,6 +116,58 @@
     });
   });
 
+  // --- Комиссия по допуску: каждое изменение сохраняется сразу; сервер присылает обновлённый блок команды
+  //     и итоги. Без скриптов те же формы отправляются кнопкой «Сохранить».
+  document.documentElement.classList.add("js");
+  function autosave(form, extra) {
+    var fd = new FormData(form);
+    if (extra && extra.name) fd.append(extra.name, extra.value);
+    var note = form.querySelector(".adm-saved");
+    if (note) note.textContent = "Сохраняю…";
+    // адрес — из атрибута: поле формы с именем «action» подменило бы свойство form.action
+    fetch(form.getAttribute("action"), { method: "POST", body: fd, headers: { "X-Autosave": "1" } })
+      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(function (j) {
+        var article = form.closest("article");
+        var active = document.activeElement;
+        var focusName = active && article.contains(active) ? active.name : null;
+        var box = document.createElement("div");
+        box.innerHTML = j.team;
+        var fresh = box.querySelector("article");
+        article.replaceWith(fresh);
+        var tiles = document.getElementById("adm-tiles");
+        if (tiles && j.tiles) {
+          var tb = document.createElement("div");
+          tb.innerHTML = j.tiles;
+          tiles.replaceWith(tb.querySelector("#adm-tiles"));
+        }
+        var saved = fresh.querySelector(".adm-saved");
+        if (saved) saved.textContent = "Сохранено в " + j.saved;
+        Object.keys(j.by || {}).forEach(function (k) {  // числа на кнопках фильтра
+          var b = document.querySelector('[data-team-filter="' + k + '"] b');
+          if (b) b.textContent = j.by[k];
+        });
+        if (focusName) {
+          var el = fresh.querySelector('[name="' + focusName + '"]');
+          if (el) el.focus();
+        }
+      })
+      .catch(function () {
+        if (note) note.textContent = "Не сохранилось — нажмите «Сохранить»";
+        form.classList.add("adm-failed");
+      });
+  }
+  document.addEventListener("change", function (e) {
+    var form = e.target.closest ? e.target.closest("form[data-autosave]") : null;
+    if (form) autosave(form);
+  });
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form.matches || !form.matches("form[data-autosave]") || form.classList.contains("adm-failed")) return;
+    e.preventDefault();  // Enter в поле или кнопка «Отметить все документы» — тоже без перезагрузки
+    autosave(form, e.submitter ? { name: e.submitter.name, value: e.submitter.value } : null);
+  });
+
   // --- Карточка и форма заявки: запомнить команду — список заявок потом откроется сразу на ней.
   var mark = document.querySelector("[data-team-anchor]");
   if (mark) {

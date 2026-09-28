@@ -47,6 +47,18 @@
     {% if comp.preapp_deadline %}<p class="muted">Приём предзаявок до {{ comp.preapp_deadline|d }}</p>{% endif %}
     <span class="step-card-go">Открыть {{ icon("arrow", 18) }}</span>
   </a>
+  <a class="panel step-card" href="{{ base }}/admission">
+    <div class="step-card-head"><span class="step-num">3</span><h2>Комиссия по допуску</h2></div>
+    {% if adm %}
+    <div class="mini-tiles">
+      <div class="{% if adm.teams_ok == adm.teams %}text-ok{% endif %}"><b>{{ adm.teams_ok }}/{{ adm.teams }}</b><span>команд допущено</span></div>
+      <div><b>{{ adm.people_ok }}/{{ adm.people }}</b><span>участников</span></div>
+      <div class="{% if adm.people_wait %}text-warn{% endif %}"><b>{{ adm.people_wait }}</b><span>ждут</span></div>
+      <div><b>{{ adm.fee_paid }}</b><span>₽ из {{ adm.fee_due }}</span></div>
+    </div>
+    {% else %}<p class="status muted">Откроется, когда будут предварительные заявки.</p>{% endif %}
+    <span class="step-card-go">Открыть {{ icon("arrow", 18) }}</span>
+  </a>
 </div>
 
 <h2 class="section-title">Дальше по порядку</h2>
@@ -54,7 +66,7 @@
 <ol class="roadmap">
   {% for s in steps if not s.ready %}
   <li><a href="{{ step_url(base, s) }}">
-    <span class="step-num">{{ loop.index + 2 }}</span>
+    <span class="step-num">{{ steps.index(s) + 1 }}</span>
     <div><b>{{ s.title }}</b><span>{{ s.lead }}</span></div>
     <span class="soon">этап {{ s.stage }}</span>
   </a></li>

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_form.html" import issue_list %}
+{% block title %}Комиссия по допуску — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Комиссия по допуску</h1>
+<p class="lead">Участники — из предварительных заявок. Отмечайте документы: всё сохраняется сразу, кнопку «Сохранить»
+  нажимать не нужно. Участник допускается сам, когда отмечены все документы и в заявке по нему нет замечаний.</p>
+
+{% if blocked %}
+<div class="panel panel-err">
+  <h2>{{ icon("error") }} Сначала исправьте карточку соревнования</h2>
+  {{ issue_list(blocked) }}
+  <a class="btn btn-primary" href="{{ base }}/card">{{ icon("edit") }}Открыть карточку</a>
+</div>
+{% elif not teams %}
+<div class="empty">
+  {{ icon("file", 40) }}
+  <h2>Пока нет ни одной заявки</h2>
+  <p>Комиссия работает по предварительным заявкам: добавьте файлы команд — и участники появятся здесь.</p>
+  <a class="btn btn-primary" href="{{ base }}/preapps">Перейти к предварительным заявкам</a>
+</div>
+{% else %}
+
+{% include "_admission_tiles.html" %}
+
+<div class="panel next adm-tools">
+  <div class="adm-tool">
+    <h2>Протокол комиссии и ведомость взносов</h2>
+    <p class="muted">По форме Правил (раздел 3): команды, разряды, пол, возраст, замечания и решения; подписи председателя
+      комиссии и главного секретаря — из карточки соревнования. Ещё лист — документы каждого участника.</p>
+    <div class="actions">
+      <form method="post" action="{{ base }}/admission/report" data-busy="Готовлю протокол…">
+        <button class="btn btn-primary" type="submit">{{ icon("table") }}Открыть в Excel</button>
+      </form>
+      <a class="btn" href="{{ base }}/admission/report.xlsx">{{ icon("download") }}Скачать</a>
+    </div>
+  </div>
+  <div class="adm-tool">
+    <h2>Номера команд</h2>
+    <p class="muted">По порядку списка. Номер можно поправить вручную в поле «№» у команды.</p>
+    <div class="actions">
+      <form method="post" action="{{ base }}/admission/numbers"><input type="hidden" name="mode" value="missing">
+        <button class="btn" type="submit">Присвоить тем, у кого нет</button></form>
+      <form method="post" action="{{ base }}/admission/numbers" data-confirm="Перенумеровать все команды по порядку списка? Номера, поставленные вручную, заменятся.">
+        <input type="hidden" name="mode" value="all"><button class="btn btn-ghost" type="submit">Перенумеровать все</button></form>
+    </div>
+  </div>
+  <details class="howto adm-settings">
+    <summary>Какие документы проверять и время старта</summary>
+    <form method="post" action="{{ base }}/admission/settings">
+      <p class="muted">По Правилам (раздел 3, п. 8.1) на каждого участника нужны документ о личности и возрасте, медицинский допуск,
+        зачётная классификационная книжка, полисы ОМС и от несчастных случаев. Если Положение требует ещё что-то — включите.</p>
+      <fieldset><legend>Документы участника</legend>
+        {% for d in all_person_docs %}<label class="check"><input type="checkbox" name="doc-{{ d.key }}"{% if d.key in adm_settings.docs %} checked{% endif %}> {{ d.title }}</label>{% endfor %}
+      </fieldset>
+      <fieldset><legend>Документы команды</legend>
+        {% for d in all_team_docs %}<label class="check"><input type="checkbox" name="tdoc-{{ d.key }}"{% if d.key in adm_settings.team_docs %} checked{% endif %}> {{ d.title }}</label>{% endfor %}
+      </fieldset>
+      <div class="field adm-start">
+        <label for="f-start_at">Начало соревнований (первый старт)</label>
+        <input id="f-start_at" type="datetime-local" name="start_at" value="{{ adm_settings.start_at }}">
+        <p class="hint">Перезаявка подаётся не позднее чем за 1 час до начала вида программы (п. 8.5) — программа предупредит, если позже.</p>
+      </div>
+      <button class="btn btn-primary" type="submit">Сохранить настройки</button>
+    </form>
+  </details>
+</div>
+
+{% set by = totals.teams_by %}
+<div class="filter-bar" role="group" aria-label="Какие команды показывать">
+  <span class="filter-label">Показать:</span>
+  <button type="button" class="filter" data-team-filter="all" aria-pressed="true">Все <b>{{ teams|length }}</b></button>
+  <button type="button" class="filter filter-check" data-team-filter="pending" aria-pressed="false">Ожидают <b>{{ by.pending }}</b></button>
+  <button type="button" class="filter filter-done" data-team-filter="admitted" aria-pressed="false">Допущены <b>{{ by.admitted }}</b></button>
+  <button type="button" class="filter filter-fix" data-team-filter="rejected" aria-pressed="false">Не допущены <b>{{ by.rejected }}</b></button>
+</div>
+<p class="filter-empty muted" hidden>Таких команд сейчас нет.</p>
+
+<section data-team-list aria-label="Команды">
+{% for t in teams %}{% include "_admission_team.html" %}{% endfor %}
+</section>
+{% endif %}
+{% endblock %}

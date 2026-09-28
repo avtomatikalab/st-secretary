@@ -45,7 +45,10 @@ class FormFields(HTMLParser):
             self.tpl += 1
         if not self.inside or self.tpl:
             return
-        if tag == "input" and a.get("name") and a.get("type") not in ("file", "submit"):
+        if tag == "input" and a.get("type") == "checkbox":
+            if a.get("name") and "checked" in a:  # браузер отправляет только отмеченные галочки
+                self.fields[a["name"]] = a.get("value") or "on"
+        elif tag == "input" and a.get("name") and a.get("type") not in ("file", "submit"):
             self.fields[a["name"]] = a.get("value") or ""
         elif tag == "select":
             self._select, self._first = a.get("name"), None
@@ -436,7 +439,8 @@ def test_overview_steps_and_errors(client, psr_card, opened):
     f = client.app.state.store.create(psr_card)
     r = client.get(base(f))
     assert "Дальше по порядку" in r.text and "Комиссия по допуску" in r.text and "И.П. Судьин, СС1К" in r.text
-    assert "Протокол комиссии по допуску" in client.get(base(f) + "/step/admission").text
+    assert "Жеребьёвка или порядок старта" in client.get(base(f) + "/step/start").text
+    assert client.get(base(f) + "/step/admission").status_code == 404  # готовый шаг — своя страница
     assert client.get(base(f) + "/step/card").status_code == 404  # готовый шаг открывается не здесь
     assert client.get("/c/нет такого").status_code == 404
     assert "Страница не найдена" in client.get("/c/..%2F..%2Fsecret").text
@@ -452,3 +456,100 @@ def test_import_card_from_excel(client, tmp_path, psr_card):
     assert load_card(f.card_path) == psr_card
     r = client.post("/import", files={"card": ("заявка.xlsx", b"not an excel file", XLSX)})
     assert r.status_code == 422 and "не похож на карточку" in r.text
+
+
+# ------------------------------------------------------------------ комиссия по допуску
+
+
+def kedr(tmp_path):
+    """Заявка без замечаний: три взрослых участника."""
+    return make_application(tmp_path / "Кедр.xlsx", "Кедр", "Красноярск", "Лебедев Антон Игоревич",
+                            "89135550000", 3, [
+                                ["Кедр", "Красноярск", "Лебедев Антон Игоревич", "Лебедев Антон Игоревич",
+                                 "02.02.1990", "I", "м", "М/Ж", 3],
+                                ["Кедр", "Красноярск", "Лебедев Антон Игоревич", "Зуева Мария Олеговна",
+                                 "05.06.1996", "II", "ж", "М/Ж", 3],
+                                ["Кедр", "Красноярск", "Лебедев Антон Игоревич", "Носов Глеб Андреевич",
+                                 "09.09.1993", "б/р", "м", "М/Ж", 3],
+                            ]).read_bytes()
+
+
+def team_form(page_html, file):
+    """Поля формы команды на странице комиссии (как их отправит браузер)."""
+    from st_secretary.web.app import team_anchor
+
+    start = page_html.index(f'id="{team_anchor(file)}"')
+    block = page_html[start:page_html.index("</article>", start)]
+    return FormFields('<form id="t">' + block.split(">", 1)[1], "t").fields
+
+
+def test_admission_documents_decisions_fees_numbers(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    url = base(f) + "/admission"
+    page = client.get(url).text
+    assert "Комиссия по допуску" in page and "Зуева Мария Олеговна" in page and "Паспорт" in page
+    assert "0 из 2" in page and "Ожидают <b>2</b>" in page  # пока ничего не отмечено
+
+    # «Отметить все документы» — со страницы приходит без перезагрузки (X-Autosave), ответ — блок команды и итоги
+    data = team_form(page, "Кедр.xlsx") | {"do": "all_docs", "fee_paid": "3000", "fee_method": "наличные"}
+    r = client.post(url + "/team", data=data, headers={"X-Autosave": "1"})
+    j = r.json()
+    assert j["status"] == "admitted" and "Допущена" in j["team"] and "оплачено" in j["team"]
+    assert "1 из 2" in j["tiles"] and "3 000 ₽" in j["tiles"]
+
+    # Сосна: Пестову 16 лет — ждёт решения комиссии; допустить решением комиссии с основанием
+    data = team_form(client.get(url).text, "Сосна.xlsx") | {"do": "all_docs"}
+    j = client.post(url + "/team", data=data, headers={"X-Autosave": "1"}).json()
+    assert j["status"] == "pending" and "нужно решение комиссии" in j["team"]
+    data = team_form(client.get(url).text, "Сосна.xlsx")
+    pestov = next(k.split("-")[1] for k, v in data.items() if k.endswith("-key") and v == "пестов юрий андреевич")
+    data |= {f"p-{pestov}-decision": "admitted", f"p-{pestov}-reason": "решение ГСК"}
+    r = client.post(url + "/team", data=data, follow_redirects=False)  # без скриптов — обычная форма
+    assert r.status_code == 303 and "#t-" in r.headers["location"]
+    page = client.get(url).text
+    assert "2 из 2" in page and "допущен решением комиссии: решение ГСК" in page
+
+    # номера командам по порядку списка
+    client.post(url + "/numbers", data={"mode": "missing"})
+    adm = f.admission()["teams"]
+    assert sorted(t["number"] for t in adm.values()) == [1, 2]
+    data = team_form(client.get(url).text, "Сосна.xlsx") | {"number": str(adm["Кедр.xlsx"]["number"])}
+    j = client.post(url + "/team", data=data, headers={"X-Autosave": "1"}).json()
+    assert "уже у команды «Кедр»" in j["team"]  # одинаковый номер — предупреждение
+
+    # протокол и ведомость
+    r = client.get(url + "/report.xlsx")
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["Протокол комиссии", "Ведомость взносов", "Документы участников"]
+    text = [str(c.value) for row in wb["Протокол комиссии"].iter_rows() for c in row if c.value is not None]
+    assert text.count("допущена") == 2  # обе команды — в графе «Решения по замечаниям»
+    r = client.post(url + "/report", follow_redirects=False)
+    assert r.status_code == 303 and f.commission_report_path.is_file()
+
+
+def test_admission_settings_and_reentry(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    url = base(f) + "/admission"
+    client.post(url + "/settings", data={"doc-id": "1", "doc-med": "1", "doc-pd": "1", "tdoc-app": "1",
+                                         "start_at": "2000-01-01T10:00"})  # старт давно прошёл — перезаявка поздняя
+    page = client.get(url).text
+    assert "Согласие" in page and "Книжка" not in page.split("<thead>")[1].split("</thead>")[0]
+
+    edit = client.get(base(f) + "/preapps/edit?file=" + quote("Кедр.xlsx") + "&reentry=1").text
+    assert "Перезаявка «Кедр»" in edit and "меньше часа" in edit
+    data = FormFields(edit, "preappform").fields
+    assert data["reentry"] == "1"
+    fio_key = next(k for k, v in data.items() if v == "Носов Глеб Андреевич")
+    data[fio_key] = "Носова Галина Андреевна"
+    data[fio_key.replace("fio", "sex")] = "ж"
+    r = client.post(base(f) + "/preapps/save", data=data, follow_redirects=False)
+    assert r.status_code == 303 and "/admission?done=reentry_late" in r.headers["location"]
+    [rec] = f.admission()["teams"]["Кедр.xlsx"]["reentries"]
+    assert "выбыл(а): Носов Глеб Андреевич" in rec["text"] and "включён(а): Носова Галина Андреевна" in rec["text"]
+    assert rec["late"] and "позже, чем за час до старта" in client.get(url).text
+    edit = client.get(base(f) + "/preapps/edit?file=" + quote("Кедр.xlsx") + "&reentry=1").text
+    assert "повторные не принимаются" in edit
