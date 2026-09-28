@@ -1,15 +1,41 @@
 {% from "_icons.html" import icon %}
-{# Одно замечание: что не так, почему и что сделать. fix_url — куда ведёт кнопка «Исправить». #}
-{% macro issue_item(i, fix_url="", show_person=True) -%}
-<li class="issue sev-{{ i.severity }}" data-sev="{{ i.severity }}"{% if i.severity == FIXED %} hidden{% endif %}>
-  <span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>
+{# Одно замечание: что не так, почему и что сделать.
+   fix_url — куда ведёт «Исправить»; check — {"action", "file", "back"} для отметки «Проверено»;
+   checked_at — когда отмечено (для уже проверенных). #}
+{% macro issue_item(i, fix_url="", show_person=True, check=None, checked_at="") -%}
+<li class="issue sev-{{ i.severity }}" data-sev="{{ i.severity }}"{% if i.severity in (FIXED, CHECKED) %} hidden{% endif %}>
+  <span class="badge badge-{{ i.severity }}">{% if i.severity == CHECKED %}{{ icon("check", 13) }} {% endif %}{{ labels[i.severity] }}</span>
   <div class="issue-body">
     <div class="issue-what">{% if show_person and i.person %}<b>{{ i.person }}</b> — {% endif %}{{ i.text }}{% if i.row %} <span class="issue-where">строка {{ i.row }} в файле</span>{% endif %}</div>
     {% if i.after %}<div class="change">было: <del>{{ i.before or "пусто" }}</del> → стало: <ins>{{ i.after }}</ins></div>
     {% elif i.before and i.before not in i.text %}<div class="change">в заявке: «{{ i.before }}»</div>{% endif %}
-    {% if i.why %}<p class="issue-why"><b>Почему:</b> {{ i.why }}</p>{% endif %}
-    {% if i.todo %}<p class="issue-todo"><b>Что сделать:</b> {{ i.todo }}</p>{% endif %}
+    {% if i.severity != CHECKED %}
+      {% if i.why %}<p class="issue-why"><b>Почему:</b> {{ i.why }}</p>{% endif %}
+      {% if i.todo %}<p class="issue-todo"><b>Что сделать:</b> {{ i.todo }}</p>{% endif %}
+    {% elif checked_at %}<p class="issue-why">Проверено {{ checked_at }}.</p>{% endif %}
   </div>
-  {% if fix_url and i.severity in (ERROR, WARNING) %}<a class="btn btn-ghost btn-small issue-fix" href="{{ fix_url }}">{{ icon("edit", 16) }}Исправить</a>{% endif %}
+  {% if (check and i.severity in (WARNING, CHECKED)) or (fix_url and i.severity in (ERROR, WARNING)) %}
+  <div class="issue-actions">
+    {% if check and i.severity == WARNING %}
+    <form method="post" action="{{ check.action }}">
+      <input type="hidden" name="file" value="{{ check.file }}"><input type="hidden" name="key" value="{{ issue_key(i) }}">
+      <input type="hidden" name="on" value="1"><input type="hidden" name="back" value="{{ check.back }}">
+      <button class="btn btn-small btn-check" type="submit" title="Я проверил(а) — всё верно">{{ icon("check", 16) }}Проверено</button>
+    </form>
+    {% elif check and i.severity == CHECKED %}
+    <form method="post" action="{{ check.action }}">
+      <input type="hidden" name="file" value="{{ check.file }}"><input type="hidden" name="key" value="{{ issue_key(i) }}">
+      <input type="hidden" name="on" value="0"><input type="hidden" name="back" value="{{ check.back }}">
+      <button class="btn btn-ghost btn-small" type="submit">Снять отметку</button>
+    </form>
+    {% endif %}
+    {% if fix_url and i.severity in (ERROR, WARNING) %}<a class="btn btn-ghost btn-small" href="{{ fix_url }}">{{ icon("edit", 16) }}Исправить</a>{% endif %}
+  </div>
+  {% endif %}
 </li>
+{%- endmacro %}
+
+{# Статус заявки — плашка. #}
+{% macro status_badge(review) -%}
+<span class="status-badge status-{{ review.status }}">{% if review.status == DONE %}{{ icon("check", 14) }} {% endif %}{{ review.label }}</span>
 {%- endmacro %}

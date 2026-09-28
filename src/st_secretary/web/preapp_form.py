@@ -130,17 +130,22 @@ def form_to_file(form: dict) -> tuple[dict, list[dict], dict[str, str]]:
     return head, rows, errors
 
 
-def choices(comp: Competition, form: dict) -> dict:
-    """Списки для полей и какие колонки участия показывать (по дисциплинам соревнования)."""
+def columns(comp: Competition, rows: list[dict]) -> dict[str, bool]:
+    """Какие колонки участия показывать: по дисциплинам соревнования и по тому, что уже заполнено."""
     formats = {discipline_by_code(z.discipline_code).rank_format for z in comp.zachety}
-    filled = {f for r in form["rows"] for f in ("personal", "pair", "pair_num", "team_dist") if r[f]}
+    filled = {f for r in rows for f in ("personal", "pair", "pair_num", "team_dist") if r.get(f)}
+    return {"personal": "individual" in formats or "personal" in filled,
+            "pair": "pair" in formats or bool(filled & {"pair", "pair_num"}),
+            "team_dist": bool(formats & {"group", "crew"}) or "team_dist" in filled}
+
+
+def choices(comp: Competition, form: dict) -> dict:
+    """Списки для полей и какие колонки участия показывать."""
     return {
         "quals": [(q.label, q.label) for q in Qual],
         "sexes": [("м", "м"), ("ж", "ж")],
         "zachety": [(z.key, f"{z.group}, {z.distance_class} кл.") for z in comp.zachety],
-        "show": {"personal": "individual" in formats or "personal" in filled,
-                 "pair": "pair" in formats or bool(filled & {"pair", "pair_num"}),
-                 "team_dist": bool(formats & {"group", "crew"}) or "team_dist" in filled},
+        "show": columns(comp, form["rows"]),
     }
 
 

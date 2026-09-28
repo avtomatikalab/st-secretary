@@ -48,11 +48,12 @@
 </div>
 {%- endmacro %}
 
-{% block title %}Карточка — СТ-Секретарь{% endblock %}
+{% block title %}Редактирование карточки — СТ-Секретарь{% endblock %}
 {% block content %}
-<h1>Карточка соревнования</h1>
+<a class="back" href="{{ base }}/card">← Карточка соревнования</a>
+<h1>Редактирование карточки соревнования</h1>
 <p class="lead">Всё, что вводится здесь, попадает в шапки и подписи документов, проверку заявок и расчёт разрядов.
-  Карточка хранится в файле Excel в папке соревнования — её можно открыть и там.</p>
+  После сохранения откроется карточка. Карточка хранится в файле Excel в папке соревнования — её можно открыть и там.</p>
 
 {% if card_errors and not form %}
 <div class="panel panel-err">
@@ -70,7 +71,7 @@
     <p>Если сохранить сейчас, изменения, сделанные в Excel, пропадут. Ваши правки на этой странице пока не сохранены.</p>
     <div class="actions">
       <button class="btn btn-primary" type="submit" form="cardform" name="force" value="1">Сохранить мои правки всё равно</button>
-      <a class="btn" href="{{ base }}/card">Показать карточку из Excel (мои правки пропадут)</a>
+      <a class="btn" href="{{ base }}/card/edit">Показать карточку из Excel (мои правки пропадут)</a>
     </div>
   </div>
   {% endif %}
@@ -88,7 +89,7 @@
     {% endif %}
   {% endif %}
 
-  <form id="cardform" method="post" action="{{ base }}/card" data-guard>
+  <form id="cardform" method="post" action="{{ base }}/card/edit" data-guard>
     <input type="hidden" name="version" value="{{ card_version }}">
 
     <section class="panel" id="main">
@@ -124,6 +125,7 @@
 
     <div class="savebar">
       <button class="btn btn-primary btn-big" type="submit">{{ icon("check") }}Сохранить карточку</button>
+      <a class="btn btn-ghost" href="{{ base }}/card">Отмена</a>
       <button class="btn btn-ghost" type="submit" form="open-card-form">{{ icon("table") }}Открыть в Excel</button>
       <span class="muted savebar-note">Сохраняется в «Карточка_соревнования.xlsx» в папке соревнования</span>
     </div>

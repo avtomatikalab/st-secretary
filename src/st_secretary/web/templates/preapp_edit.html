@@ -58,15 +58,18 @@
 
 {% block title %}{{ form.head.team or "Новая заявка" }} — предзаявка — СТ-Секретарь{% endblock %}
 {% block content %}
-<a class="back" href="{{ base }}/preapps">← Все предварительные заявки</a>
+{% set card_url = base ~ "/preapps/team?file=" ~ (file|urlencode) %}
+{% if file %}<a class="back" href="{{ card_url }}">← Карточка команды</a>
+{% else %}<a class="back" href="{{ base }}/preapps">← Все предварительные заявки</a>{% endif %}
 <div class="page-head">
   <div>
-    <h1>{% if file %}Заявка{% if form.head.team %} команды «{{ form.head.team }}»{% endif %}{% else %}Новая заявка{% endif %}</h1>
+    <h1>{% if file %}Редактирование заявки{% if form.head.team %} «{{ form.head.team }}»{% endif %}{% else %}Новая заявка{% endif %}</h1>
     {% if file %}<p class="muted file-line">{{ icon("file", 16) }} {{ file }}</p>{% endif %}
   </div>
   {% if file %}
   <form method="post" action="{{ base }}/preapps/open">
     <input type="hidden" name="name" value="{{ file }}">
+    <input type="hidden" name="back" value="{{ base }}/preapps/edit?file={{ file|urlencode }}">
     <button class="btn btn-ghost" type="submit">{{ icon("table") }}Открыть файл в Excel</button>
   </form>
   {% endif %}
@@ -101,7 +104,7 @@
     {% endif %}
   </div>
   {% else %}
-  <div class="flash flash-ok" id="team">{{ icon("check-circle") }}<div>Заявка проверена — ошибок нет, проверять нечего.</div></div>
+  <div class="flash flash-ok" id="team">{{ icon("check-circle") }}<div>В заявке нет ошибок и нет того, что нужно проверить.</div></div>
   {% endif %}
 {% endif %}
 
@@ -112,8 +115,8 @@
       обведены <span class="text-ok">зелёным</span>, наведите на поле мышь — будет видно, что было в файле.</li>
     <li><span class="text-err">Красная</span> рамка — ошибка, <span class="text-warn">жёлтая</span> — нужно проверить;
       объяснение — под строкой участника.</li>
-    <li>Нажмите «Сохранить и проверить»: заявка запишется в файл Excel в папке «Предзаявки» и проверится заново.
-      Прежний вариант файла не пропадёт — он переносится в «Предзаявки\Прежние версии».</li>
+    <li>Нажмите «Сохранить и проверить»: заявка запишется в файл Excel в папке «Предзаявки», проверится заново,
+      и откроется карточка команды. Прежний вариант файла не пропадёт — он переносится в «Предзаявки\Прежние версии».</li>
   </ul>
 </details>
 
@@ -164,7 +167,7 @@
 
   <div class="savebar">
     <button class="btn btn-primary btn-big" type="submit">{{ icon("check") }}Сохранить и проверить</button>
-    <a class="btn btn-ghost" href="{{ base }}/preapps">Отмена</a>
+    <a class="btn btn-ghost" href="{{ card_url if file else base ~ '/preapps' }}">Отмена</a>
     <span class="muted savebar-note">{% if file %}Сохраняется в «{{ file.rsplit('.', 1)[0] }}.xlsx», прежний вариант — в «Прежние версии»{% else %}Сохраняется новым файлом в папке «Предзаявки»{% endif %}</span>
   </div>
 </form>

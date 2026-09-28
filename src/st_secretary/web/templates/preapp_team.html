@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_issues.html" import issue_item, status_badge %}
+{% block title %}{{ team.team if team else file }} — карточка команды — СТ-Секретарь{% endblock %}
+{% block content %}
+{% set edit_url = base ~ "/preapps/edit?file=" ~ (file|urlencode) %}
+<a class="back" href="{{ base }}/preapps">← Все предварительные заявки</a>
+
+<div class="page-head team-card-head">
+  <div>
+    <p class="eyebrow-muted">Карточка команды</p>
+    <h1>{{ team.team if team else file }} {{ status_badge(review) }}</h1>
+    <p class="muted file-line">{% if team %}{{ team.territory }} · {{ team.entries|length }} чел. · {% endif %}{{ icon("file", 16) }} {{ file }}</p>
+    {% if team %}
+    <p class="team-contact">{{ icon("phone", 16) }} {{ team.representative or "представитель не указан" }}{% if team.phone %}, <a href="tel:{{ team.phone|replace(' ', '')|replace('-', '') }}">{{ team.phone }}</a>{% endif %}{% if team.email %}, <a href="mailto:{{ team.email }}">{{ team.email }}</a>{% endif %}</p>
+    {% endif %}
+  </div>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ edit_url }}">{{ icon("edit") }}Редактировать заявку</a>
+    <form method="post" action="{{ base }}/preapps/open">
+      <input type="hidden" name="name" value="{{ file }}"><input type="hidden" name="back" value="{{ here }}">
+      <button class="btn btn-ghost" type="submit">{{ icon("table") }}Открыть файл в Excel</button>
+    </form>
+  </div>
+</div>
+
+<section class="panel status-panel">
+  <h2>Статус заявки</h2>
+  <div class="status-switch" role="group" aria-label="Статус заявки">
+    {% for s in (CHECK, FIX, DONE) %}
+    {% set n_warn = counts[WARNING] %}
+    <form method="post" action="{{ base }}/preapps/status"
+          {% if s == DONE and n_warn %}data-confirm="Отметить заявку проверенной? Замечания «Проверить» ({{ n_warn }}) тоже будут отмечены как проверенные."{% endif %}>
+      <input type="hidden" name="file" value="{{ file }}"><input type="hidden" name="status" value="{{ s }}">
+      <input type="hidden" name="back" value="{{ here }}">
+      <button type="submit" class="status-opt status-opt-{{ s }}" aria-pressed="{{ 'true' if review.status == s else 'false' }}"
+              {% if s == DONE and counts[ERROR] %}disabled title="Пока в заявке есть ошибки, «Проверено» не ставится"{% endif %}>
+        {% if review.status == s %}{{ icon("check", 16) }}{% endif %}{{ status_label[s] }}</button>
+    </form>
+    {% endfor %}
+  </div>
+  <p class="hint status-note">
+    {% if review.manual %}Выставлен вручную {{ review.at }}.
+    {% elif review.status == FIX %}Выставлен сам: в заявке есть ошибки. Исправьте их — заявку можно отредактировать здесь или попросить команду прислать новую.
+    {% else %}Выставлен сам: ошибок нет. Посмотрите заявку и замечания «Проверить» и отметьте «Проверено».{% endif %}
+    {% if counts[ERROR] %}«Проверено» можно будет поставить, когда в заявке не останется ошибок.{% endif %}
+  </p>
+  {% if review.reset %}<p class="status-reset">{{ icon("alert", 16) }} {{ review.reset }}</p>{% endif %}
+</section>
+
+<section class="panel" id="issues">
+  <h2>Замечания</h2>
+  {% if issues %}
+  <div class="chips" aria-label="Какие замечания показывать">
+    <button type="button" class="chip chip-error" data-filter="{{ ERROR }}" aria-pressed="true">Ошибки <b>{{ counts[ERROR] }}</b></button>
+    <button type="button" class="chip chip-warning" data-filter="{{ WARNING }}" aria-pressed="true">Проверить <b>{{ counts[WARNING] }}</b></button>
+    <button type="button" class="chip chip-checked" data-filter="{{ CHECKED }}" aria-pressed="false">Проверено <b>{{ counts[CHECKED] }}</b></button>
+    <button type="button" class="chip chip-fixed" data-filter="{{ FIXED }}" aria-pressed="false">Исправлено системой <b>{{ counts[FIXED] }}</b></button>
+  </div>
+  {% endif %}
+  {% if not counts[ERROR] and not counts[WARNING] %}
+  <p class="team-ok">{{ icon("check-circle", 18) }} Ошибок нет, проверять нечего{% if counts[CHECKED] or counts[FIXED] %} — проверенное и исправленное системой можно посмотреть, включив фильтры выше{% endif %}.</p>
+  {% endif %}
+  {% if issues %}
+  <ul class="issue-list issue-list-boxed">
+    {% for i in issues %}{{ issue_item(i, edit_url ~ ("#p-" ~ i.row if i.row else ""),
+                                     check={"action": base ~ "/preapps/check", "file": file, "back": here ~ "#issues"},
+                                     checked_at=review.checked.get(issue_key(i), "")) }}{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Участники</h2>
+  {% if team %}
+  <div class="table-wrap">
+  <table class="tbl people">
+    <thead><tr>
+      <th>№</th><th>Фамилия Имя Отчество</th><th>Дата рождения</th><th>Разряд</th><th>Пол</th><th>Зачёт</th>
+      {% if show.personal %}<th>Личная</th>{% endif %}
+      {% if show.pair %}<th>Связка</th><th>№ связки</th>{% endif %}
+      {% if show.team_dist %}<th>Группа, №</th>{% endif %}
+      <th>Чип</th><th>Проверка</th>
+    </tr></thead>
+    <tbody>
+    {% for e in team.entries %}{% set w = worst.get(e.row) %}
+      <tr{% if w in (ERROR, WARNING) %} class="sev-{{ w }}"{% endif %}>
+        <td>{{ e.num_in_team }}</td>
+        <td>{{ e.name.full }}</td>
+        <td>{% if e.birth %}{{ e.birth|d }}{% elif e.birth_year %}{{ e.birth_year }}{% else %}—{% endif %}</td>
+        <td>{{ e.qual.label if e.qual is not none else "?" }}</td>
+        <td>{{ e.sex or "?" }}</td>
+        <td>{{ e.zachet.key if e.zachet else "—" }}</td>
+        {% if show.personal %}<td>{{ e.personal }}</td>{% endif %}
+        {% if show.pair %}<td>{{ e.pair }}</td><td>{{ e.pair_num }}</td>{% endif %}
+        {% if show.team_dist %}<td>{{ e.team_dist }}</td>{% endif %}
+        <td>{{ e.chip }}</td>
+        <td>{% if w == ERROR %}<span class="badge badge-error">Ошибка</span>{% elif w == WARNING %}<span class="badge badge-warning">Проверить</span>{% elif w == CHECKED %}<span class="badge badge-checked">Проверено</span>{% else %}<span class="text-ok">{{ icon("check", 18) }}</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>Файл не удалось прочитать как заявку — причина в замечаниях выше. Нажмите «Редактировать заявку», чтобы заполнить её
+    в программе (прежний файл сохранится в «Предзаявки\Прежние версии»), или попросите команду прислать заявку по бланку.</p>
+  {% endif %}
+</section>
+{% endblock %}

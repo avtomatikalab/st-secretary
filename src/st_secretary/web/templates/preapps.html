@@ -2,7 +2,7 @@
 {% from "_icons.html" import icon %}
 {% from "_form.html" import issue_list %}
 {% from "_files.html" import files_table %}
-{% from "_issues.html" import issue_item %}
+{% from "_issues.html" import issue_item, status_badge %}
 {% block title %}Предзаявки — СТ-Секретарь{% endblock %}
 {% block content %}
 <h1>Предварительные заявки</h1>
@@ -42,7 +42,7 @@
   <div class="tile"><b>{{ result.entries|length }}</b><span>участников</span></div>
   <div class="tile tile-error"><b>{{ t[ERROR] }}</b><span>ошибок — исправить до комиссии</span></div>
   <div class="tile tile-warning"><b>{{ t[WARNING] }}</b><span>проверить — нужно решение</span></div>
-  <div class="tile tile-fixed"><b>{{ t[FIXED] }}</b><span>исправлено системой</span></div>
+  <div class="tile tile-fixed"><b>{{ view.by_filter[DONE] }} из {{ files|length }}</b><span>заявок проверено</span></div>
 </div>
 
 <div class="panel next">
@@ -50,8 +50,8 @@
   <ol class="next-steps">
     <li>Разберите <b class="text-err">ошибки</b> и то, что нужно <b class="text-warn">проверить</b> — ниже, по командам,
       рядом телефоны представителей. У каждого замечания написано, почему оно появилось и что сделать.
-      Исправить можно прямо здесь — кнопка «Исправить» откроет заявку в форме; или перетащите сюда исправленный файл
-      от команды.</li>
+      Щёлкните по названию команды — откроется её карточка: там заявку можно исправить и отметить «Проверено».
+      Исправленный файл от команды можно просто перетащить сюда ещё раз.</li>
     <li>Откройте сводку и перенесите участников в СЕКРЕТАРЬ_ST — по одной команде.
       <div class="actions">
         <form method="post" action="{{ base }}/preapps/summary" data-busy="Готовлю сводку…">
@@ -75,30 +75,38 @@
 {% if view.general %}<div class="panel">{{ issue_list(view.general) }}</div>{% endif %}
 
 <div class="tabs" role="tablist" aria-label="Результаты проверки">
-  <button class="tab" role="tab" id="tab-issues" aria-controls="panel-issues" aria-selected="true" type="button">Замечания по командам</button>
+  <button class="tab" role="tab" id="tab-issues" aria-controls="panel-issues" aria-selected="true" type="button">Команды и замечания</button>
   <button class="tab" role="tab" id="tab-people" aria-controls="panel-people" aria-selected="false" type="button">Участники ({{ result.entries|length }})</button>
   <button class="tab" role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false" type="button">Файлы заявок ({{ files|length }})</button>
 </div>
 
 <section class="tabpanel" id="panel-issues" role="tabpanel" aria-labelledby="tab-issues">
-  <div class="chips" aria-label="Что показывать">
-    <button type="button" class="chip chip-error" data-filter="error" aria-pressed="true">Ошибки <b>{{ t[ERROR] }}</b></button>
-    <button type="button" class="chip chip-warning" data-filter="warning" aria-pressed="true">Проверить <b>{{ t[WARNING] }}</b></button>
-    <button type="button" class="chip chip-fixed" data-filter="fixed" aria-pressed="false">Исправлено системой <b>{{ t[FIXED] }}</b></button>
+  {% set bf = view.by_filter %}
+  <div class="filter-bar" role="group" aria-label="Какие команды показывать">
+    <span class="filter-label">Показать:</span>
+    <button type="button" class="filter" data-team-filter="all" aria-pressed="true">Все <b>{{ view.groups|length }}</b></button>
+    <button type="button" class="filter filter-fix" data-team-filter="{{ FIX }}" aria-pressed="false"
+            title="Заявки со статусом «Исправить»: в них есть ошибки или вы отправили их на исправление">Ошибки <b>{{ bf[FIX] }}</b></button>
+    <button type="button" class="filter filter-check" data-team-filter="{{ CHECK }}" aria-pressed="false"
+            title="Заявки со статусом «Проверить»: ошибок нет, но заявку ещё не отметили проверенной">Проверить <b>{{ bf[CHECK] }}</b></button>
+    <button type="button" class="filter filter-done" data-team-filter="{{ DONE }}" aria-pressed="false"
+            title="Заявки, которые вы отметили «Проверено»">Проверено <b>{{ bf[DONE] }}</b></button>
+    {% if t[FIXED] %}<label class="toggle"><input type="checkbox" data-show-fixed> Показывать исправленное системой ({{ t[FIXED] }})</label>{% endif %}
   </div>
+  <p class="filter-empty muted" hidden>Таких команд сейчас нет.</p>
   {% for g in view.groups %}
-  {% set edit_url = base ~ "/preapps/edit?file=" ~ (g.file|urlencode) %}
-  <article class="team">
+  {% set card_url = base ~ "/preapps/team?file=" ~ (g.file|urlencode) %}
+  {% set anchor = "t-" ~ loop.index %}
+  <article class="team" id="{{ anchor }}" data-status="{{ g.review.status }}">
     <header class="team-head">
       <div class="team-title">
-        <h3>{{ g.team.team if g.team else g.file }}</h3>
+        <h3><a class="team-link" href="{{ card_url }}">{{ g.team.team if g.team else g.file }}</a></h3>
         {% if g.team %}<span class="muted">{{ g.team.territory }} · {{ g.team.entries|length }} чел.</span>{% endif %}
       </div>
       <div class="team-counts">
         {% if g.counts[ERROR] %}<span class="badge badge-error">Ошибок: {{ g.counts[ERROR] }}</span>{% endif %}
         {% if g.counts[WARNING] %}<span class="badge badge-warning">Проверить: {{ g.counts[WARNING] }}</span>{% endif %}
-        {% if not g.counts[ERROR] and not g.counts[WARNING] %}<span class="badge badge-fixed">{{ icon("check", 14) }} Всё в порядке</span>{% endif %}
-        <a class="btn btn-small" href="{{ edit_url }}">{{ icon("edit", 16) }}Исправить заявку</a>
+        {{ status_badge(g.review) }}
       </div>
       {% if g.team %}
       <div class="team-contact">{{ icon("phone", 16) }}
@@ -107,13 +115,18 @@
       {% endif %}
       <div class="team-file">{{ icon("file", 14) }} {{ g.file }}</div>
     </header>
-    {% if g.issues %}
+    {% set open_issues = g.issues|rejectattr("severity", "equalto", CHECKED)|list %}
+    {% if open_issues %}
     <ul class="issue-list">
-      {% for i in g.issues %}{{ issue_item(i, edit_url ~ ("#p-" ~ i.row if i.row else "#team")) }}{% endfor %}
+      {% for i in open_issues %}{{ issue_item(i, base ~ "/preapps/edit?file=" ~ (g.file|urlencode) ~ ("#p-" ~ i.row if i.row else ""),
+                                             check={"action": base ~ "/preapps/check", "file": g.file, "back": base ~ "/preapps#" ~ anchor}) }}{% endfor %}
     </ul>
     {% endif %}
+    {% if g.counts[CHECKED] %}
+    <p class="team-checked">{{ icon("check", 16) }} Проверено замечаний: {{ g.counts[CHECKED] }} — <a href="{{ card_url }}">посмотреть в карточке команды</a></p>
+    {% endif %}
     {% if not g.counts[ERROR] and not g.counts[WARNING] %}
-    <p class="team-ok">{{ icon("check-circle", 18) }} Ошибок нет.{% if g.counts[FIXED] %} Система поправила мелочи ({{ g.counts[FIXED] }}) — включите «Исправлено системой», чтобы посмотреть.{% endif %}</p>
+    <p class="team-ok">{{ icon("check-circle", 18) }} Ошибок нет, проверять нечего.{% if g.review.status != DONE %} Откройте карточку команды и отметьте заявку «Проверено».{% endif %}</p>
     {% endif %}
   </article>
   {% endfor %}
@@ -129,12 +142,12 @@
       {% for e in g.team.entries %}{% set w = g.worst.get(e.name.full) %}
       <tr{% if w in (ERROR, WARNING) %} class="sev-{{ w }}"{% endif %}>
         <td>{{ e.num_in_team }}</td>
-        <td><a href="{{ base }}/preapps/edit?file={{ g.file|urlencode }}#p-{{ e.row }}" title="Открыть заявку в форме">{{ e.name.full }}</a></td>
+        <td>{{ e.name.full }}</td>
         <td>{% if e.birth %}{{ e.birth|d }}{% elif e.birth_year %}{{ e.birth_year }}{% else %}—{% endif %}</td>
         <td>{{ e.qual.label if e.qual is not none else "?" }}</td>
         <td>{{ e.sex or "?" }}</td>
         <td>{{ e.zachet.key if e.zachet else "—" }}</td>
-        <td>{% if w == ERROR %}<span class="badge badge-error">Ошибка</span>{% elif w == WARNING %}<span class="badge badge-warning">Проверить</span>{% else %}<span class="text-ok">{{ icon("check", 18) }}</span>{% endif %}</td>
+        <td>{% if w == ERROR %}<span class="badge badge-error">Ошибка</span>{% elif w == WARNING %}<span class="badge badge-warning">Проверить</span>{% elif w == CHECKED %}<span class="badge badge-checked">Проверено</span>{% else %}<span class="text-ok">{{ icon("check", 18) }}</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

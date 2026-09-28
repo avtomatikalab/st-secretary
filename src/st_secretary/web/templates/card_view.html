@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_form.html" import issue_list %}
+{% block title %}Карточка — СТ-Секретарь{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Карточка соревнования</h1>
+    <p class="lead">Всё, что здесь записано, попадает в шапки и подписи документов, проверку заявок и расчёт разрядов.
+      Чтобы изменить — нажмите «Редактировать карточку».</p>
+  </div>
+  <div class="actions">
+    {% if comp %}<a class="btn btn-primary" href="{{ base }}/card/edit">{{ icon("edit") }}Редактировать карточку</a>{% endif %}
+    <form method="post" action="{{ base }}/open/card"><button class="btn btn-ghost" type="submit">{{ icon("table") }}Открыть в Excel</button></form>
+  </div>
+</div>
+
+{% if card_errors %}
+<div class="panel panel-err">
+  <h2>{{ icon("error") }} Файл карточки заполнен с ошибками</h2>
+  {{ issue_list(card_errors) }}
+  <p>Откройте карточку в Excel, исправьте, сохраните файл и обновите эту страницу (клавиша F5).</p>
+</div>
+{% endif %}
+
+{% if comp %}
+  {% if issues %}
+  <div class="panel {% if issues|selectattr('severity', 'equalto', ERROR)|list %}panel-err{% else %}panel-warn{% endif %}">
+    <h2>Проверка карточки</h2>
+    {{ issue_list(issues) }}
+  </div>
+  {% else %}
+  <div class="flash flash-ok">{{ icon("check-circle") }}<div>Карточка заполнена, замечаний нет.</div></div>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Основные реквизиты</h2>
+    <dl class="facts facts-wide">
+      <dt>Наименование</dt><dd><b>{{ comp.title }}</b></dd>
+      <dt>Вид</dt><dd>{{ comp.kind }}</dd>
+      <dt>Уровень (статус)</dt><dd>{{ level_labels[comp.level] }}</dd>
+      <dt>Даты</dt><dd>{{ comp.dates_text }}</dd>
+      <dt>Приём предзаявок до</dt><dd>{{ comp.preapp_deadline|d or "—" }}</dd>
+      <dt>Место проведения</dt><dd>{{ comp.place }}</dd>
+      <dt>Территория организаторов</dt><dd>{{ comp.host_territory }}</dd>
+      <dt>Проводящие организации</dt><dd>{% for o in comp.organizers %}{{ o }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</dd>
+      <dt>Номер в календарном плане</dt><dd>{{ comp.calendar_number or "—" }}</dd>
+      <dt>Редакция разрядных норм</dt><dd>{{ comp.norms_edition }}</dd>
+      <dt>Методика «% от победителя»</dt><dd>{{ percent_labels.get(comp.percent_method.name if comp.percent_method else "", "—") }}</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Главная судейская коллегия</h2>
+    {% if comp.officials %}
+    <div class="table-wrap">
+    <table class="tbl">
+      <thead><tr><th>Должность</th><th>ФИО</th><th>Категория</th><th>Территория</th><th>В подписи протокола</th></tr></thead>
+      <tbody>
+      {% for o in comp.officials %}
+        <tr><td>{{ o.role }}</td><td>{{ o.fio }}</td><td>{{ o.category or "—" }}</td><td>{{ o.territory or "—" }}</td><td class="muted">{{ o.signature }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="muted">Судьи не указаны.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Зачёты</h2>
+    {% if comp.zachety %}
+    <div class="table-wrap">
+    <table class="tbl">
+      <thead><tr><th>Зачёт</th><th>Дисциплина</th><th>Возраст</th><th>Разряд не ниже</th><th>Состав команды</th><th>Взнос</th></tr></thead>
+      <tbody>
+      {% for z in comp.zachety %}
+        <tr>
+          <td><b>{{ z.key }}</b></td>
+          <td>{{ z.discipline_name }}<br><span class="muted">{{ z.discipline_code }}</span></td>
+          <td>{% if z.age_from %}с {{ z.age_from|from_years }}{% endif %}{% if z.age_to %} до {{ z.age_to|from_years }}{% endif %}{% if not z.age_from and not z.age_to %}без ограничений{% endif %}
+            {% if z.age_from_by_gsk %}<br><span class="muted">с {{ z.age_from_by_gsk|from_years }} — по решению ГСК</span>{% endif %}</td>
+          <td>{{ z.min_qual.label }}</td>
+          <td>{% if z.team_size %}{{ z.team_size }} чел.{% else %}—{% endif %}{% if z.min_men or z.min_women %}<br><span class="muted">мужчин от {{ z.min_men }}, женщин от {{ z.min_women }}</span>{% endif %}</td>
+          <td>{% if z.fee %}{{ z.fee }} ₽ за {{ z.fee_per }}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="muted">Зачёты не заданы — без них заявки не с чем сверять.</p>{% endif %}
+  </section>
+{% endif %}
+{% endblock %}

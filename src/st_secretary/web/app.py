@@ -15,7 +15,7 @@ import tempfile
 from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -28,9 +28,11 @@ from st_secretary import __version__
 from st_secretary.competition import LEVEL_LABELS
 from st_secretary.importers.card_xlsx import CardError, load_card
 from st_secretary.importers.preapp_xlsx import read_preapplication
-from st_secretary.issues import ERROR, FIXED, INFO, SEVERITY_LABEL, SEVERITY_ORDER, WARNING, Issue
+from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, SEVERITY_ORDER, WARNING, Issue
 from st_secretary.qualification import Qual
+from st_secretary.textclean import from_years
 from st_secretary.web import preapp_form as pf
+from st_secretary.web.review import CHECK, DONE, FIX, STATUS_LABEL, issue_key
 from st_secretary.web.forms import card_to_form, choices, empty_zachet, form_from_data, form_to_card
 from st_secretary.web.steps import BY_SLUG, STEPS
 from st_secretary.web.store import SUMMARY, CompFolder, Store
@@ -66,6 +68,13 @@ def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
 
+def _with_done(url: str, done: str) -> str:
+    """Адрес с сообщением о сделанном (?done=…); якорь (#…) сохраняется."""
+    parts = urlsplit(url)
+    q = [(k, v) for k, v in parse_qsl(parts.query) if k != "done"] + [("done", done)]
+    return urlunsplit(parts._replace(query=urlencode(q)))
+
+
 def _flash(request: Request) -> dict | None:
     q = request.query_params
     done = q.get("done")
@@ -93,6 +102,9 @@ def _flash(request: Request) -> dict | None:
         "summary": ("ok", "Сводка сохранена в папке соревнования и открывается в Excel."),
         "psaved": ("ok", "Заявка сохранена и проверена заново — результат ниже. Прежний вариант файла лежит в папке "
                          "«Предзаявки\\Прежние версии»."),
+        "status": ("ok", "Статус заявки изменён."),
+        "checked": ("ok", "Отмечено: проверено. Замечание больше не считается в «Проверить»."),
+        "unchecked": ("ok", "Отметка «проверено» снята — замечание снова в «Проверить»."),
         "pcreated": ("ok", f"Заявка сохранена в файл «{q.get('file', '')}» в папке «Предзаявки» и проверена — "
                            "результат ниже."),
         "locked": ("err", "Сводка сейчас открыта в Excel. Закройте её там и нажмите кнопку ещё раз."),
@@ -112,11 +124,13 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.filters["d"] = _fmt_date
+    templates.env.filters["from_years"] = from_years
     # Метка для адресов стилей и скриптов: меняется вместе с файлами, чтобы браузер не держал старую версию.
     static_version = f"{__version__}-{max(int(p.stat().st_mtime) for p in (HERE / 'static').iterdir())}"
     templates.env.globals.update(steps=STEPS, step_url=_step_url, version=static_version, labels=SEVERITY_LABEL,
                                  level_labels=LEVEL_LABELS, empty_zachet=empty_zachet(),
-                                 ERROR=ERROR, WARNING=WARNING, FIXED=FIXED, INFO=INFO)
+                                 ERROR=ERROR, WARNING=WARNING, CHECKED=CHECKED, FIXED=FIXED, INFO=INFO,
+                                 issue_key=issue_key, status_label=STATUS_LABEL, CHECK=CHECK, FIX=FIX, DONE=DONE)
 
     def page(request: Request, name: str, status_code: int = 200, **ctx):
         return templates.TemplateResponse(request, name, {"flash": _flash(request), **ctx}, status_code=status_code)
@@ -172,7 +186,7 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
         if errors:
             return page(request, "new.html", status_code=422, form=form, errors=errors, ch=choices())
         f = store.create(comp)
-        return _redirect(f"{_base(f)}/card?done=created")
+        return _redirect(f"{_base(f)}/card/edit?done=created")
 
     @app.post("/import")
     async def import_card(request: Request):
@@ -205,9 +219,10 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
         files = f.preapp_files()
         pre = None
         if comp and files and not any(i.severity == ERROR for i in card_issues):
-            r = store.preapps(f, comp)
+            r, reviews = store.review(f, comp)
             pre = {"teams": len(r.teams), "entries": len(r.entries), "errors": r.count(ERROR),
-                   "warnings": r.count(WARNING), "fixed": r.count(FIXED)}
+                   "warnings": r.count(WARNING), "fixed": r.count(FIXED),
+                   "done": sum(v.status == DONE for v in reviews.values()), "files": len(reviews)}
         return page(request, "overview.html", active="", card_issues=card_issues, files=files, pre=pre, **ctx)
 
     @app.post("/c/{cid}/open/{what}")
@@ -223,14 +238,25 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
         return _redirect(f"{back if back.startswith('/c/') else _base(f)}?done=opened")
 
     @app.get("/c/{cid}/card")
-    def card_page(request: Request, cid: str):
+    def card_view(request: Request, cid: str):
+        """Карточка соревнования для просмотра; правка — кнопкой «Редактировать»."""
         f = folder(cid)
         ctx = comp_ctx(f)
-        form = card_to_form(ctx["comp"]) if ctx["comp"] else None
-        return page(request, "card.html", active="card", form=form, errors={}, ch=choices(),
-                    issues=ctx["comp"].check() if ctx["comp"] else [], card_version=f.version(), **ctx)
+        comp = ctx["comp"]
+        ch = choices()
+        return page(request, "card_view.html", active="card", issues=comp.check() if comp else [],
+                    percent_labels=dict(ch["percent"]), **ctx)
 
-    @app.post("/c/{cid}/card")
+    @app.get("/c/{cid}/card/edit")
+    def card_edit(request: Request, cid: str):
+        f = folder(cid)
+        ctx = comp_ctx(f)
+        if ctx["comp"] is None:  # файл не читается — исправлять в Excel, форма пустой не открывается
+            return _redirect(f"{_base(f)}/card")
+        return page(request, "card.html", active="card", form=card_to_form(ctx["comp"]), errors={}, ch=choices(),
+                    issues=ctx["comp"].check(), card_version=f.version(), **ctx)
+
+    @app.post("/c/{cid}/card/edit")
     async def card_save(request: Request, cid: str):
         f = folder(cid)
         data = await request.form()
@@ -262,7 +288,8 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
             raise HTTPException(409, "Сначала исправьте ошибки в карточке соревнования.")
         if not f.preapp_files():
             raise HTTPException(409, "Пока нет ни одной заявки — добавьте файлы на странице «Предварительные заявки».")
-        return comp, store.preapps(f, comp)
+        result, reviews = store.review(f, comp)
+        return comp, result, {src: r.label for src, r in reviews.items()}
 
     @app.get("/c/{cid}/preapps")
     def preapps_page(request: Request, cid: str):
@@ -274,8 +301,8 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
         if comp:
             blocked = [i for i in comp.check() if i.severity == ERROR]
             if not blocked and files:
-                result = store.preapps(f, comp)
-                view = _preapp_view(files, result)
+                result, reviews = store.review(f, comp)
+                view = _preapp_view(files, result, reviews)
         plain_rows = [{"file": p.name, "team": None, "counts": {}} for p in files]
         return page(request, "preapps.html", active="preapps", files=files, blocked=blocked, result=result,
                     view=view, plain_rows=plain_rows, **ctx)
@@ -331,14 +358,74 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
                     marks=marks, counts=counts, checked=issues is not None, ch=pf.choices(comp, form),
                     empty_row=pf.empty_row(comp), **comp_ctx(f), **extra)
 
+    def team_url(f: CompFolder, name: str, **q) -> str:
+        return f"{_base(f)}/preapps/team?{urlencode({'file': name, **q})}"
+
+    def need_file(f: CompFolder, name: str) -> Path:
+        path = f.preapp_path(name)
+        if path is None:
+            raise HTTPException(404)
+        return path
+
+    def back_to(request: Request, f: CompFolder, sent: str, default: str) -> str:
+        """Вернуться туда, откуда нажали кнопку (только внутри этого соревнования)."""
+        return sent if sent.startswith(_base(f) + "/") else default
+
+    @app.get("/c/{cid}/preapps/team")
+    def preapp_team(request: Request, cid: str, file: str = ""):
+        """Карточка команды: заявка для просмотра, замечания, статус; правка — отдельной кнопкой."""
+        f = folder(cid)
+        comp = need_comp(f)
+        path = need_file(f, file)
+        result, reviews = store.review(f, comp)
+        team = next((t for t in result.teams if t.source == path.name), None)
+        issues = sorted((i for i in result.issues if i.source == path.name),
+                        key=lambda i: (SEVERITY_ORDER[i.severity], i.row))
+        worst: dict[int, str] = {}
+        for i in issues:
+            if i.row and i.severity in (ERROR, WARNING, CHECKED) and i.row not in worst:
+                worst[i.row] = i.severity
+        return page(request, "preapp_team.html", active="preapps", file=path.name, team=team, issues=issues,
+                    review=reviews[path.name], counts=Counter(i.severity for i in issues), worst=worst,
+                    show=pf.columns(comp, [vars(e) for e in team.entries] if team else []),
+                    here=team_url(f, path.name), **comp_ctx(f))
+
+    @app.post("/c/{cid}/preapps/status")
+    async def preapp_status(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        data = await request.form()
+        path = need_file(f, str(data.get("file", "")))
+        status = str(data.get("status", ""))
+        if status not in STATUS_LABEL:
+            raise HTTPException(400, "Неизвестный статус заявки.")
+        result, _ = store.review(f, comp)
+        mine = [i for i in result.issues if i.source == path.name]
+        if status == DONE and any(i.severity == ERROR for i in mine):
+            raise HTTPException(409, "В заявке есть ошибки — пока они не исправлены, отметить её «Проверено» нельзя. "
+                                     "Исправьте заявку или поставьте статус «Исправить».")
+        if status == DONE:  # проверена вся заявка — значит, и каждое «проверить» в ней
+            f.set_checked(path.name, [issue_key(i) for i in mine if i.severity == WARNING])
+        f.set_status(path.name, status)
+        back = back_to(request, f, str(data.get("back", "")), team_url(f, path.name))
+        return _redirect(_with_done(back, "status"))
+
+    @app.post("/c/{cid}/preapps/check")
+    async def preapp_check(request: Request, cid: str):
+        f = folder(cid)
+        data = await request.form()
+        path = need_file(f, str(data.get("file", "")))
+        on = data.get("on", "1") == "1"
+        f.set_checked(path.name, [str(data.get("key", ""))], on)
+        back = back_to(request, f, str(data.get("back", "")), team_url(f, path.name))
+        return _redirect(_with_done(back, "checked" if on else "unchecked"))
+
     @app.get("/c/{cid}/preapps/edit")
     def preapp_edit(request: Request, cid: str, file: str = ""):
         f = folder(cid)
         comp = need_comp(f)
-        path = f.preapp_path(file)
-        if path is None:
-            raise HTTPException(404)
-        result = store.preapps(f, comp)
+        path = need_file(f, file)
+        result, _ = store.review(f, comp)
         team = next((t for t in result.teams if t.source == path.name), None)
         form = pf.app_to_form(read_preapplication(path), team, comp)
         return render_edit(request, f, comp, form, file=path.name, version=f.file_version(path),
@@ -365,8 +452,7 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
         if not errors and not conflict:
             try:
                 saved = f.save_preapp(name if path else None, head, rows, [q.label for q in Qual])
-                done = "psaved" if path else "pcreated"
-                return _redirect(f"{_base(f)}/preapps/edit?{urlencode({'file': saved, 'done': done})}")
+                return _redirect(team_url(f, saved, done="psaved" if path else "pcreated"))
             except PermissionError:
                 save_error = ("Файл заявки сейчас открыт в Excel, поэтому сохранить не получилось. Закройте его в "
                               "Excel и нажмите «Сохранить» ещё раз — всё, что вы ввели, осталось на странице.")
@@ -376,19 +462,17 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
     @app.post("/c/{cid}/preapps/open")
     async def preapp_open(request: Request, cid: str):
         f = folder(cid)
-        name = str((await request.form()).get("name", ""))
-        path = f.preapp_path(name)
-        if path is None:
-            raise HTTPException(404)
+        data = await request.form()
+        path = need_file(f, str(data.get("name", "")))
         app.state.opener(path)
-        return _redirect(f"{_base(f)}/preapps/edit?{urlencode({'file': path.name, 'done': 'opened'})}")
+        return _redirect(_with_done(back_to(request, f, str(data.get("back", "")), team_url(f, path.name)), "opened"))
 
     @app.post("/c/{cid}/preapps/summary")
     def preapps_summary_open(request: Request, cid: str):
         f = folder(cid)
-        comp, result = preapp_result(f)
+        comp, result, statuses = preapp_result(f)
         try:
-            path = f.write_summary(result, comp)
+            path = f.write_summary(result, comp, statuses=statuses)
         except PermissionError:
             return _redirect(f"{_base(f)}/preapps?done=locked")
         app.state.opener(path)
@@ -397,9 +481,9 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
     @app.get("/c/{cid}/preapps/summary.xlsx")
     def preapps_summary_download(cid: str):
         f = folder(cid)
-        comp, result = preapp_result(f)
+        comp, result, statuses = preapp_result(f)
         tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / SUMMARY
-        f.write_summary(result, comp, tmp)
+        f.write_summary(result, comp, tmp, statuses)
         return FileResponse(tmp, filename=SUMMARY, media_type=XLSX,
                             background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
 
@@ -432,8 +516,8 @@ def create_app(data_dir: str | Path, opener=None) -> FastAPI:
     return app
 
 
-def _preapp_view(files: list[Path], result) -> dict:
-    """Данные для страницы предзаявок: замечания по файлам (командам), участники, счётчики."""
+def _preapp_view(files: list[Path], result, reviews: dict) -> dict:
+    """Данные для страницы предзаявок: замечания и статусы по файлам (командам), счётчики для фильтров."""
     by_source: dict[str, list[Issue]] = defaultdict(list)
     for i in result.issues:
         by_source[i.source].append(i)
@@ -445,7 +529,12 @@ def _preapp_view(files: list[Path], result) -> dict:
         for i in issues:
             if i.person and (i.person not in worst or SEVERITY_ORDER[i.severity] < SEVERITY_ORDER[worst[i.person]]):
                 worst[i.person] = i.severity
-        groups.append({"file": p.name, "team": teams.get(p.name), "issues": issues,
+        groups.append({"file": p.name, "team": teams.get(p.name), "issues": issues, "review": reviews[p.name],
                        "counts": Counter(i.severity for i in issues), "worst": worst})
-    return {"groups": groups, "general": by_source.get("", []),
+    # фильтр команд: «Ошибки» — есть ошибки или отправлена на исправление, «Проверить» — есть что проверить
+    # или ещё не просмотрена, «Проверено» — отмечена секретарём
+    by_filter = Counter()
+    for g in groups:
+        by_filter[g["review"].status] += 1
+    return {"groups": groups, "general": by_source.get("", []), "by_filter": by_filter,
             "totals": Counter(i.severity for i in result.issues)}

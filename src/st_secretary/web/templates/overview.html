@@ -41,6 +41,7 @@
       <div class="{% if pre.errors %}text-err{% endif %}"><b>{{ pre.errors }}</b><span>ошибок</span></div>
       <div class="{% if pre.warnings %}text-warn{% endif %}"><b>{{ pre.warnings }}</b><span>проверить</span></div>
     </div>
+    <p class="status{% if pre.done == pre.files %} text-ok{% endif %}">{{ icon("check", 18) }} Заявок проверено: {{ pre.done }} из {{ pre.files }}</p>
     {% elif files %}<p class="status">Файлов заявок: {{ files|length }}{% if errs %} — проверка после исправления карточки{% endif %}</p>
     {% else %}<p class="status muted">Заявок пока нет. Добавьте файлы команд.</p>{% endif %}
     {% if comp.preapp_deadline %}<p class="muted">Приём предзаявок до {{ comp.preapp_deadline|d }}</p>{% endif %}

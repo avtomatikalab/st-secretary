@@ -6,6 +6,7 @@
         Предзаявки/                  ← файлы заявок команд (и исправленные в программе)
           Убранные/                  ← заявки, убранные из обработки (не удаляются)
           Прежние версии/            ← файл до исправления или до замены новым — с датой и временем
+        Отметки_предзаявок.json      ← статусы заявок и «проверено» у замечаний
         Сводка_предзаявок.xlsx       ← создаётся по кнопке
 
 Папку можно открыть в Проводнике, скопировать на флешку, передать коллеге. Персональные данные
@@ -14,6 +15,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -26,11 +29,13 @@ from st_secretary.exporters.preapp_xlsx import write_preapp_report
 from st_secretary.importers.card_xlsx import load_card, write_card
 from st_secretary.importers.preapp_xlsx import read_preapplication, write_preapplication
 from st_secretary.preapp import PreappResult, process
+from st_secretary.web.review import STATUSES, Review, apply_marks
 
 CARD = "Карточка_соревнования.xlsx"
 PREAPPS = "Предзаявки"
 REMOVED = "Убранные"
 VERSIONS = "Прежние версии"
+MARKS = "Отметки_предзаявок.json"
 SUMMARY = "Сводка_предзаявок.xlsx"
 EXCEL = (".xlsx", ".xls")
 
@@ -147,6 +152,8 @@ class CompFolder:
             os.replace(tmp, target)
         finally:
             tmp.unlink(missing_ok=True)
+        if old is not None:
+            self.rename_marks(old.name, target.name)  # был .xls — отметки переходят к .xlsx
         return target.name
 
     def remove_preapp(self, name: str) -> Path:
@@ -162,14 +169,69 @@ class CompFolder:
         shutil.move(src, dest)
         return dest
 
-    def write_summary(self, result: PreappResult, comp: Competition, path: Path | None = None) -> Path:
-        return write_preapp_report(result, comp, path or self.summary_path)
+    def write_summary(self, result: PreappResult, comp: Competition, path: Path | None = None,
+                      statuses: dict[str, str] | None = None) -> Path:
+        return write_preapp_report(result, comp, path or self.summary_path, statuses)
+
+    # ------------------------------------------------------------ отметки секретаря
+
+    @property
+    def marks_path(self) -> Path:
+        return self.path / MARKS
+
+    def marks(self) -> dict:
+        """{файл заявки: {"status", "hash", "at", "checked": {ключ замечания: когда}}}."""
+        try:
+            data = json.loads(self.marks_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _save_marks(self, data: dict) -> None:
+        tmp = self.path / f"~{MARKS}"
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.marks_path)
+
+    @staticmethod
+    def file_hash(path: Path) -> str:
+        """Отпечаток содержимого: по нему видно, что заявку изменили после отметки."""
+        return hashlib.sha1(path.read_bytes()).hexdigest()[:20]
+
+    def set_status(self, name: str, status: str) -> None:
+        path = self.preapp_path(name)
+        if path is None or status not in STATUSES:
+            raise ValueError(name)
+        data = self.marks()
+        entry = data.setdefault(path.name, {})
+        entry.update(status=status, hash=self.file_hash(path), at=f"{datetime.now():%d.%m.%Y %H:%M}")
+        self._save_marks(data)
+
+    def set_checked(self, name: str, keys: list[str], on: bool = True) -> None:
+        """Отметить замечания «проверено» (или снять отметку)."""
+        path = self.preapp_path(name)
+        if path is None:
+            raise ValueError(name)
+        data = self.marks()
+        checked = data.setdefault(path.name, {}).setdefault("checked", {})
+        for k in keys:
+            if on:
+                checked.setdefault(k, f"{datetime.now():%d.%m.%Y %H:%M}")
+            else:
+                checked.pop(k, None)
+        self._save_marks(data)
+
+    def rename_marks(self, old: str, new: str) -> None:
+        data = self.marks()
+        if old != new and old in data:
+            data[new] = data.pop(old)
+            self._save_marks(data)
 
 
 class Store:
     def __init__(self, root: str | Path):
         self.root = Path(root)
         self._preapp_cache: dict[str, tuple[tuple, PreappResult]] = {}
+        self._hash_cache: dict[tuple, str] = {}
 
     def all(self) -> list[CompFolder]:
         if not self.root.is_dir():
@@ -209,3 +271,14 @@ class Store:
         result = process([read_preapplication(p) for p in files], comp)
         self._preapp_cache[f.id] = (key, result)
         return result
+
+    def review(self, f: CompFolder, comp: Competition) -> tuple[PreappResult, dict[str, Review]]:
+        """Заявки с отметками секретаря: «проверено» у замечаний и статусы по файлам."""
+        hashes = {}
+        for p in f.preapp_files():
+            st = p.stat()
+            key = (str(p), st.st_mtime_ns, st.st_size)
+            if key not in self._hash_cache:
+                self._hash_cache[key] = f.file_hash(p)
+            hashes[p.name] = self._hash_cache[key]
+        return apply_marks(self.preapps(f, comp), f.marks(), hashes)

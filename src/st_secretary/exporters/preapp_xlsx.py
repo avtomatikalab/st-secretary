@@ -10,12 +10,13 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from st_secretary.competition import Competition
-from st_secretary.issues import ERROR, FIXED, INFO, SEVERITY_LABEL, SEVERITY_ORDER, WARNING
+from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, SEVERITY_ORDER, WARNING
 from st_secretary.preapp import PreappResult
 
 FILL = {
     ERROR: PatternFill("solid", fgColor="F8CBAD"),
     WARNING: PatternFill("solid", fgColor="FFE699"),
+    CHECKED: PatternFill("solid", fgColor="DDEBF7"),
     FIXED: PatternFill("solid", fgColor="C6EFCE"),
     INFO: PatternFill("solid", fgColor="DDEBF7"),
 }
@@ -50,12 +51,14 @@ def _cell_value(s: str):
     return int(s) if s.isdigit() else s
 
 
-def write_preapp_report(result: PreappResult, comp: Competition, path: str | Path) -> Path:
+def write_preapp_report(result: PreappResult, comp: Competition, path: str | Path,
+                        statuses: dict[str, str] | None = None) -> Path:
+    """statuses — статус заявки по имени файла («Проверено», «Исправить», «Проверить»), если он ведётся."""
     wb = Workbook()
     _summary(wb.active, result, comp)
     _sekretar_sheet(wb.create_sheet("Заявка для СЕКРЕТАРЬ"), result)
     _issues_sheet(wb.create_sheet("Проверка"), result)
-    _teams_sheet(wb.create_sheet("Команды"), result)
+    _teams_sheet(wb.create_sheet("Команды"), result, statuses)
     path = Path(path)
     wb.save(path)
     return path
@@ -76,6 +79,8 @@ def _summary(ws, r: PreappResult, comp: Competition):
         ("Проверить (нужно решение)", r.count(WARNING)),
         ("Исправлено автоматически", r.count(FIXED)),
     ]
+    if r.count(CHECKED):
+        rows.append(("Проверено секретарём", r.count(CHECKED)))
     ws.append(["Сводка предварительных заявок"])
     ws["A1"].font = Font(bold=True, size=14)
     ws.append([])
@@ -147,14 +152,16 @@ def _issues_sheet(ws, r: PreappResult):
     ws.auto_filter.ref = f"A1:K{ws.max_row}"
 
 
-def _teams_sheet(ws, r: PreappResult):
+def _teams_sheet(ws, r: PreappResult, statuses: dict[str, str] | None = None):
     _head(ws, ["№", "Команда", "Территория", "Представитель", "Телефон", "E-mail", "Участников", "Мужчин",
-               "Женщин", "Ошибок", "Проверить", "Файл"], [5, 24, 16, 32, 18, 28, 11, 9, 9, 9, 10, 28])
+               "Женщин", "Ошибок", "Проверить", "Файл", "Статус заявки"],
+          [5, 24, 16, 32, 18, 28, 11, 9, 9, 9, 10, 28, 14])
     for n, t in enumerate(r.teams, start=1):
         errs = sum(1 for i in r.issues if i.source == t.source and i.severity == ERROR)
         warns = sum(1 for i in r.issues if i.source == t.source and i.severity == WARNING)
         ws.append([n, t.team, t.territory, t.representative, t.phone, t.email, len(t.entries),
-                   sum(e.sex == "м" for e in t.entries), sum(e.sex == "ж" for e in t.entries), errs, warns, t.source])
+                   sum(e.sex == "м" for e in t.entries), sum(e.sex == "ж" for e in t.entries), errs, warns, t.source,
+                   (statuses or {}).get(t.source, "")])
         for c in ws[ws.max_row]:
             c.border = BOX
         if errs:

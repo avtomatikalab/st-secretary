@@ -1,5 +1,6 @@
 """Интерфейс в браузере: страницы открываются, карточка сохраняется без потерь, заявки проверяются."""
 
+import io
 import os
 import re
 from dataclasses import replace
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from st_secretary.importers.card_xlsx import load_card, write_card  # noqa: E402
 from st_secretary.web.app import create_app  # noqa: E402
+from st_secretary.web.review import issue_key  # noqa: E402
 
 from conftest import make_application  # noqa: E402
 
@@ -110,10 +112,14 @@ def test_new_competition_then_fill_card(client, tmp_path, psr_card):
              "z-0-group": "М/Ж", "z-0-distance_class": "3", "z-0-discipline_code": "0840161811Я", "z-0-age_from": "22",
              "z-0-age_from_by_gsk": "16", "z-0-team_size": "3", "z-0-min_men": "1", "z-0-min_women": "1",
              "z-0-fee": "3000"}
+    assert card_url.endswith("/card/edit")  # новое соревнование — сразу в форму карточки
     r = client.post(card_url, data=data, follow_redirects=False)
-    assert r.status_code == 303
+    assert r.status_code == 303 and r.headers["location"].split("?")[0].endswith("/card")
     assert load_card(folder / "Карточка_соревнования.xlsx") == psr_card
-    assert "Карточка заполнена, замечаний нет" in client.get(r.headers["location"]).text
+    view = client.get(r.headers["location"]).text  # после сохранения — карточка для просмотра
+    assert "Карточка заполнена, замечаний нет" in view and "Карточка сохранена" in view
+    assert 'id="cardform"' not in view and "Редактировать карточку" in view
+    assert "И.П. Судьин, СС1К, г. Красноярск" in view and "М/Ж_3" in view and "с 16 лет — по решению ГСК" in view
 
 
 def test_card_page_roundtrip_loses_nothing(client, psr_card):
@@ -121,7 +127,7 @@ def test_card_page_roundtrip_loses_nothing(client, psr_card):
     psr_card.officials.append(replace(psr_card.officials[0], role="Судья-информатор", fio="Инфо Олег Олегович",
                                       category="судья без категории"))  # категория не из списка — не теряется
     f = client.app.state.store.create(psr_card)
-    url = base(f) + "/card"
+    url = base(f) + "/card/edit"
     page = client.get(url).text
     assert "(не из списка)" in page
     r = client.post(url, data=FormFields(page, "cardform").fields, follow_redirects=False)
@@ -139,7 +145,7 @@ def test_errors_shown_next_to_fields_and_input_kept(client):
 
 def test_card_changed_in_excel_is_not_overwritten(client, psr_card):
     f = client.app.state.store.create(psr_card)
-    url = base(f) + "/card"
+    url = base(f) + "/card/edit"
     data = FormFields(client.get(url).text, "cardform").fields | {"place": "моё место"}
     write_card(f.card_path, replace(psr_card, place="место из Excel"))  # кто-то поправил в Excel
     os.utime(f.card_path, ns=(10**18, 10**18))
@@ -152,7 +158,7 @@ def test_card_changed_in_excel_is_not_overwritten(client, psr_card):
 
 def test_zachet_field_errors(client, psr_card):
     f = client.app.state.store.create(psr_card)
-    url = base(f) + "/card"
+    url = base(f) + "/card/edit"
     data = FormFields(client.get(url).text, "cardform").fields | {"z-0-distance_class": "", "z-0-fee": "три тысячи"}
     r = client.post(url, data=data)
     assert r.status_code == 422 and "нужно целое число" in r.text
@@ -204,26 +210,27 @@ def test_issue_explains_why_and_links_to_form(client, tmp_path, psr_card):
     assert "Почему:" in r.text and "1995 год не високосный" in r.text and "Что сделать:" in r.text
     assert "строка 12 в файле" in r.text
     assert "/preapps/edit?file=%D0%9B%D0%B5%D1%81%D0%BE%D0%B2%D0%B8%D0%BA%D0%B8.xlsx#p-12" in r.text
+    assert 'class="team-link" href="' + base(f) + "/preapps/team?file=" in r.text  # название команды — ссылка
 
 
-def preapp_url(f, name="Лесовики.xlsx"):
-    return base(f) + "/preapps/edit?file=" + quote(name)
+def preapp_url(f, name="Лесовики.xlsx", page="edit"):
+    return base(f) + f"/preapps/{page}?file=" + quote(name)
 
 
 def test_edit_application_in_form(client, tmp_path, psr_card):
     f = client.app.state.store.create(psr_card)
     f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
     page = client.get(preapp_url(f))
-    assert page.status_code == 200 and "Заявка команды «Лесовики»" in page.text
+    assert page.status_code == 200 and "Редактирование заявки «Лесовики»" in page.text
     data = FormFields(page.text, "preappform").fields
     assert data["h-team"] == "Лесовики" and data["p-2-birth"] == "29.02.1995" and data["p-2-zachet"] == "М/Ж_3"
     assert data["p-0-birth"] == "17.10.1989" and data["p-0-qual"] == "II" and data["p-1-sex"] == "ж"
     assert 'id="p-12"' in page.text and "mk-error" in page.text  # строка с ошибкой отмечена
 
     r = client.post(base(f) + "/preapps/save", data=data | {"p-2-birth": "28.02.1995"}, follow_redirects=False)
-    assert r.status_code == 303 and "done=psaved" in r.headers["location"]
-    page = client.get(r.headers["location"])
-    assert "Прежние версии" in page.text and "Заявка проверена — ошибок нет" in page.text
+    assert r.status_code == 303 and "/preapps/team?" in r.headers["location"] and "done=psaved" in r.headers["location"]
+    page = client.get(r.headers["location"])  # после сохранения — карточка команды
+    assert "Карточка команды" in page.text and "Прежние версии" in page.text and "Ошибок нет" in page.text
     [old] = (f.preapp_dir / "Прежние версии").iterdir()  # файл команды не пропал
     assert old.name.startswith("Лесовики (") and [p.name for p in f.preapp_files()] == ["Лесовики.xlsx"]
     result = client.app.state.store.preapps(f, psr_card)
@@ -232,7 +239,7 @@ def test_edit_application_in_form(client, tmp_path, psr_card):
                                                     "Кузьмин Олег Игоревич"]
 
     # удалить участника, добавить нового
-    data = FormFields(page.text, "preappform").fields
+    data = FormFields(client.get(preapp_url(f)).text, "preappform").fields
     data = {k: v for k, v in data.items() if not k.startswith("p-1-")}
     data |= {"p-7-fio": "Орлова Мария Ивановна", "p-7-birth": "01.02.2000", "p-7-qual": "III", "p-7-sex": "ж",
              "p-7-zachet": "М/Ж_3", "p-7-team_dist": "1"}
@@ -272,7 +279,8 @@ def test_new_application_and_form_errors(client, psr_card):
     r = client.post(base(f) + "/preapps/save", data=data, follow_redirects=False)
     assert r.status_code == 303 and "done=pcreated" in r.headers["location"]
     assert [p.name for p in f.preapp_files()] == ["Ураган.xlsx"]
-    assert "Заявка сохранена в файл «Ураган.xlsx»" in client.get(r.headers["location"]).text
+    page = client.get(r.headers["location"])
+    assert "Заявка сохранена в файл «Ураган.xlsx»" in page.text and "Карточка команды" in page.text
 
 
 def test_application_changed_meanwhile_is_not_overwritten(client, tmp_path, psr_card):
@@ -285,6 +293,81 @@ def test_application_changed_meanwhile_is_not_overwritten(client, tmp_path, psr_
     r = client.post(base(f) + "/preapps/save", data=data | {"force": "1"}, follow_redirects=False)
     assert r.status_code == 303
     assert client.app.state.store.preapps(f, psr_card).teams[0].team == "Лесовики-2"
+
+
+def sosna(tmp_path):
+    """Заявка без ошибок, но с «проверить»: участнику 16 лет — допуск только по решению ГСК."""
+    return make_application(tmp_path / "Сосна.xlsx", "Сосна", "Красноярск", "Орлов Павел Ильич",
+                            "89137654321", 3, [
+                                ["Сосна", "Красноярск", "Орлов Павел Ильич", "Орлов Павел Ильич",
+                                 "11.05.1985", "II", "м", "М/Ж", 3],
+                                ["Сосна", "Красноярск", "Орлов Павел Ильич", "Белова Ирина Петровна",
+                                 "03.07.1999", "КМС", "ж", "М/Ж", 3],
+                                ["Сосна", "Красноярск", "Орлов Павел Ильич", "Пестов Юрий Андреевич",
+                                 "01.01.2009", "б/р", "м", "М/Ж", 3],
+                            ]).read_bytes()
+
+
+def test_team_card_is_read_only_with_edit_button(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
+    page = client.get(preapp_url(f, page="team"))
+    assert page.status_code == 200 and "Карточка команды" in page.text and "Лесовики" in page.text
+    assert 'name="p-0-fio"' not in page.text and "Кузьмин Олег Игоревич" in page.text  # только просмотр
+    assert "Редактировать заявку" in page.text and preapp_url(f).replace(" ", "%20") in page.text
+    assert "status-opt-fix\" aria-pressed=\"true\"" in page.text  # есть ошибки → «Исправить» сам
+    assert "1995 год не високосный" in page.text
+    people = client.get(base(f) + "/preapps").text.split('id="panel-people"')[1].split("</section>")[0]
+    assert "Кузьмин Олег Игоревич" in people and "<a " not in people  # ФИО в списке участников — без ссылок
+
+
+def test_check_marks_and_statuses(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
+    store = client.app.state.store
+    card = preapp_url(f, "Сосна.xlsx", "team")
+
+    result, reviews = store.review(f, psr_card)
+    [warn] = [i for i in result.issues if i.source == "Сосна.xlsx" and i.severity == "warning"]
+    assert reviews["Сосна.xlsx"].status == "check" and reviews["Лесовики.xlsx"].status == "fix"
+    lst = client.get(base(f) + "/preapps").text
+    assert re.search(r'data-team-filter="fix"[^>]*>Ошибки <b>1</b>', lst)
+    assert re.search(r'data-team-filter="check"[^>]*>Проверить <b>1</b>', lst)
+
+    # «Проверено» у замечания: оно больше не в «Проверить»
+    r = client.post(base(f) + "/preapps/check", data={"file": "Сосна.xlsx", "key": issue_key(warn), "on": "1",
+                                                     "back": base(f) + "/preapps#t-2"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith("done=checked#t-2")
+    result, _ = store.review(f, psr_card)
+    assert result.count("warning") == 0 and result.count("checked") == 1
+    assert "Проверено замечаний: 1" in client.get(base(f) + "/preapps").text
+    client.post(base(f) + "/preapps/check", data={"file": "Сосна.xlsx", "key": issue_key(warn), "on": "0"})
+    assert store.review(f, psr_card)[0].count("warning") == 1
+
+    # статус «Проверено» отмечает и оставшиеся «проверить»; с ошибками — нельзя
+    r = client.post(base(f) + "/preapps/status", data={"file": "Сосна.xlsx", "status": "done"}, follow_redirects=False)
+    assert r.status_code == 303 and "/preapps/team?" in r.headers["location"]
+    result, reviews = store.review(f, psr_card)
+    assert reviews["Сосна.xlsx"].status == "done" and reviews["Сосна.xlsx"].manual and result.count("warning") == 0
+    assert "Выставлен вручную" in client.get(card).text
+    assert client.post(base(f) + "/preapps/status", data={"file": "Лесовики.xlsx", "status": "done"}).status_code == 409
+    client.post(base(f) + "/preapps/status", data={"file": "Лесовики.xlsx", "status": "check"})
+    assert store.review(f, psr_card)[1]["Лесовики.xlsx"].status == "check"  # вручную можно и «Проверить»
+
+    # заявку изменили — «Проверено» снимается, а отметка у того же замечания остаётся
+    data = FormFields(client.get(preapp_url(f, "Сосна.xlsx")).text, "preappform").fields
+    client.post(base(f) + "/preapps/save", data=data | {"h-representative": "Петров Иван Ильич"})
+    result, reviews = store.review(f, psr_card)
+    assert reviews["Сосна.xlsx"].status == "check" and not reviews["Сосна.xlsx"].manual
+    assert "снят: заявку с тех пор изменили" in reviews["Сосна.xlsx"].reset
+    assert result.count("checked") == 1  # то же замечание — отметка «проверено» сохранилась
+
+    # статус — в сводке Excel
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(client.get(base(f) + "/preapps/summary.xlsx").content))
+    teams = {row[1]: row[12] for row in wb["Команды"].iter_rows(min_row=2, values_only=True) if row[1]}
+    assert teams["Лесовики"] == "Проверить" and teams["Сосна"] == "Проверить"
 
 
 def test_preapps_wait_for_card_without_errors(client, tmp_path, psr_card):

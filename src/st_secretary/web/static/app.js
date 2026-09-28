@@ -91,7 +91,32 @@
     } catch (e) { /* нет — остаётся первая вкладка */ }
   });
 
-  // --- Фильтр замечаний: ошибки / проверить / исправлено.
+  // --- Фильтр команд по статусу заявки: все / ошибки / проверить / проверено (запоминается до закрытия вкладки).
+  var teamFilters = Array.prototype.slice.call(document.querySelectorAll("[data-team-filter]"));
+  function filterTeams(value) {
+    var shown = 0;
+    teamFilters.forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.teamFilter === value ? "true" : "false"); });
+    document.querySelectorAll("article.team[data-status]").forEach(function (t) {
+      t.hidden = value !== "all" && t.dataset.status !== value;
+      if (!t.hidden) shown++;
+    });
+    var empty = document.querySelector(".filter-empty");
+    if (empty) empty.hidden = shown > 0;
+    try { sessionStorage.setItem("teams:" + location.pathname, value); } catch (e) { /* не запоминаем */ }
+  }
+  if (teamFilters.length) {
+    teamFilters.forEach(function (b) { b.addEventListener("click", function () { filterTeams(b.dataset.teamFilter); }); });
+    var savedFilter = null;
+    try { savedFilter = sessionStorage.getItem("teams:" + location.pathname); } catch (e) { /* нет */ }
+    if (savedFilter && teamFilters.some(function (b) { return b.dataset.teamFilter === savedFilter; })) filterTeams(savedFilter);
+  }
+  document.querySelectorAll("[data-show-fixed]").forEach(function (box) {
+    box.addEventListener("change", function () {
+      document.querySelectorAll('[data-sev="fixed"]').forEach(function (el) { el.hidden = !box.checked; });
+    });
+  });
+
+  // --- Фильтр замечаний: ошибки / проверить / проверено / исправлено.
   document.querySelectorAll("[data-filter]").forEach(function (chip) {
     chip.addEventListener("click", function () {
       var on = chip.getAttribute("aria-pressed") !== "true";
