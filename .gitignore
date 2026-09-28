@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+
+# Реальные данные соревнований НИКОГДА не попадают в репозиторий:
+# заявки, протоколы с ФИО, договоры, паспортные данные, выгрузки SI.
+# Для тестов используются только обезличенные копии в tests/fixtures/.
+*.xls
+*.xlsx
+*.xlsm
+*.doc
+*.docx
+*.pdf
+*.csv
+!tests/fixtures/*.csv
+reports/
+local/
+.env
+*.env
+
+# Редакторы и ОС
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,166 @@
+# Требования к участникам по дисциплинам (Правила вида спорта, раздел 3).
+# Возраст считается по году: «спортсмен должен достичь установленного возраста в календарный год
+# проведения спортивных соревнований» (раздел 3, п. 5.1). Возрастная группа связки/группы
+# определяется по самому старшему участнику (там же).
+#
+# min_qualification — минимальный разряд (коды см. qualification.py): III, II, I, KMS, Y1 …
+# Для пешеходных 5 класса допустимы два варианта: 16 лет и КМС или 17 лет и I — заданы через options.
+
+# ---------------------------------------------------------------- ПСР / дистанция – комбинированная
+# Часть 4 раздела 3, таблица 1 и пп. 2.1.5, 2.1.7.
+[profile.psr]
+source = "Правила, раздел 3, часть 4, таблица 1"
+disciplines = ["0840161811Я"]
+leader_min_age = 18          # руководитель команды старше 18 лет на день начала соревнований
+leader_min_age_class_5_6 = 20
+
+[[profile.psr.age_group]]
+name = "мальчики, девочки"
+min = 10
+max = 13
+classes = [1, 2]
+
+[[profile.psr.age_group]]
+name = "юноши, девушки"
+min = 14
+max = 15
+classes = [1, 2, 3]
+
+[[profile.psr.age_group]]
+name = "юниоры, юниорки"
+min = 16
+max = 21
+classes = [1, 2, 3, 4, 5]
+
+[[profile.psr.age_group]]
+name = "юниоры, юниорки (студенты)"
+min = 17
+max = 25
+classes = [1, 2, 3, 4]
+students_only = true
+
+[[profile.psr.age_group]]
+name = "мужчины, женщины"
+min = 22
+classes = [1, 2, 3, 4, 5, 6]
+
+# ---------------------------------------------------------------- Спелео
+# Часть 8 раздела 3, таблицы 2 и 3, пп. 2.7–2.8.
+[profile.speleo]
+source = "Правила, раздел 3, часть 8, таблицы 2–3"
+disciplines = ["0840131811Я", "0840261811Я", "0840271811Я"]
+
+[[profile.speleo.class_requirement]]
+class = 1
+min_age = 10
+
+[[profile.speleo.class_requirement]]
+class = 2
+min_age = 10
+
+[[profile.speleo.class_requirement]]
+class = 3
+min_age = 12
+
+[[profile.speleo.class_requirement]]
+class = 4
+min_age = 14
+min_qualification = "III"
+
+[[profile.speleo.class_requirement]]
+class = 5
+min_age = 16
+min_qualification = "II"
+
+[[profile.speleo.class_requirement]]
+class = 6
+min_age = 16
+min_qualification = "I"
+
+[[profile.speleo.age_group]]
+name = "мальчики, девочки"
+min = 10
+max = 13
+
+[[profile.speleo.age_group]]
+name = "юноши, девушки"
+min = 14
+max = 15
+
+[[profile.speleo.age_group]]
+name = "юниоры, юниорки"
+min = 16
+max = 21
+
+[[profile.speleo.age_group]]
+# В таблице 3 указано «18–25», в сноске к ней — «17–25». Требует уточнения; принято по таблице.
+name = "юниоры, юниорки (студенты)"
+min = 18
+max = 25
+max_class = 4
+students_only = true
+note = "Таблица 3: 18–25 лет, сноска: 17–25 лет — противоречие в Правилах"
+
+[[profile.speleo.age_group]]
+name = "мужчины, женщины"
+min = 22
+
+# ---------------------------------------------------------------- Пешеходные
+# Часть 7 раздела 3, таблицы 1 и 2, пп. 2.3, 2.9.
+[profile.pedestrian]
+source = "Правила, раздел 3, часть 7, таблицы 1–2"
+disciplines = ["0840091811Я", "0840241811Я", "0840251811Я"]
+
+[[profile.pedestrian.class_requirement]]
+class = 1
+min_age = 8
+
+[[profile.pedestrian.class_requirement]]
+class = 2
+min_age = 10
+
+[[profile.pedestrian.class_requirement]]
+class = 3
+min_age = 13
+min_qualification = "III"
+alt_min_qualification = "Y1"     # «3 (1 юношеский)»
+
+[[profile.pedestrian.class_requirement]]
+class = 4
+min_age = 15
+min_qualification = "II"
+
+[[profile.pedestrian.class_requirement]]
+class = 5
+options = [ { min_age = 16, min_qualification = "KMS" }, { min_age = 17, min_qualification = "I" } ]
+
+[[profile.pedestrian.class_requirement]]
+class = 6
+min_age = 18
+min_qualification = "KMS"
+
+[[profile.pedestrian.age_group]]
+name = "мальчики, девочки"
+min = 8
+max = 13
+
+[[profile.pedestrian.age_group]]
+name = "юноши, девушки"
+min = 14
+max = 15
+
+[[profile.pedestrian.age_group]]
+name = "юниоры, юниорки"
+min = 16
+max = 21
+
+[[profile.pedestrian.age_group]]
+name = "юниоры, юниорки (студенты)"
+min = 17
+max = 25
+max_class = 4
+students_only = true
+
+[[profile.pedestrian.age_group]]
+name = "мужчины, женщины"
+min = 22

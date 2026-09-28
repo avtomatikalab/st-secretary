@@ -1,0 +1,27 @@
+[project]
+name = "st-secretary"
+version = "0.0.1"
+description = "СТ-Секретарь: система для секретариата и судей соревнований по спортивному туризму"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+# Чтение старых книг Excel (.xls): СЕКРЕТАРЬ_ST, протоколы прошлых лет.
+xls = ["xlrd>=2.0"]
+
+[dependency-groups]
+dev = ["pytest>=8", "xlrd>=2.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/st_secretary"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
