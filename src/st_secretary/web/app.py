@@ -34,6 +34,7 @@ from st_secretary import judge_sync as js
 from st_secretary import psr_run as pr
 from st_secretary import results as res
 from st_secretary import staff as sf
+from st_secretary import time_run as tr
 from st_secretary import verify as vf
 from st_secretary.exporters import awards as aw
 from st_secretary.exporters import contracts as ct
@@ -1488,7 +1489,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                 continue
             out.append(pr.TeamInput(t.file, t.team.team, t.team.territory, str(t.number or ""),
                                     [pr.Member(p.entry.name.full, p.entry.qual,
-                                               p.entry.qual.label if p.entry.qual is not None else "") for p in people],
+                                               p.entry.qual.label if p.entry.qual is not None else "", p.entry.chip)
+                                     for p in people],
                                     admitted=t.status != cm.REJECTED))
         return out
 
@@ -1501,12 +1503,14 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     def run_ctx(f: CompFolder, comp, z) -> tuple[dict, dict, object]:
         data = f.run_data()
         zdata = data.get("zachety", {}).get(z.key, {})
-        run = pr.compute(comp, z, zdata, zachet_inputs(f, comp, z))
+        compute = tr.compute if tr.is_time_discipline(z) else pr.compute  # спелео, пешеходные — по времени
+        run = compute(comp, z, zdata, zachet_inputs(f, comp, z))
         run.issues += js.judge_issues(zdata, run.stages, {r.inp.file: r.inp.team for r in run.rows})
         return data, zdata, run
 
     def results_parts(f: CompFolder, z, zdata: dict, run) -> dict:
-        return {"base": _base(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text,
+        return {"base": _base(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text, "ck": tr.clock_text,
+                "res": lambda r: pr.result_text(run, r), "is_time": run.kind == "time",
                 "from_phone": lambda sid, file: js.from_phone(zdata, sid, file),
                 "grid": sorted(run.rows, key=lambda r: r.start_order), "status_label": pr.STATUS_LABEL,
                 "status_short": pr.STATUS_SHORT, "statuses": list(pr.STATUS_LABEL), "FINISHED": Status.FINISHED,
@@ -1559,6 +1563,11 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             zdata["stages"] = stages
             zdata["distance"] = {k: str(form.get(k, "")).strip() for k in ("km", "modes", "kv_hours")}
             zdata["tie"] = "start" if form.get("tie") == "start" else "same"
+            for k in ("spp", "expected", "kv"):  # дисциплины по времени: эквивалент балла, расчётное время, КВ
+                if k in form:
+                    zdata[k] = str(form.get(k, "")).strip()
+            if "removed_order" in form:
+                zdata["removed_order"] = "count" if form.get("removed_order") == "count" else "after"
 
         _save_zachet(f, zz.key, update)
         return _redirect(f"{_base(f)}/results?{urlencode({'z': zz.key, 'done': 'run_stages'})}#stages")
@@ -1611,12 +1620,15 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                         pts.pop(sid, None)
                 st = str(form.get(f"p-{i}-status", Status.FINISHED.value))
                 t["status"] = st if st in {s.value for s in Status} else Status.FINISHED.value
+                for fld in ("start", "finish", "cutoffs", "chip"):  # дисциплины по времени
+                    if f"p-{i}-{fld}" in form:
+                        t[fld] = " ".join(str(form.get(f"p-{i}-{fld}", "")).split())
 
         _save_zachet(f, zz.key, update)
         if request.headers.get("x-autosave"):
             _, zdata, run = run_ctx(f, comp, zz)
             parts = {"comp": comp, **results_parts(f, zz, zdata, run)}
-            cells = {r.inp.file: {"total": pr.points_text(r.total),
+            cells = {r.inp.file: {"total": pr.result_text(run, r) if run.kind == "time" else pr.points_text(r.total),
                                   "place": str(r.place) if r.place else pr.STATUS_SHORT[r.status] or "—",
                                   "bad": r.bad} for r in run.rows}
             return JSONResponse({"cells": cells, "saved": datetime.now().strftime("%H:%M:%S"),
@@ -1758,6 +1770,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     # ------------------------------------------------------------ табло (Wi-Fi ноутбука)
 
     board_helpers = {"pt": pr.points_text, "status_label": pr.STATUS_LABEL, "FINISHED": Status.FINISHED,
+                     "ck": tr.clock_text,
                      "pct": lambda x: f"{float(x):.2f}".replace(".", ",") if x is not None else ""}
 
     def board_on(f: CompFolder) -> bool:
@@ -1798,7 +1811,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                     label += f", протесты принимаются до {st['until']:%H:%M}"
             else:
                 label, final = f"Текущие результаты на {now:%H:%M} — не окончательные", False
-            blocks.append({"z": z, "run": run, "label": label, "final": final, **board_helpers})
+            blocks.append({"z": z, "run": run, "label": label, "final": final, **board_helpers,
+                           "res": lambda r, run=run: pr.result_text(run, r)})
         return {"title": comp.title, "dates": comp.dates_text, "place": comp.place, "zachety": blocks}
 
     # ------------------------------------------------------------ телефоны судей этапов
@@ -1845,8 +1859,9 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         device = " ".join(str(payload.get("device", "")).split())[:40] or "телефон"
         now = app.state.clock()
         out = {}
+        mark = "с" if tr.is_time_discipline(z) else ""  # спелео: снятие с этапа — «с» в клетке этапа
         _save_zachet(f, z.key, lambda zdata: out.update(js.merge(zdata, stage.id, records, files, device,
-                                                                 now.isoformat(timespec="seconds"))))
+                                                                 now.isoformat(timespec="seconds"), mark)))
         return {"saved": out.get("saved", []), "time": f"{now:%H:%M:%S}"}
 
     app.state.board = BoardServer(create_board_app(board_list, board_data, judge_page, judge_receive), host=board_host)

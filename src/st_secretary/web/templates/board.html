@@ -46,15 +46,15 @@
     {% if run.rows %}
     <table>
       <thead><tr><th class="place">Место</th><th>Команда</th>
-        {% for t in run.tours %}<th class="num wide">{{ t }}</th>{% endfor %}
+        {% for t in run.tours %}<th class="num wide">{% if run.kind != "time" %}{{ t }}{% endif %}</th>{% endfor %}
         <th class="num">Результат</th><th class="num wide">%</th><th class="wide">Разряд</th></tr></thead>
       <tbody>
       {% for r in run.rows %}
       <tr class="{% if r.place in (1, 2, 3) %}p{{ r.place }}{% endif %}{% if r.status != b.FINISHED %} out{% endif %}">
         <td class="place">{{ r.place or "—" }}</td>
         <td>{{ r.inp.team }}<span class="terr">{{ r.inp.territory }}</span></td>
-        {% for t in run.tours %}<td class="num wide">{{ b.pt(r.tours.get(t)) }}</td>{% endfor %}
-        <td class="num res">{% if r.status != b.FINISHED %}{{ b.status_label[r.status] }}{% elif r.points %}{{ b.pt(r.total) }}{% else %}—{% endif %}</td>
+        {% for t in run.tours %}<td class="num wide">{% if run.kind != "time" %}{{ b.pt(r.tours.get(t)) }}{% endif %}</td>{% endfor %}
+        <td class="num res">{{ b.res(r) or "—" }}</td>
         <td class="num wide">{{ b.pct(r.percent) }}</td><td class="wide">{{ r.norm }}</td>
       </tr>
       {% endfor %}

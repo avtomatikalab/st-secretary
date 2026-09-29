@@ -316,3 +316,14 @@ def import_group_protocol(sheet, teams: list[TeamInput]) -> tuple[dict, list[str
             continue
         out_teams[t.file] = {"points": {ids[c]: points_text(v) for c, v in row.values.items() if c in ids}}
     return {"stages": stages, "teams": out_teams}, notes
+
+
+def result_text(run: ZachetRun, r: TeamResult) -> str:
+    """Результат для протокола и табло: баллы (ПСР) или время (спелео, пешеходные); иначе — статус."""
+    if r.status is not Status.FINISHED:
+        return STATUS_LABEL[r.status]
+    if run.kind == "time":
+        from st_secretary.time_run import clock_text
+
+        return clock_text(r.total) if r.place else ""
+    return points_text(r.total) if r.points else ""

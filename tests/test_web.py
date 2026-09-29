@@ -994,3 +994,44 @@ def test_judge_phone_link_sync_and_conflicts(client, tmp_path, psr_card):
     assert r.status_code == 404 and "ссылка больше не действует" in r.json()["error"]
     assert phone.post(f"/j/{token}/sync", content=b"not json").status_code == 400
     assert "Раздача по Wi-Fi не включена" in client.get(base(f) + "/judges/print" + q).text
+
+
+def test_speleo_zachet_times_protocol_and_board(client, tmp_path, psr_card):
+    from dataclasses import replace
+
+    from openpyxl import load_workbook
+
+    from st_secretary.competition import Zachet
+
+    comp = replace(psr_card, zachety=[Zachet("М/Ж", 3, "0840271811Я", age_from=16, team_size=3)])
+    f = client.app.state.store.create(comp)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    url, q = base(f) + "/results", "?z=М/Ж_3"
+    client.post(url + "/stages" + q, data={"st-0-name": "Колодец", "st-1-name": "Шкуродёр", "spp": "", "expected": "25",
+                                            "kv": "60", "removed_order": "after"})
+    page = client.get(url).text
+    assert "Время и штрафные баллы" in page and "1 балл = <b>15 с</b>" in page and 'name="p-0-start"' in page
+    by = {name: i for i, name in re.findall(r'name="p-(\d)-file" value="([^"]+)"', page)}
+    k, s = by["Кедр.xlsx"], by["Сосна.xlsx"]
+    data = {f"p-{k}-file": "Кедр.xlsx", f"p-{s}-file": "Сосна.xlsx",
+            f"p-{k}-start": "10:00:00", f"p-{k}-finish": "10:20:30", f"p-{k}-cutoffs": "2:00", f"p-{k}-s1": "0,3",
+            f"p-{k}-chip": "2001234", f"p-{s}-start": "10:05:00", f"p-{s}-finish": "10:15:00", f"p-{s}-s2": "с"}
+    j = client.post(url + "/points" + q, data=data, headers={"X-Autosave": "1"}).json()
+    assert j["cells"]["Кедр.xlsx"] == {"total": "18:34,5", "place": "1", "bad": []}  # 18:30 + 0,3 × 15 с
+    assert j["cells"]["Сосна.xlsx"]["place"] == "2"  # быстрее, но со снятием — после прошедших полностью
+    assert "Время на дистанции" in j["results"] and "18:30" in j["results"]
+    assert f.run_data()["zachety"]["М/Ж_3"]["teams"]["Кедр.xlsx"]["chip"] == "2001234"
+
+    data[f"p-{s}-finish"] = "10:6"
+    j = client.post(url + "/points" + q, data=data, headers={"X-Autosave": "1"}).json()
+    assert j["cells"]["Сосна.xlsx"]["bad"] == ["finish"] and "«Сосна»: финиш «10:6» — не время" in j["results"]
+
+    data[f"p-{s}-finish"] = "10:15:00"
+    client.post(url + "/points" + q, data=data)
+    client.post(url + "/publish" + q)
+    ws = load_workbook(next(f.protocols_dir.glob("Предварительный*.xlsx")))["Протокол"]
+    cells = [c for row in ws.iter_rows(values_only=True) for c in row if c not in (None, "")]
+    assert "Время на дистанции" in cells and "18:34,5" in cells and "Снятий" in cells
+    client.post(base(f) + "/board/toggle", data={"on": "1"})
+    assert "18:34,5" in TestClient(client.app.state.board.app).get("/").text

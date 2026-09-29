@@ -2,14 +2,16 @@
 {% from "_icons.html" import icon %}
 <div class="panel" id="results-live" data-live-results>
   <h2>Результаты — {{ z.key }}</h2>
-  <p class="muted">Победитель — наименьшая сумма баллов (часть 4, п. 6.1.1).
+  <p class="muted">{% if is_time %}Результат — время на дистанции плюс штрафные баллы × {{ run.seconds_per_point }} с; со снятиями
+    с этапов — после прошедших полностью.{% else %}Победитель — наименьшая сумма баллов (часть 4, п. 6.1.1).{% endif %}
     {% if run.rank %}Ранг по составам: <b>{{ run.rank.formatted() }}</b>.{% endif %}
     {% if run.complete %}{{ icon("check", 14) }} Все этапы заполнены.{% elif run.stages %}Заполнены не все этапы — пустые считаются как 0.{% endif %}</p>
-  {% if run.rows and run.stages %}
+  {% if run.rows and (run.stages or is_time) %}
   <div class="table-wrap">
   <table class="tbl res-tbl">
     <thead><tr><th>Место</th><th>№</th><th>Команда</th><th>Состав</th>
-      {% for t in run.tours %}<th class="res-num">{{ t }}</th>{% endfor %}
+      {% if is_time %}<th class="res-num">Время на дистанции</th><th class="res-num">Штраф, баллы</th><th class="res-num">Снятий</th>
+      {% else %}{% for t in run.tours %}<th class="res-num">{{ t }}</th>{% endfor %}{% endif %}
       <th class="res-num">Результат</th><th class="res-num">%</th><th>Разряд</th>
       {% if run.rows|selectattr("actual_class")|list %}<th>Факт. класс</th>{% endif %}</tr></thead>
     <tbody>
@@ -19,8 +21,10 @@
       <td>{{ r.inp.number or "—" }}</td>
       <td><b>{{ r.inp.team }}</b><span class="adm-sub">{{ r.inp.territory }}</span></td>
       <td class="zres-members">{% for m in r.inp.members %}{{ m.fio }}{% if m.qual_label %} ({{ m.qual_label }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
-      {% for t in run.tours %}<td class="res-num">{{ pt(r.tours.get(t)) }}</td>{% endfor %}
-      <td class="res-num"><b>{% if r.status == FINISHED %}{{ pt(r.total) }}{% else %}{{ status_label[r.status] }}{% endif %}</b></td>
+      {% if is_time %}<td class="res-num">{{ ck(r.distance_time) }}</td><td class="res-num">{{ pt(r.points.values()|sum) if r.points else "" }}</td>
+      <td class="res-num">{{ r.removals or "" }}</td>
+      {% else %}{% for t in run.tours %}<td class="res-num">{{ pt(r.tours.get(t)) }}</td>{% endfor %}{% endif %}
+      <td class="res-num"><b>{% if r.status == FINISHED %}{{ res(r) }}{% else %}{{ status_label[r.status] }}{% endif %}</b></td>
       <td class="res-num">{{ pct(r.percent) }}</td>
       <td>{{ r.norm or "" }}</td>
       {% if run.rows|selectattr("actual_class")|list %}<td>{{ r.actual_class or "" }}</td>{% endif %}

@@ -65,3 +65,15 @@ def test_record_from_phone_json_is_cleaned():
                              "updated": "17", "removed": 1})
     assert (r.points, r.updated, r.removed, len(r.note)) == ("12,5", 17, True, 500)
     assert js.Record.from_json({"updated": "не число"}).updated == 0
+
+
+def test_speleo_removal_goes_to_table_as_mark():
+    z = zdata()
+    js.merge(z, "s2", [js.Record("Кедр.xlsx", "", removed=True, reason="страховка", updated=1)], FILES, "т-1",
+             "2025-09-21T11:00:00", removal_mark="с")
+    assert z["teams"]["Кедр.xlsx"]["points"]["s2"] == "с"
+    js.merge(z, "s2", [js.Record("Кедр.xlsx", "", removed=False, updated=2)], FILES, "т-1", "2025-09-21T11:05:00",
+             removal_mark="с")
+    assert "s2" not in z["teams"]["Кедр.xlsx"]["points"]  # судья снял отметку — клетка снова пустая
+    js.merge(z, "s2", [js.Record("Сосна.xlsx", "", removed=True, updated=1)], FILES, "т-1", "2025-09-21T11:06:00")
+    assert "s2" not in z["teams"]["Сосна.xlsx"]["points"]  # ПСР: снятие с этапа в таблицу не идёт

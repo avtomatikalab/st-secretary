@@ -57,6 +57,21 @@
     <div class="actions">
       <button type="button" class="btn" data-add-row="res-stages" data-template="tpl-stage">{{ icon("plus") }}Добавить этап</button>
     </div>
+    {% if is_time %}
+    <div class="grid">
+      <div class="field span-3"><label for="f-spp">1 штрафной балл =</label>
+        <select id="f-spp" name="spp"><option value="">по расчётному времени</option>
+          <option value="15"{% if zdata.get("spp") == "15" %} selected{% endif %}>15 секунд</option>
+          <option value="30"{% if zdata.get("spp") == "30" %} selected{% endif %}>30 секунд</option></select></div>
+      <div class="field span-3"><label for="f-exp">Расчётное время дистанции, мин</label><input id="f-exp" name="expected" type="text" inputmode="numeric" value="{{ zdata.get('expected', '') }}"></div>
+      <div class="field span-3"><label for="f-kvd">КВ дистанции, мин</label><input id="f-kvd" name="kv" type="text" inputmode="numeric" value="{{ zdata.get('kv', '') }}"></div>
+      <div class="field span-3"><label for="f-ro">Со снятиями с этапов</label>
+        <select id="f-ro" name="removed_order"><option value="after">после прошедших полностью (п. 6.5)</option>
+          <option value="count"{% if zdata.get("removed_order") == "count" %} selected{% endif %}>… и выше тот, у кого снятий меньше</option></select></div>
+    </div>
+    <p class="hint">Сейчас 1 балл = <b>{{ run.seconds_per_point }} с</b>: по Правилам 15 с при расчётном времени до 30 минут, иначе 30 с
+      (спелео п. 6.4, пешеходные п. 6.3.6), если в Условиях не сказано иное. Время на дистанции больше КВ — место не присуждается.</p>
+    {% else %}
     {% set dist = zdata.get("distance", {}) %}
     <div class="grid">
       <div class="field span-3"><label for="f-km">Протяжённость, км</label><input id="f-km" name="km" type="text" inputmode="decimal" value="{{ dist.get('km', '') }}"></div>
@@ -68,6 +83,7 @@
     </div>
     <p class="hint">Километраж, виды туризма и КВ — для фактически пройденного класса (часть 4, п. 4.3 и табл. 3); считается,
       когда у всех этапов задан МШ. Правило равенства — из Положения или Условий (часть 4, п. 6.1.2).</p>
+    {% endif %}
     <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить этапы</button>
   </form>
   <template id="tpl-stage">{{ stage_row("__i__", {"id": "", "tour": run.tours[-1] if run.tours else "Тур 1", "name": "", "max": "", "kv": ""}) }}</template>
@@ -76,9 +92,11 @@
 {% if not run.rows %}
 <div class="panel panel-warn" id="points"><h2>{{ icon("alert") }} В зачёте {{ z.key }} пока нет команд</h2>
   <p>Команды берутся из <a href="{{ base }}/preapps">предварительных заявок</a> — по группе и классу, указанным в заявке.</p></div>
-{% elif run.stages %}
+{% elif run.stages or is_time %}
 <section class="panel" id="points">
-  <h2>Баллы по этапам</h2>
+  <h2>{% if is_time %}Время и штрафные баллы{% else %}Баллы по этапам{% endif %}</h2>
+  {% if is_time %}<p class="muted">Старт и финиш — <b>чч:мм:сс</b> (единое судейское время), отсечки — сумма за дистанцию,
+    <b>мм:сс</b>. В клетках этапов — штрафные баллы (дробные — через запятую: 0,3), снятие с этапа — буква <b>с</b>.</p>{% endif %}
   <p class="muted">Всё сохраняется сразу. Enter — на команду ниже, как в Excel; Tab — на следующий этап. Пустая клетка — этап
     не внесён (0 баллов). Команда снята или не финишировала — выберите статус: место ей не присуждается.
     <span class="pts-legend">Синим</span> — пришло с <a href="{{ base }}/judges?{{ zq }}">телефона судьи этапа</a>; чтобы увидеть
@@ -88,8 +106,9 @@
   <table class="tbl pts-grid">
     <thead>
       <tr><th rowspan="2" class="pts-sticky pts-n">№</th><th rowspan="2" class="pts-sticky pts-team">Команда</th>
+        {% if is_time %}<th rowspan="2">Чип</th><th rowspan="2">Старт</th><th rowspan="2">Финиш</th><th rowspan="2">Отсечки</th>{% endif %}
         {% for t in run.tours %}<th colspan="{{ run.stages|selectattr('tour', 'equalto', t)|list|length }}" class="pts-tour">{{ t }}</th>{% endfor %}
-        <th rowspan="2" class="pts-total">Итого</th><th rowspan="2" class="pts-place">Место</th><th rowspan="2">Статус</th></tr>
+        <th rowspan="2" class="pts-total">{% if is_time %}Результат{% else %}Итого{% endif %}</th><th rowspan="2" class="pts-place">Место</th><th rowspan="2">Статус</th></tr>
       <tr>{% for s in run.stages %}<th class="pts-stage" title="{{ s.title }}{% if s.max_penalty is not none %} · МШ {{ pt(s.max_penalty) }}{% endif %}"><span>{{ s.name }}</span></th>{% endfor %}</tr>
     </thead>
     <tbody>
@@ -97,8 +116,13 @@
     <tr data-team="{{ r.inp.file }}">
       <td class="pts-sticky pts-n">{{ r.inp.number or "—" }}<input type="hidden" name="p-{{ i }}-file" value="{{ r.inp.file }}"></td>
       <td class="pts-sticky pts-team"><b>{{ r.inp.team }}</b></td>
+      {% if is_time %}{% set d = zdata.get("teams", {}).get(r.inp.file, {}) %}
+      <td class="pts-cell"><input type="text" inputmode="numeric" autocomplete="off" name="p-{{ i }}-chip" value="{{ r.chip }}" class="pts-chip" aria-label="{{ r.inp.team }}: чип"></td>
+      {% for fld, lbl in (("start", "старт"), ("finish", "финиш"), ("cutoffs", "отсечки")) %}
+      <td class="pts-cell"><input type="text" inputmode="numeric" autocomplete="off" name="p-{{ i }}-{{ fld }}" value="{{ d.get(fld, '') }}" data-stage="{{ fld }}" class="pts-time{% if fld in r.bad %} is-invalid{% endif %}" aria-label="{{ r.inp.team }}: {{ lbl }}" placeholder="{{ 'мм:сс' if fld == 'cutoffs' else 'чч:мм:сс' }}"></td>
+      {% endfor %}{% endif %}
       {% for s in run.stages %}{% set ph = from_phone(s.id, r.inp.file) %}<td class="pts-cell"><input type="text" inputmode="decimal" autocomplete="off" name="p-{{ i }}-{{ s.id }}" value="{{ r.raw.get(s.id, '') }}" data-stage="{{ s.id }}" class="{% if s.id in r.bad %}is-invalid{% endif %}{% if ph %} pts-phone{% endif %}" aria-label="{{ r.inp.team }}: {{ s.title }}{% if ph %} (с телефона судьи){% endif %}"{% if ph %} title="С телефона судьи этапа"{% endif %}></td>{% endfor %}
-      <td class="pts-total" data-total>{{ pt(r.total) }}</td>
+      <td class="pts-total" data-total>{% if is_time %}{{ res(r) if r.status == FINISHED else "" }}{% else %}{{ pt(r.total) }}{% endif %}</td>
       <td class="pts-place" data-place>{{ r.place or status_short[r.status] or "—" }}</td>
       <td><select name="p-{{ i }}-status" aria-label="{{ r.inp.team }}: статус">
         {% for s in statuses %}<option value="{{ s.value }}"{% if s == r.status %} selected{% endif %}>{{ status_label[s] }}</option>{% endfor %}

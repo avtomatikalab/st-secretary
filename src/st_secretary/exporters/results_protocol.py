@@ -17,7 +17,8 @@ from openpyxl.utils import get_column_letter
 
 from st_secretary.competition import Competition
 from st_secretary.disciplines import Status
-from st_secretary.psr_run import STATUS_LABEL, ZachetRun, points_text
+from st_secretary.psr_run import STATUS_LABEL, ZachetRun, points_text, result_text
+from st_secretary.time_run import clock_text
 
 THIN = Side(style="thin", color="7F7F7F")
 BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
@@ -39,9 +40,11 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     wb = Workbook()
     ws = wb.active
     ws.title = "Протокол"
-    tours = run.tours
+    timed = run.kind == "time"  # спелео, пешеходные: время на дистанции, штраф, снятия
+    tours = [] if timed else run.tours
+    middle = ["Время на дистанции", "Штраф, баллы", "Снятий"] if timed else tours
     show_class = any(r.actual_class for r in run.rows)
-    head = (["Место", "№", "Команда", "Территория", "Состав (разряд)"] + tours
+    head = (["Место", "№", "Команда", "Территория", "Состав (разряд)"] + middle
             + ["Результат", "% от победителя", "Выполнен разряд"] + (["Факт. класс"] if show_class else []))
     width = len(head)
 
@@ -68,18 +71,14 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     r += 1
     for t in run.rows:
         members = ", ".join(f"{m.fio} ({m.qual_label or 'б/р'})" for m in t.inp.members)
-        if t.status is not Status.FINISHED:
-            result = STATUS_LABEL[t.status]
-        elif t.place is None:
-            result = "баллы не внесены"
-        else:
-            result = points_text(t.total)
-        values = ([t.place or "—", t.inp.number or "", t.inp.team, t.inp.territory, members]
-                  + [points_text(t.tours.get(x)) for x in tours]
+        result = result_text(run, t) or ("время не внесено" if timed else "баллы не внесены")
+        mid = ([clock_text(t.distance_time), points_text(sum(t.points.values())) if t.points else "", t.removals or ""]
+               if timed else [points_text(t.tours.get(x)) for x in tours])
+        values = ([t.place or "—", t.inp.number or "", t.inp.team, t.inp.territory, members] + mid
                   + [result, _pct(t.percent), t.norm or ""] + ([t.actual_class or ""] if show_class else []))
         for c, v in enumerate(values, start=1):
             cell = ws.cell(r, c, v)
-            cell.border, cell.font = BOX, Font(size=10, bold=(c == 1 or c == 6 + len(tours)))
+            cell.border, cell.font = BOX, Font(size=10, bold=(c == 1 or c == 6 + len(middle)))
             cell.alignment = WRAP if c in (3, 4, 5) else CENTER
         r += 1
     r += 1
@@ -100,7 +99,8 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         o = comp.official(role)
         ws.cell(r, 1, f"{role} ________________ / {o.signature if o else ' ' * 30} /").font = Font(size=11)
         r += 2
-    for c, w in enumerate([7, 5, 22, 16, 46] + [8] * len(tours) + [11, 10, 10] + ([8] if show_class else []), start=1):
+    for c, w in enumerate([7, 5, 22, 16, 46] + [10 if timed else 8] * len(middle) + [11, 10, 10]
+                          + ([8] if show_class else []), start=1):
         ws.column_dimensions[get_column_letter(c)].width = w
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
@@ -115,9 +115,8 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         cell.font, cell.fill, cell.border = Font(bold=True, size=9), HEAD, BOX
         cell.alignment = Alignment(horizontal="center", vertical="bottom", wrap_text=True, text_rotation=90 if c > 3 else 0)
     for i, t in enumerate(run.rows, start=5):
-        values = ([t.place or "—", t.inp.number or "", t.inp.team] + [points_text(t.points.get(s.id)) for s in run.stages]
-                  + [STATUS_LABEL[t.status] if t.status is not Status.FINISHED
-                     else points_text(t.total) if t.points else ""])
+        cells = [t.raw.get(s.id, "") if timed else points_text(t.points.get(s.id)) for s in run.stages]  # «с» — снятие
+        values = [t.place or "—", t.inp.number or "", t.inp.team] + cells + [result_text(run, t)]
         for c, v in enumerate(values, start=1):
             cell = st.cell(i, c, v)
             cell.border, cell.font = BOX, Font(size=9, bold=c in (1, len(values)))
@@ -139,7 +138,7 @@ def awards_rows(run: ZachetRun, source: str) -> dict:
     rows = []
     for t in run.rows:
         rows.append({"team": t.inp.team, "territory": t.inp.territory, "number": t.inp.number, "place": t.place,
-                     "result": points_text(t.total) if t.status is Status.FINISHED else STATUS_LABEL[t.status],
+                     "result": result_text(run, t),
                      "norm": t.norm, "members": [{"fio": m.fio, "qual": m.qual_label} for m in t.inp.members]})
     rank = run.rank.formatted() if run.rank and run.rank.value is not None else ""
     return {"source": source, "group_text": "", "rank": rank, "rows": rows}

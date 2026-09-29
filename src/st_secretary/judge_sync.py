@@ -79,8 +79,10 @@ class Record:
                    bool(d.get("removed")), clip(d.get("reason")), clip(d.get("note"), 500), updated)
 
 
-def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], device: str, received: str) -> dict:
-    """Присланное с телефона → журнал этапа и таблица баллов. Возвращает {"saved": [файлы], "conflicts": n}."""
+def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], device: str, received: str,
+          removal_mark: str = "") -> dict:
+    """Присланное с телефона → журнал этапа и таблица баллов. Возвращает {"saved": [файлы], "conflicts": n}.
+    removal_mark — чем в таблице отмечается снятие с этапа («с» у спелео); пусто — снятие в таблицу не идёт (ПСР)."""
     log = zdata.setdefault("judge", {}).setdefault(sid, {})
     teams = zdata.setdefault("teams", {})
     saved, conflicts = [], 0
@@ -98,6 +100,12 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
                          "reason": rec.reason, "note": rec.note, "updated": rec.updated, "device": device,
                          "received": received}
         saved.append(rec.file)
+        if removal_mark and not rec.points:  # спелео: снятие с этапа — «с» в клетке этапа (или снять отметку)
+            if rec.removed and cell in ("", before, removal_mark):
+                pts_cell[sid] = removal_mark
+            elif not rec.removed and prev.get("removed") and cell == removal_mark:
+                pts_cell.pop(sid, None)
+            continue
         if rec.points:
             try:
                 parse_points(rec.points)
