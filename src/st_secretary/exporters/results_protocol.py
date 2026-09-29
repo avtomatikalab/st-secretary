@@ -43,7 +43,9 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     tours = [] if timed else run.tours
     middle = ["Время на дистанции", "Штраф, баллы", "Снятий"] if timed else tours
     show_class = any(r.actual_class for r in run.rows)
-    head = (["Место", "№", "Команда", "Территория", "Состав (разряд)"] + middle
+    person = run.unit == "person"  # личная дисциплина: место у спортсмена
+    who = ["Участник", "Команда", "Территория", "Разряд"] if person else ["Команда", "Территория", "Состав (разряд)"]
+    head = (["Место", "№"] + who + middle
             + ["Результат", "% от победителя", "Выполнен разряд"] + (["Факт. класс"] if show_class else []))
     width = len(head)
 
@@ -70,15 +72,17 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     r += 1
     for t in run.rows:
         members = ", ".join(f"{m.fio} ({m.qual_label or 'б/р'})" for m in t.inp.members)
+        who_values = ([t.inp.team, t.inp.club, t.inp.territory, ", ".join(m.qual_label or "б/р" for m in t.inp.members)]
+                      if person else [t.inp.team, t.inp.territory, members])
         result = result_text(run, t) or ("время не внесено" if timed else "баллы не внесены")
         mid = ([clock_text(t.distance_time), points_text(sum(t.points.values())) if t.points else "", t.removals or ""]
                if timed else [points_text(t.tours.get(x)) for x in tours])
-        values = ([t.place or "—", t.inp.number or "", t.inp.team, t.inp.territory, members] + mid
+        values = ([t.place or "—", t.inp.number or ""] + who_values + mid
                   + [result, _pct(t.percent), t.norm or ""] + ([t.actual_class or ""] if show_class else []))
         for c, v in enumerate(values, start=1):
             cell = ws.cell(r, c, v)
-            cell.border, cell.font = BOX, Font(size=10, bold=(c == 1 or c == 6 + len(middle)))
-            cell.alignment = WRAP if c in (3, 4, 5) else CENTER
+            cell.border, cell.font = BOX, Font(size=10, bold=(c == 1 or c == 3 + len(who) + len(middle)))
+            cell.alignment = WRAP if 3 <= c < 3 + len(who) else CENTER
         r += 1
     r += 1
     notes = []
@@ -98,8 +102,8 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         o = comp.official(role)
         ws.cell(r, 1, f"{role} ________________ / {o.signature if o else ' ' * 30} /").font = Font(size=11)
         r += 2
-    for c, w in enumerate([7, 5, 22, 16, 46] + [10 if timed else 8] * len(middle) + [11, 10, 10]
-                          + ([8] if show_class else []), start=1):
+    for c, w in enumerate([7, 6] + ([28, 20, 16, 8] if person else [22, 16, 46]) + [10 if timed else 8] * len(middle)
+                          + [11, 10, 10] + ([8] if show_class else []), start=1):
         ws.column_dimensions[get_column_letter(c)].width = w
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
@@ -108,7 +112,7 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     st = wb.create_sheet("По этапам")
     st.cell(1, 1, f"{comp.title} — баллы по этапам, зачёт {z.key}").font = Font(bold=True, size=12)
     st.cell(2, 1, f"{'Предварительные' if kind == PRELIMINARY else 'Официальные'} результаты на {at:%d.%m.%Y %H:%M}")
-    heads = ["Место", "№", "Команда"] + [s.title for s in run.stages] + ["Итого"]
+    heads = ["Место", "№", "Участник" if person else "Команда"] + [s.title for s in run.stages] + ["Итого"]
     for c, h in enumerate(heads, start=1):
         cell = st.cell(4, c, h)
         cell.font, cell.fill, cell.border = Font(bold=True, size=9), HEAD, BOX
@@ -135,8 +139,9 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
 def awards_rows(run: ZachetRun, source: str) -> dict:
     """Официальные результаты → данные страницы «Награждение» (как из протокола СЕКРЕТАРЬ_ST)."""
     rows = []
-    for t in run.rows:
-        rows.append({"team": t.inp.team, "territory": t.inp.territory, "number": t.inp.number, "place": t.place,
+    for t in run.rows:  # спортсмен и связка: «команда» — их команда, награждаются участники
+        rows.append({"team": t.inp.club or t.inp.team, "territory": t.inp.territory, "number": t.inp.number,
+                     "place": t.place,
                      "result": result_text(run, t),
                      "norm": t.norm, "members": [{"fio": m.fio, "qual": m.qual_label} for m in t.inp.members]})
     rank = run.rank.formatted() if run.rank and run.rank.value is not None else ""

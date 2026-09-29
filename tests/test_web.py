@@ -989,6 +989,41 @@ def test_training_competition_from_home_page(client):
     assert "Ориентирование" in client.get(base(f) + "/results").text
 
 
+def test_individual_discipline_each_athlete_gets_place(client, tmp_path, psr_card, opened):
+    """Северная ходьба — личная: в результатах, жеребьёвке и протоколе каждый спортсмен со своим номером."""
+    from openpyxl import load_workbook
+
+    card = replace(psr_card, zachety=[replace(psr_card.zachety[0], group="Ж", distance_class=2,
+                                              discipline_code="0840291811Л", team_size=None, min_men=0,
+                                              min_women=0, age_from=18, age_from_by_gsk=None)])
+    f = client.app.state.store.create(card)
+    rows = [["Ива", "Красноярск", "Орлова Анна Петровна", fio, "01.02.1970", "б/р", "ж", "Ж", 2, None, 1]
+            for fio in ("Орлова Анна Петровна", "Белова Ирина Сергеевна", "Котова Вера Ивановна")]
+    f.add_preapp("Ива.xlsx", make_application(tmp_path / "Ива.xlsx", "Ива", "Красноярск", "Орлова Анна Петровна",
+                                              "89130000000", 3, rows).read_bytes())
+    client.post(base(f) + "/admission/numbers", data={"mode": "missing"})
+    url = base(f) + "/results?z=" + quote("Ж_2")
+    client.post(base(f) + "/results/stages?z=" + quote("Ж_2"),
+                data={"st-0-name": "Точка 1", "kv": "120", "system": "penalty", "removal": "dsq"})
+    page = client.get(url).text
+    assert page.count("data-team=") == 3 and "Кр. карт." in page and "Штраф. время" in page
+    keys = re.findall(r'name="p-(\d)-file" value="([^"]+)"', page)
+    assert all("#" in k for _, k in keys)  # ключ — «файл#спортсмен»
+    data = {f"p-{i}-file": k for i, k in keys}
+    for n, (i, k) in enumerate(keys):
+        data.update({f"p-{i}-start": "10:00:00", f"p-{i}-finish": f"10:5{n}:00", f"p-{i}-status": "finished"})
+    data[f"p-{keys[2][0]}-red"] = "к"
+    client.post(base(f) + "/results/points?z=" + quote("Ж_2"), data=data)
+    page = client.get(url).text
+    assert "<th>Участник</th>" in page and "1.1" in page and "аннулирован" in page
+    client.post(base(f) + "/results/publish?z=" + quote("Ж_2"))
+    ws = load_workbook(opened[-1])["Протокол"]
+    cells = [c for row in ws.iter_rows(values_only=True) for c in row if c]
+    assert "Участник" in cells and "Орлова Анна Петровна" in cells and "Ива" in cells
+    start = client.get(base(f) + "/start?z=" + quote("Ж_2")).text
+    assert "Белова Ирина Сергеевна" in start and "Ива" in start
+
+
 def test_board_shows_only_enabled_competitions_and_only_results(client, tmp_path, psr_card):
     from datetime import datetime
 

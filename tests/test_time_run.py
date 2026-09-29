@@ -5,6 +5,7 @@ from fractions import Fraction
 
 import pytest
 
+from st_secretary import psr_run as pr
 from st_secretary import time_run as tr
 from st_secretary.competition import Zachet
 from st_secretary.disciplines import Status
@@ -93,3 +94,82 @@ def test_bad_values_and_texts():
         tr.parse_duration("5:75")
     assert tr.clock_text(Fraction(3930)) == "1:05:30" and tr.clock_text(Fraction(59)) == "0:59"
     assert tr.is_time_discipline(Zachet("М/Ж", 2, "0840131811Я")) and not tr.is_time_discipline(Zachet("М/Ж", 3, "0840161811Я"))
+
+
+def test_speleo_norms_need_six_with_judges_points(speleo):
+    """ЕВСК п. 25.4.2: в спелео результат содержит баллы судей — на муниципальных нужно не менее 6 участников."""
+    z = speleo.zachety[0]
+    teams = [team(n, i) for i, n in enumerate(["А", "Б", "В", "Г"], start=1)]
+    zdata = {"stages": STAGES, "teams": {f"{n}.xlsx": {"start": "10:00:00", "finish": f"10:{20 + i}:00"}
+                                         for i, n in enumerate(["А", "Б", "В", "Г"])}}
+    run = tr.compute(speleo, z, zdata, teams)
+    assert not run.norms_ok and any("нужно не менее 6" in i.text for i in run.issues)
+
+
+def pedestrian(card, code="0840251811Я"):
+    return replace(card, zachety=[Zachet("М/Ж", 2, code, team_size=4)])
+
+
+def test_pedestrian_nopenalty_time_plus_penalty_time_and_removal_rules(psr_card):
+    comp = pedestrian(psr_card)
+    z = comp.zachety[0]
+    assert tr.profile(z) == "pedestrian"
+    teams = [team("А", 1), team("Б", 2), team("В", 3), team("Г", 4)]
+    zdata = {"stages": STAGES, "system": "nopenalty", "kv": "60", "teams": {
+        "А.xlsx": {"start": "10:00:00", "finish": "10:30:00", "pen_time": "3:00"},       # потеря снаряжения
+        "Б.xlsx": {"start": "10:00:00", "finish": "10:31:00"},
+        "В.xlsx": {"start": "10:00:00", "finish": "10:20:00", "points": {"s1": "с"}},   # снятие с этапа
+        "Г.xlsx": {"start": "10:00:00", "finish": "10:25:00", "points": {"s2": "2"}}}}  # баллов в бесштрафовой нет
+    run = tr.compute(comp, z, zdata, teams)
+    rows = {r.inp.team: r for r in run.rows}
+    assert (rows["А"].total, rows["А"].place) == (33 * 60, 2) and rows["Б"].place == 1
+    assert rows["В"].status.value == "removed" and rows["В"].auto_status and rows["В"].place is None  # п. 6.2.8 а
+    assert rows["Г"].place is None and "points" in rows["Г"].bad
+    assert any("в бесштрафовой системе штрафных баллов нет" in i.text for i in run.issues)
+    zdata["removal"] = "okv"  # п. 6.2.8 б — штрафное время, равное ОКВ, за каждое снятие
+    del zdata["teams"]["Г.xlsx"]["points"]
+    run = tr.compute(comp, z, zdata, teams)
+    rows = {r.inp.team: r for r in run.rows}
+    assert rows["В"].status.value == "finished" and rows["В"].total == 20 * 60 + 60 * 60 and rows["В"].place == 4
+    zdata["system"] = "penalty"  # штрафная: баллы × 30 с по умолчанию (расчётное время не задано)
+    zdata["teams"]["Г.xlsx"]["points"] = {"s2": "2"}
+    run = tr.compute(comp, z, zdata, teams)
+    assert {r.inp.team: r for r in run.rows}["Г"].total == 25 * 60 + 60 and run.system == "penalty"
+
+
+def test_nordic_red_card_and_fixed_15_seconds(psr_card):
+    comp = replace(psr_card, zachety=[Zachet("Ж", 2, "0840291811Л")])
+    z = comp.zachety[0]
+    people = [team(n, i) for i, n in enumerate(["А", "Б", "В"], start=1)]
+    zdata = {"stages": [{"id": "k1", "tour": "", "name": "Точка 1"}], "spp": "30", "kv": "90", "teams": {
+        "А.xlsx": {"start": "10:00:00", "finish": "10:40:00", "points": {"k1": "2"}},  # 2 × 15 с
+        "Б.xlsx": {"start": "10:00:00", "finish": "10:35:00", "red": "к"},
+        "В.xlsx": {"start": "10:00:00", "finish": "10:41:00", "pen_time": "0:30"}}}   # фальстарт
+    run = tr.compute(comp, z, zdata, people)
+    rows = {r.inp.team: r for r in run.rows}
+    assert run.seconds_per_point == 15 and rows["А"].total == 40 * 60 + 30
+    assert rows["Б"].status.value == "removed" and any("результат аннулирован" in i.text for i in run.issues)
+    zdata["removal"] = "okv"  # красная карточка — штрафное время, равное ОКВ
+    rows = {r.inp.team: r for r in tr.compute(comp, z, zdata, people).rows}
+    assert rows["Б"].total == 35 * 60 + 90 * 60 and rows["Б"].place == 3
+
+
+def test_mountain_points_for_time_technique_tactics(psr_card):
+    comp = replace(psr_card, zachety=[Zachet("М/Ж", 3, "0840211811Я", team_size=4)])  # горная группа: 2 балла/мин
+    z = comp.zachety[0]
+    teams = [team("А", 1), team("Б", 2), team("В", 3), team("Г", 4)]
+    zdata = {"stages": STAGES, "kv": "120", "teams": {
+        "А.xlsx": {"start": "10:00:00", "finish": "11:00:00", "points": {"s1": "10", "s2": "3"}},
+        "Б.xlsx": {"start": "10:00:00", "finish": "10:50:30", "no_tactics": "нет"},           # 50 % ОКВ = 60 мин → 120
+        "В.xlsx": {"start": "10:00:00", "finish": "10:40:00", "declared": "50:00"},           # отклонение 20 % → 4 балла
+        "Г.xlsx": {"start": "10:00:00", "finish": "10:30:00", "points": {"s1": "с"}}}}
+    run = tr.compute(comp, z, zdata, teams)
+    rows = {r.inp.team: r for r in run.rows}
+    assert run.scoring == "points" and tr.profile(z) == "mountain"
+    assert rows["А"].total == 60 * 2 + 13 and rows["В"].total == 40 * 2 + 4
+    assert rows["Б"].total == 101 + 120 and pr.result_text(run, rows["Б"]) == "221,00"
+    assert [r.inp.team for r in run.rows] == ["В", "А", "Б", "Г"]  # со снятием — после всех без снятий (п. 6.1.6)
+    assert rows["В"].percent == 100  # методика % для баллов — из карточки
+    pair = replace(comp, zachety=[Zachet("М/Ж", 3, "0840101811Я")])
+    rows = {r.inp.team: r for r in tr.compute(pair, pair.zachety[0], zdata, teams).rows}
+    assert rows["А"].total == 60 * 4 + 13  # связка: 4 балла/мин

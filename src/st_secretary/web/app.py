@@ -40,6 +40,7 @@ from st_secretary import staff as sf
 from st_secretary import start_list as sl
 from st_secretary import time_run as tr
 from st_secretary import training
+from st_secretary import units as un
 from st_secretary import verify as vf
 from st_secretary.exporters import awards as aw
 from st_secretary.exporters import contracts as ct
@@ -1557,23 +1558,12 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     # ------------------------------------------------------------ протоколы этапов и результаты (ПСР)
 
     def zachet_inputs(f: CompFolder, comp, z) -> list:
-        """Команды зачёта: из заявок, номера и допуск — из комиссии по допуску; не допущенные участники не в составе."""
+        """Кто выступает в зачёте (команды, связки или спортсмены — по дисциплине): из заявок, номера и допуск — из
+        комиссии по допуску; не допущенные участники не в составе."""
         if not f.preapp_files():
             return []
         _, teams = commission(f, comp)
-        out = []
-        for t in teams:
-            if not t.team:
-                continue
-            people = [p for p in t.persons if p.entry.zachet and p.entry.zachet.key == z.key and p.status != cm.REJECTED]
-            if not people:
-                continue
-            out.append(pr.TeamInput(t.file, t.team.team, t.team.territory, str(t.number or ""),
-                                    [pr.Member(p.entry.name.full, p.entry.qual,
-                                               p.entry.qual.label if p.entry.qual is not None else "", p.entry.chip)
-                                     for p in people],
-                                    admitted=t.status != cm.REJECTED, representative=t.team.representative))
-        return out
+        return un.zachet_units(teams, z, discipline_by_code(z.discipline_code).rank_format)
 
     def need_zachet(comp, key: str):
         z = next((x for x in comp.zachety if x.key == key), None) if key else (comp.zachety[0] if comp.zachety else None)
@@ -1589,9 +1579,14 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         run.issues += js.judge_issues(zdata, run.stages, {r.inp.file: r.inp.team for r in run.rows})
         return data, zdata, run
 
+    # дополнительные колонки таблицы по дисциплине: (поле, подпись)
+    EXTRA_FIELDS = {"pedestrian": (("pen_time", "Штраф. время"),),
+                    "nordic": (("pen_time", "Штраф. время"), ("red", "Кр. карт.")),
+                    "mountain": (("declared", "Заявл. время"), ("no_tactics", "ТЗ"))}
+
     def results_parts(f: CompFolder, z, zdata: dict, run) -> dict:
         return {"base": _base(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text, "ck": tr.clock_text,
-                "tod": tr.time_of_day_text,
+                "tod": tr.time_of_day_text, "extra_fields": EXTRA_FIELDS.get(run.profile, ()),
                 "res": lambda r: pr.result_text(run, r), "is_time": run.kind == "time",
                 "from_phone": lambda sid, file: js.from_phone(zdata, sid, file),
                 "grid": sorted(run.rows, key=lambda r: r.start_order), "status_label": pr.STATUS_LABEL,
@@ -1648,6 +1643,10 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             for k in ("spp", "expected", "kv", "cutoff_pairs"):  # по времени: эквивалент балла, расчётное время, КВ, отсечки SI
                 if k in form:
                     zdata[k] = str(form.get(k, "")).strip()
+            if "system" in form:  # пешеходные, северная ходьба: штрафная или бесштрафовая система
+                zdata["system"] = "nopenalty" if form.get("system") == "nopenalty" else "penalty"
+            if "removal" in form:  # снятие с этапа (пешеходные) или красная карточка (СХ): а) или б)
+                zdata["removal"] = "okv" if form.get("removal") == "okv" else "dsq"
             if "removed_order" in form:
                 zdata["removed_order"] = "count" if form.get("removed_order") == "count" else "after"
 
@@ -1722,7 +1721,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                         pts.pop(sid, None)
                 st = str(form.get(f"p-{i}-status", Status.FINISHED.value))
                 t["status"] = st if st in {s.value for s in Status} else Status.FINISHED.value
-                for fld in ("start", "finish", "cutoffs", "chip"):  # дисциплины по времени
+                for fld in ("start", "finish", "cutoffs", "chip", "pen_time", "red", "declared", "no_tactics"):
                     if f"p-{i}-{fld}" in form:
                         t[fld] = " ".join(str(form.get(f"p-{i}-{fld}", "")).split())
 

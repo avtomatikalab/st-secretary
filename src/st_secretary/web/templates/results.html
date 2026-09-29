@@ -61,22 +61,51 @@
     <div class="actions">
       <button type="button" class="btn" data-add-row="res-stages" data-template="tpl-stage">{{ icon("plus") }}Добавить этап</button>
     </div>
-    {% if is_time %}
+    {% if is_time %}{% set prof = run.profile %}
     <div class="grid">
+      {% if prof in ("pedestrian", "nordic") %}
+      <div class="field span-3"><label for="f-sys">Система оценки нарушений</label>
+        <select id="f-sys" name="system"><option value="penalty">штрафная (баллы)</option>
+          <option value="nopenalty"{% if run.system == "nopenalty" %} selected{% endif %}>бесштрафовая (только время)</option></select></div>
+      {% endif %}
+      {% if prof in ("speleo", "pedestrian") %}
       <div class="field span-3"><label for="f-spp">1 штрафной балл =</label>
         <select id="f-spp" name="spp"><option value="">по расчётному времени</option>
-          <option value="15"{% if zdata.get("spp") == "15" %} selected{% endif %}>15 секунд</option>
-          <option value="30"{% if zdata.get("spp") == "30" %} selected{% endif %}>30 секунд</option></select></div>
+          <option value="15"{% if zdata.get("spp") == "15" %} selected{% endif %}>15 секунд{% if prof == "pedestrian" %} (короткая){% endif %}</option>
+          <option value="30"{% if zdata.get("spp") == "30" %} selected{% endif %}>30 секунд{% if prof == "pedestrian" %} (длинная){% endif %}</option></select></div>
       <div class="field span-3"><label for="f-exp">Расчётное время дистанции, мин</label><input id="f-exp" name="expected" type="text" inputmode="numeric" value="{{ zdata.get('expected', '') }}"></div>
-      <div class="field span-3"><label for="f-kvd">КВ дистанции, мин</label><input id="f-kvd" name="kv" type="text" inputmode="numeric" value="{{ zdata.get('kv', '') }}"></div>
+      {% endif %}
+      <div class="field span-3"><label for="f-kvd">{% if prof == "speleo" %}КВ{% else %}ОКВ{% endif %} дистанции, мин</label><input id="f-kvd" name="kv" type="text" inputmode="numeric" value="{{ zdata.get('kv', '') }}"></div>
+      {% if prof == "speleo" %}
       <div class="field span-3"><label for="f-ro">Со снятиями с этапов</label>
         <select id="f-ro" name="removed_order"><option value="after">после прошедших полностью (п. 6.5)</option>
           <option value="count"{% if zdata.get("removed_order") == "count" %} selected{% endif %}>… и выше тот, у кого снятий меньше</option></select></div>
+      {% elif prof == "pedestrian" %}
+      <div class="field span-6"><label for="f-rm">Снятие с этапа — после финиша (п. 6.2.8)</label>
+        <select id="f-rm" name="removal"><option value="dsq">а) снятие с дистанции</option>
+          <option value="okv"{% if zdata.get("removal") == "okv" %} selected{% endif %}>б) штрафное время, равное ОКВ, за каждое снятие</option></select></div>
+      {% elif prof == "nordic" %}
+      <div class="field span-6"><label for="f-rm">Красная карточка — после финиша (п. 10.4.4)</label>
+        <select id="f-rm" name="removal"><option value="dsq">а) аннулирование результата</option>
+          <option value="okv"{% if zdata.get("removal") == "okv" %} selected{% endif %}>б) штрафное время, равное ОКВ</option></select></div>
+      {% endif %}
       <div class="field span-6"><label for="f-cut">Станции отсечек SPORTident (начало-конец)</label>
         <input id="f-cut" name="cutoff_pairs" type="text" value="{{ zdata.get('cutoff_pairs', '') }}" placeholder="31-32; 41-42"></div>
     </div>
-    <p class="hint">Сейчас 1 балл = <b>{{ run.seconds_per_point }} с</b>: по Правилам 15 с при расчётном времени до 30 минут, иначе 30 с
-      (спелео п. 6.4, пешеходные п. 6.3.6), если в Условиях не сказано иное. Время на дистанции больше КВ — место не присуждается.</p>
+    <p class="hint">{% if prof == "speleo" %}Сейчас 1 балл = <b>{{ run.seconds_per_point }} с</b>: по Правилам 15 с при расчётном
+      времени до 30 минут, иначе 30 с (часть 8, п. 6.4), если в Условиях не сказано иное. Время на дистанции больше КВ — место не
+      присуждается.
+      {% elif prof == "pedestrian" %}Результат — время на дистанции{% if run.system == "penalty" %} плюс баллы × <b>{{ run.seconds_per_point }} с</b>
+      (15 с — короткая дистанция, 30 с — длинная, часть 7, п. 6.3.6){% endif %} плюс штрафное время (например, 3 мин за
+      потерю снаряжения, 20 мин за невзятый КП — если так в Условиях). На всероссийских — бесштрафовая система и снятие с
+      дистанции (п. 6.4.1, 6.2.9).
+      {% elif prof == "nordic" %}Результат — время на дистанции{% if run.system == "penalty" %} плюс штрафные баллы × 15 с (п. 10.3.2){% endif %}
+      плюс штрафное время (фальстарт — 30 с). Точки контроля — как этапы: в клетке — баллы судьи-контролёра. Красная карточка —
+      «к» в колонке «Кр. карт.». На всероссийских — штрафная система и аннулирование результата (п. 10.4.1, 10.4.3).
+      {% else %}Результат в баллах: время на дистанции — {{ 4 if z.discipline_code == "0840101811Я" else 2 }} балла за минуту
+      (часть 2, п. 6.1.4), плюс баллы за нарушения техники и тактики по этапам, плюс тактика дистанции: «нет» в колонке «ТЗ» —
+      заявка по тактике не сдана (50 % ОКВ), «Заявл. время» — 0,2 балла за каждый 1 % отклонения. Со снятиями — после команд без
+      снятий, выше тот, у кого снятий меньше (п. 6.1.6).{% endif %}</p>
     {% else %}
     {% set dist = zdata.get("distance", {}) %}
     <div class="grid">
@@ -102,7 +131,8 @@
 <section class="panel" id="points">
   <h2>{% if is_time %}Время и штрафные баллы{% else %}Баллы по этапам{% endif %}</h2>
   {% if is_time %}<p class="muted">Старт и финиш — <b>чч:мм:сс</b> (единое судейское время), отсечки — сумма за дистанцию,
-    <b>мм:сс</b>. В клетках этапов — штрафные баллы (дробные — через запятую: 0,3), снятие с этапа — буква <b>с</b>.</p>
+    <b>мм:сс</b>. В клетках этапов — {% if run.system == "nopenalty" %}только снятие с этапа — буква <b>с</b>{% else %}штрафные
+    баллы (дробные — через запятую: 0,3), снятие с этапа — буква <b>с</b>{% endif %}.</p>
   <form method="post" action="{{ base }}/results/si?{{ zq }}" enctype="multipart/form-data" class="res-import">
     <label class="btn">{{ icon("upload", 18) }}Загрузить si_reader.csv (SPORTident Reader)
       <input type="file" name="csv" accept=".csv,.txt" class="visually-hidden" data-autosubmit></label>
@@ -118,7 +148,8 @@
   <table class="tbl pts-grid">
     <thead>
       <tr><th rowspan="2" class="pts-sticky pts-n">№</th><th rowspan="2" class="pts-sticky pts-team">Команда</th>
-        {% if is_time %}<th rowspan="2">Чип</th><th rowspan="2">Старт</th><th rowspan="2">Финиш</th><th rowspan="2">Отсечки</th>{% endif %}
+        {% if is_time %}<th rowspan="2">Чип</th><th rowspan="2">Старт</th><th rowspan="2">Финиш</th><th rowspan="2">Отсечки</th>
+        {% for fld, lbl in extra_fields %}<th rowspan="2">{{ lbl }}</th>{% endfor %}{% endif %}
         {% for t in run.tours %}<th colspan="{{ run.stages|selectattr('tour', 'equalto', t)|list|length }}" class="pts-tour">{{ t }}</th>{% endfor %}
         <th rowspan="2" class="pts-total">{% if is_time %}Результат{% else %}Итого{% endif %}</th><th rowspan="2" class="pts-place">Место</th><th rowspan="2">Статус</th></tr>
       <tr>{% for s in run.stages %}<th class="pts-stage" title="{{ s.title }}{% if s.max_penalty is not none %} · МШ {{ pt(s.max_penalty) }}{% endif %}"><span>{{ s.name }}</span></th>{% endfor %}</tr>
@@ -127,19 +158,20 @@
     {% for r in grid %}{% set i = loop.index0 %}
     <tr data-team="{{ r.inp.file }}">
       <td class="pts-sticky pts-n">{{ r.inp.number or "—" }}<input type="hidden" name="p-{{ i }}-file" value="{{ r.inp.file }}"></td>
-      <td class="pts-sticky pts-team"><b>{{ r.inp.team }}</b></td>
+      <td class="pts-sticky pts-team"><b>{{ r.inp.team }}</b>{% if r.inp.club and r.inp.club != r.inp.team %}<span class="adm-sub">{{ r.inp.club }}</span>{% endif %}</td>
       {% if is_time %}{% set d = zdata.get("teams", {}).get(r.inp.file, {}) %}
       <td class="pts-cell"><input type="text" inputmode="numeric" autocomplete="off" name="p-{{ i }}-chip" value="{{ r.chip }}" class="pts-chip" aria-label="{{ r.inp.team }}: чип"></td>
-      {% for fld, lbl in (("start", "старт"), ("finish", "финиш"), ("cutoffs", "отсечки")) %}
-      <td class="pts-cell"><input type="text" inputmode="numeric" autocomplete="off" name="p-{{ i }}-{{ fld }}" value="{{ d.get(fld, '') }}" data-stage="{{ fld }}" class="pts-time{% if fld in r.bad %} is-invalid{% endif %}" aria-label="{{ r.inp.team }}: {{ lbl }}{% if fld == 'start' and r.planned_start %} (по стартовому протоколу {{ tod(r.start) }}){% endif %}"
-        placeholder="{{ tod(r.start) if fld == 'start' and r.planned_start else ('мм:сс' if fld == 'cutoffs' else 'чч:мм:сс') }}"{% if fld == 'start' and r.planned_start %} title="Время старта по стартовому протоколу — впишите, если команда стартовала в другое время"{% endif %}></td>
+      {% for fld, lbl in (("start", "старт"), ("finish", "финиш"), ("cutoffs", "отсечки")) + extra_fields %}{% set flag = fld in ("red", "no_tactics") %}
+      <td class="pts-cell"><input type="text" inputmode="{{ 'text' if flag else 'numeric' }}" autocomplete="off" name="p-{{ i }}-{{ fld }}" value="{{ d.get(fld, '') }}" data-stage="{{ fld }}" class="{{ 'pts-flag' if flag else 'pts-time' }}{% if fld in r.bad %} is-invalid{% endif %}" aria-label="{{ r.inp.team }}: {{ lbl }}{% if fld == 'start' and r.planned_start %} (по стартовому протоколу {{ tod(r.start) }}){% endif %}"
+        placeholder="{{ tod(r.start) if fld == 'start' and r.planned_start else ('чч:мм:сс' if fld in ('start', 'finish') else ('' if flag else 'мм:сс')) }}"{% if fld == 'start' and r.planned_start %} title="Время старта по стартовому протоколу — впишите, если команда стартовала в другое время"{% endif %}></td>
       {% endfor %}{% endif %}
       {% for s in run.stages %}{% set ph = from_phone(s.id, r.inp.file) %}<td class="pts-cell"><input type="text" inputmode="decimal" autocomplete="off" name="p-{{ i }}-{{ s.id }}" value="{{ r.raw.get(s.id, '') }}" data-stage="{{ s.id }}" class="{% if s.id in r.bad %}is-invalid{% endif %}{% if ph %} pts-phone{% endif %}" aria-label="{{ r.inp.team }}: {{ s.title }}{% if ph %} (с телефона судьи){% endif %}"{% if ph %} title="С телефона судьи этапа"{% endif %}></td>{% endfor %}
       <td class="pts-total" data-total>{% if is_time %}{{ res(r) if r.status == FINISHED else "" }}{% else %}{{ pt(r.total) }}{% endif %}</td>
       <td class="pts-place" data-place>{{ r.place or status_short[r.status] or "—" }}</td>
+      {% set saved_status = zdata.get("teams", {}).get(r.inp.file, {}).get("status") or (r.status.value if not r.auto_status else "finished") %}
       <td><select name="p-{{ i }}-status" aria-label="{{ r.inp.team }}: статус">
-        {% for s in statuses %}<option value="{{ s.value }}"{% if s == r.status %} selected{% endif %}>{{ status_label[s] }}</option>{% endfor %}
-      </select></td>
+        {% for s in statuses %}<option value="{{ s.value }}"{% if s.value == saved_status %} selected{% endif %}>{{ status_label[s] }}</option>{% endfor %}
+      </select>{% if r.auto_status %}<span class="adm-sub text-warn">{{ status_label[r.status] }} — по правилам</span>{% endif %}</td>
     </tr>
     {% endfor %}
     </tbody>

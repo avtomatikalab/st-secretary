@@ -49,9 +49,11 @@ def write_start_protocol(comp: Competition, sl: StartList, path: str | Path, at:
     ws = wb.active
     ws.title = "Стартовый протокол"
     chips = any(any(m.chip for m in r.inp.members) for r in sl.rows)
-    head = (["№ п/п", "№", "Команда", "Территория", "Представитель", "Состав (разряд)", "Ранг состава"]
-            + (["Чип"] if chips else []) + ["Время старта", "Факт. старт", "Отметка"])
-    widths = [6, 5, 22, 16, 20, 46, 8] + ([9] if chips else []) + [9, 9, 12]
+    person = any(r.inp.club for r in sl.rows) and all(len(r.inp.members) == 1 for r in sl.rows)
+    who = (["Участник", "Команда", "Территория", "Представитель", "Разряд", "Ранг"] if person
+           else ["Команда", "Территория", "Представитель", "Состав (разряд)", "Ранг состава"])
+    head = ["№ п/п", "№"] + who + (["Чип"] if chips else []) + ["Время старта", "Факт. старт", "Отметка"]
+    widths = [6, 6] + ([28, 20, 16, 20, 8, 7] if person else [22, 16, 20, 46, 8]) + ([9] if chips else []) + [9, 9, 12]
     width = len(head)
 
     def line(r, text, bold=False, size=11):
@@ -79,14 +81,16 @@ def write_start_protocol(comp: Competition, sl: StartList, path: str | Path, at:
         t = row.inp
         members = ", ".join(f"{m.fio} ({m.qual_label or 'б/р'})" for m in t.members)
         chip = ", ".join(dict.fromkeys(m.chip for m in t.members if m.chip))
-        values = ([row.pos, t.number or "", t.team, t.territory, t.representative, members, rank_text(row.rank)]
-                  + ([chip] if chips else []) + [hm_text(row.time), "", ""])
+        who_values = ([t.team, t.club, t.territory, t.representative,
+                       ", ".join(m.qual_label or "б/р" for m in t.members), rank_text(row.rank)] if person
+                      else [t.team, t.territory, t.representative, members, rank_text(row.rank)])
+        values = [row.pos, t.number or ""] + who_values + ([chip] if chips else []) + [hm_text(row.time), "", ""]
         for c, v in enumerate(values, start=1):
             cell = ws.cell(r, c, v)
             cell.border = BOX
             cell.font = Font(size=10, bold=head[c - 1] in ("№ п/п", "Время старта"))
-            cell.alignment = WRAP if head[c - 1] in ("Команда", "Территория", "Представитель", "Состав (разряд)") \
-                else CENTER
+            cell.alignment = WRAP if head[c - 1] in ("Участник", "Команда", "Территория", "Представитель",
+                                                     "Состав (разряд)") else CENTER
         r += 1
     r += 1
     notes = [draw_line(sl)]

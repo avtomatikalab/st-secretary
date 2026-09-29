@@ -2,14 +2,16 @@
 {% from "_icons.html" import icon %}
 <div class="panel" id="results-live" data-live-results>
   <h2>Результаты — {{ z.key }}</h2>
-  <p class="muted">{% if is_time %}Результат — время на дистанции плюс штрафные баллы × {{ run.seconds_per_point }} с; со снятиями
-    с этапов — после прошедших полностью.{% else %}Победитель — наименьшая сумма баллов (часть 4, п. 6.1.1).{% endif %}
+  <p class="muted">{% if run.profile == "mountain" %}Результат — баллы за время, технику и тактику (часть 2, п. 6.1); со снятиями —
+    после команд без снятий, выше тот, у кого снятий меньше.{% elif is_time %}Результат — время на дистанции{% if run.system == "penalty" %}
+    плюс штрафные баллы × {{ run.seconds_per_point }} с{% endif %}{% if run.profile in ("pedestrian", "nordic") %} плюс штрафное время{% endif %}{% if run.profile == "speleo" %};
+    со снятиями с этапов — после прошедших полностью{% endif %}.{% else %}Победитель — наименьшая сумма баллов (часть 4, п. 6.1.1).{% endif %}
     {% if run.rank %}Ранг по составам: <b>{{ run.rank.formatted() }}</b>.{% endif %}
     {% if run.complete %}{{ icon("check", 14) }} Все этапы заполнены.{% elif run.stages %}Заполнены не все этапы — пустые считаются как 0.{% endif %}</p>
   {% if run.rows and (run.stages or is_time) %}
   <div class="table-wrap">
   <table class="tbl res-tbl">
-    <thead><tr><th>Место</th><th>№</th><th>Команда</th><th>Состав</th>
+    <thead><tr><th>Место</th><th>№</th><th>{{ "Участник" if run.unit == "person" else "Команда" }}</th><th>{{ "Разряд" if run.unit == "person" else "Состав" }}</th>
       {% if is_time %}<th class="res-num">Время на дистанции</th><th class="res-num">Штраф, баллы</th><th class="res-num">Снятий</th>
       {% else %}{% for t in run.tours %}<th class="res-num">{{ t }}</th>{% endfor %}{% endif %}
       <th class="res-num">Результат</th><th class="res-num">%</th><th>Разряд</th>
@@ -19,8 +21,8 @@
     <tr class="{% if r.place in (1, 2, 3) %}zres-medal zres-{{ r.place }}{% endif %}{% if r.status != FINISHED %} res-out{% endif %}">
       <td class="zres-place">{{ r.place or "—" }}</td>
       <td>{{ r.inp.number or "—" }}</td>
-      <td><b>{{ r.inp.team }}</b><span class="adm-sub">{{ r.inp.territory }}</span></td>
-      <td class="zres-members">{% for m in r.inp.members %}{{ m.fio }}{% if m.qual_label %} ({{ m.qual_label }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+      <td><b>{{ r.inp.team }}</b><span class="adm-sub">{% if r.inp.club and r.inp.club != r.inp.team %}{{ r.inp.club }} · {% endif %}{{ r.inp.territory }}</span></td>
+      <td class="zres-members">{% if run.unit == "person" %}{{ r.inp.members[0].qual_label or "б/р" }}{% else %}{% for m in r.inp.members %}{{ m.fio }}{% if m.qual_label %} ({{ m.qual_label }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</td>
       {% if is_time %}<td class="res-num">{{ ck(r.distance_time) }}</td><td class="res-num">{{ pt(r.points.values()|sum) if r.points else "" }}</td>
       <td class="res-num">{{ r.removals or "" }}</td>
       {% else %}{% for t in run.tours %}<td class="res-num">{{ pt(r.tours.get(t)) }}</td>{% endfor %}{% endif %}

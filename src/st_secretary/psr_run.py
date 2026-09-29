@@ -44,6 +44,11 @@ STATUS_SHORT = {Status.FINISHED: "", Status.REMOVED: "снята", Status.DNF: "
                 Status.DNS: "не старт.", Status.OUT_OF_COMPETITION: "в/к"}
 
 
+def unit_kind(rank_format: str | None) -> str:
+    """Кто получает место: «person» — личная, «pair» — связка, «team» — команда (группа, экипаж)."""
+    return {"individual": "person", "pair": "pair"}.get(rank_format or "", "team")
+
+
 def parse_points(s) -> Fraction | None:
     """«12», «-20», «12,5», «−5» → число; пусто → None. Не число — ValueError."""
     t = str(s if s is not None else "").strip().replace("−", "-").replace("–", "-").replace(",", ".").replace(" ", "")
@@ -111,6 +116,7 @@ class TeamInput:
     members: list[Member]
     admitted: bool = True
     representative: str = ""
+    club: str = ""  # команда спортсмена или связки (у команды — пусто: название и есть команда)
 
 
 @dataclass
@@ -137,6 +143,9 @@ class TeamResult:
     chip: str = ""
     auto_status: bool = False  # статус поставлен программой (превышено КВ)
     planned_start: bool = False  # старт не вписан — взят из стартового протокола
+    extra: dict = field(default_factory=dict)  # штрафное время, заявленное время, тактика (по дисциплине)
+    red: bool = False  # северная ходьба: красная карточка
+    no_tactics: bool = False  # горные: заявка по тактике не сдана
 
     @property
     def filled(self) -> int:
@@ -152,8 +161,12 @@ class ZachetRun:
     issues: list[Issue]
     winner: Fraction | None = None
     norms_ok: bool = False  # условие ЕВСК о числе участников выполнено
-    kind: str = "points"  # "points" — ПСР (баллы), "time" — спелео и пешеходные (время + баллы × 15/30 с)
+    kind: str = "points"  # "points" — ПСР (баллы этапов), "time" — со стартом и финишем (см. time_run.py)
     seconds_per_point: int | None = None  # для «time»
+    scoring: str = "points"  # чем выражен результат: "points" (ПСР, горные) или "time" (спелео, пешеходные, СХ)
+    unit: str = "team"  # кто получает место: "team", "pair" (связка), "person" (личная)
+    profile: str = "psr"  # psr, speleo, pedestrian, nordic, mountain
+    system: str = "penalty"  # штрафная или бесштрафовая система оценки нарушений
 
     @property
     def tours(self) -> list[str]:
@@ -236,7 +249,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                                    for r in started], fmt, norms)
 
     # процент от победителя и норматив
-    run = ZachetRun(z, stages, ordered, rank, issues)
+    run = ZachetRun(z, stages, ordered, rank, issues, unit=unit_kind(fmt))
     placed = [r for r in ordered if r.place is not None]
     if placed:
         run.winner = placed[0].total
@@ -322,7 +335,11 @@ def result_text(run: ZachetRun, r: TeamResult) -> str:
     if r.status is not Status.FINISHED:
         return STATUS_LABEL[r.status]
     if run.kind == "time":
+        if not r.place:
+            return ""
+        if run.scoring == "points":  # горные: баллы с точностью до 0,01
+            return f"{float(r.total):.2f}".replace(".", ",")
         from st_secretary.time_run import clock_text
 
-        return clock_text(r.total) if r.place else ""
+        return clock_text(r.total)
     return points_text(r.total) if r.points else ""
