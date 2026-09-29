@@ -68,6 +68,7 @@ class Stage:
     tour: str
     name: str
     max_penalty: Fraction | None = None  # МШ этапа — для фактически пройденного класса
+    kv_minutes: int | None = None  # КВ этапа — таймер у судьи на телефоне
 
     @property
     def title(self) -> str:
@@ -81,7 +82,9 @@ def stages_of(zdata: dict) -> list[Stage]:
             mx = parse_points(s.get("max"))
         except ValueError:
             mx = None
-        out.append(Stage(str(s["id"]), str(s.get("tour", "")).strip(), str(s.get("name", "")).strip(), mx))
+        kv = str(s.get("kv", "")).strip()
+        out.append(Stage(str(s["id"]), str(s.get("tour", "")).strip(), str(s.get("name", "")).strip(), mx,
+                         int(kv) if kv.isdigit() and int(kv) > 0 else None))
     return out
 
 
