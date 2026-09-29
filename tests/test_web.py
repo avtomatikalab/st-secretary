@@ -1202,6 +1202,8 @@ def test_practice_page_and_excel(client, psr_card, opened):
     assert "Судейская практика" in client.get("/").text
     page = client.get("/practice").text
     assert "Судьин Иван Петрович" in page and "Этапов Семён Игоревич" in page and "оценка «отлично»" in page
+    assert "<th>Присвоение</th>" in page and "ВК</b>:" in page  # у СС1К — на присвоение ВК, по таблице приказа № 1101
+    assert "2К</b>:" in page  # у СС3К — на присвоение 2К
     assert client.get("/practice.xlsx").content[:2] == b"PK"
     r = client.post("/practice/open", follow_redirects=False)
     assert r.status_code == 303 and opened[-1].name == "Судейская практика.xlsx"

@@ -140,12 +140,14 @@ def register(app, cx) -> None:
     @app.get("/practice")
     def practice_page(request: Request):
         people = practice_all()
-        return page(request, "practice.html", people=people, competitions=len(store.all()))
+        today = app.state.clock().date()
+        return page(request, "practice.html", people=people, competitions=len(store.all()),
+                    progress=lambda j: pt_.progress(j, today), today=today)
 
     @app.get("/practice.xlsx")
     def practice_download():
         tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / "Судейская практика.xlsx"
-        pt_.write_practice(practice_all(), tmp)
+        pt_.write_practice(practice_all(), tmp, app.state.clock().date())
         return FileResponse(tmp, filename=tmp.name, media_type=XLSX,
                             background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
 
@@ -154,7 +156,7 @@ def register(app, cx) -> None:
         path = store.root / "Судейская практика.xlsx"
         store.root.mkdir(parents=True, exist_ok=True)
         try:
-            pt_.write_practice(practice_all(), path)
+            pt_.write_practice(practice_all(), path, app.state.clock().date())
         except PermissionError:
             return _redirect("/practice?done=doc_locked")
         app.state.opener(path)

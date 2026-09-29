@@ -5,9 +5,10 @@
 <a class="back" href="/">← Все соревнования</a>
 <h1>Судейская практика</h1>
 <p class="lead">Кто, где и в какой должности судил — по всем соревнованиям в программе ({{ competitions }}): из карточек
-  (лист «ГСК»), оценок судейства на странице итогов и судей, добавленных на странице договоров. Для присвоения и
-  подтверждения категорий (Квалификационные требования, приказ № 1101) — сводка и выгрузка для квалификационной
-  комиссии; баллы по таблицам приказа программа пока не считает.</p>
+  (лист «ГСК»), оценок судейства на странице итогов и судей, добавленных на странице договоров. Баллы — по
+  таблице Квалификационных требований (приказ № 1101): на присвоение следующей категории и на подтверждение текущей,
+  за период из таблицы до сегодняшнего дня; засчитываются соревнования с оценкой «хорошо» и «отлично», без оценки —
+  «ждут оценки». Период подтверждения на самом деле считается от даты приказа о категории — проверьте по нему.</p>
 
 <div class="actions">
   <form method="post" action="/practice/open"><button class="btn btn-primary" type="submit">{{ icon("file", 18) }}Открыть в Excel</button></form>
@@ -21,7 +22,7 @@
   <div class="table-wrap">
   <table class="tbl pr-tbl">
     <thead><tr><th>Судья</th><th>Категория</th><th class="res-num">Соревнований</th><th class="res-num">В ГСК</th>
-      <th>Последнее</th><th>Оценки</th></tr></thead>
+      <th>Последнее</th><th>Оценки</th><th>Присвоение</th><th>Подтверждение</th></tr></thead>
     <tbody>
     {% for j in people %}
     <tr>
@@ -37,6 +38,19 @@
       <td class="res-num">{{ j.gsk or "" }}</td>
       <td>{{ j.last.strftime("%d.%m.%Y") if j.last else "" }}</td>
       <td>{% for g, n in j.grades.items() %}{{ g }}{% if n > 1 %} ×{{ n }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+      {% set pp = progress(j) %}
+      {% for mode in ("assign", "confirm") %}{% set p = pp|selectattr("mode", "equalto", mode)|first %}
+      <td class="pr-pts">{% if p %}<details><summary><b>{{ p.target }}</b>: {{ p.points }}{% if p.need %} из {{ p.need }}{% endif %}
+          {% if p.done %}<span class="status-badge gear-ok">выполнено</span>{% endif %}</summary>
+        <span class="adm-sub">за {{ p.years }} {{ "год" if p.years == 1 else "года" }}{% if p.pending %}; ждут оценки: {{ p.pending }}{% endif %}</span>
+        {% if p.missing %}<span class="adm-sub text-warn">не хватает: {{ p.missing|join("; ") }}</span>{% endif %}
+        <ul class="pr-list">
+          {% for r, pts, ok in p.lines %}<li>{{ r.date_from.strftime("%d.%m.%Y") }} — {{ r.role }}, {{ r.status or "не спортивное" }}:
+            {% if pts is none %}<span class="muted">нет в таблице</span>{% elif ok %}<b>{{ pts }}</b>{% else %}{{ pts }} <span class="muted">({{ "ждёт оценки" if not r.grade else "оценка «" ~ r.grade ~ "» — не засчитывается" }})</span>{% endif %}</li>{% endfor %}
+        </ul>
+        <ul class="pr-list muted">{% for c in p.conditions %}<li>{{ c }}</li>{% endfor %}</ul></details>
+      {% else %}<span class="muted">—</span>{% endif %}</td>
+      {% endfor %}
     </tr>
     {% endfor %}
     </tbody>

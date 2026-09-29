@@ -584,6 +584,7 @@ a.chip { text-decoration: none; } a.chip::before { display: none; }  /* зачё
 
 /* ---------- узкий экран ---------- */
 /* жеребьёвка и стартовые протоколы */
+.pr-pts { min-width: 150px; } .pr-tbl td { vertical-align: top; }
 .st-methods { border: 0; padding: 0; margin: 0 0 12px; display: grid; gap: 8px; }
 .st-methods legend { font-weight: 600; margin-bottom: 4px; }
 .st-method { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
