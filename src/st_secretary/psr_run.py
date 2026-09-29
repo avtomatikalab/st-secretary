@@ -194,7 +194,11 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 issues.append(Issue(WARNING, f"«{t.team}», {s.title}: {points_text(x)} — больше 2 × МШ "
                                              f"({points_text(2 * s.max_penalty)})", source=z.key, team=t.team))
 
-    cards = [PsrTeamCard(r.inp.file, r.start_order, r.points, r.status) for r in rows]
+    # команда без единого внесённого балла места не получает: её баллы ещё не внесены, а не «0 — лучший результат»
+    cards = [PsrTeamCard(r.inp.file, r.start_order, r.points, r.status if r.points else Status.DNS) for r in rows]
+    empty = [r.inp.team for r in rows if r.status is Status.FINISHED and not r.points and not r.bad]
+    if stages and empty and len(empty) < len(rows):
+        issues.append(Issue(INFO, f"баллы не внесены — место не присуждается: {', '.join(empty)}", source=z.key))
     by_file = {r.inp.file: r for r in rows}
     ordered = []
     for p in standings(cards, tie_by_start_order=zdata.get("tie") == "start"):

@@ -790,3 +790,41 @@ def test_verify_page_program_documents_and_upload(client, psr_card, opened):
     assert "Не прочитаны" in text and "скан.pdf" in text
     assert "Сейчас добавлены: старый отчёт.docx, скан.pdf" in text
     assert not any(p.name.startswith("старый") for p in f.path.rglob("*"))  # присланные файлы не сохраняются
+
+
+def test_results_stages_points_and_live_table(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    url = base(f) + "/results"
+    page = client.get(url).text
+    assert "Этапы дистанции М/Ж_3" in page and "Баллы по этапам" not in page  # сначала — этапы
+    r = client.post(url + "/stages?z=М/Ж_3", data={
+        "st-0-tour": "Тур 1", "st-0-name": "Узлы", "st-0-max": "100",
+        "st-1-tour": "Тур 1", "st-1-name": "Переправа", "st-1-max": "",
+        "st-2-tour": "Бонус", "st-2-name": "Ориентирование", "st-3-name": "",
+        "km": "", "modes": "", "kv_hours": "", "tie": "same"}, follow_redirects=False)
+    assert "done=run_stages" in r.headers["location"]
+    stages = f.run_data()["zachety"]["М/Ж_3"]["stages"]
+    assert [(s["id"], s["tour"], s["name"]) for s in stages] == [("s1", "Тур 1", "Узлы"), ("s2", "Тур 1", "Переправа"),
+                                                                  ("s3", "Бонус", "Ориентирование")]
+    page = client.get(url).text
+    assert "Баллы по этапам" in page and 'name="p-0-s1"' in page and page.count("data-team=") == 2
+    files = re.findall(r'name="p-(\d)-file" value="([^"]+)"', page)
+    data = {f"p-{i}-file": name for i, name in files}
+    by = {name: i for i, name in files}
+    data.update({f"p-{by['Кедр.xlsx']}-s1": "20", f"p-{by['Кедр.xlsx']}-s2": "-5", f"p-{by['Кедр.xlsx']}-s3": "-100",
+                 f"p-{by['Сосна.xlsx']}-s1": "10,5", f"p-{by['Сосна.xlsx']}-s2": "абв",
+                 f"p-{by['Кедр.xlsx']}-status": "finished", f"p-{by['Сосна.xlsx']}-status": "finished"})
+    j = client.post(url + "/points?z=М/Ж_3", data=data, headers={"X-Autosave": "1"}).json()
+    assert j["cells"]["Кедр.xlsx"] == {"total": "-85", "place": "1", "bad": []}
+    assert j["cells"]["Сосна.xlsx"] == {"total": "10,5", "place": "2", "bad": ["s2"]}
+    assert "«Сосна», Тур 1 · Переправа: «абв» — не число" in j["results"]
+    assert "Лебедев Антон Игоревич (I)" in j["results"]
+
+    data[f"p-{by['Сосна.xlsx']}-status"] = "removed"
+    j = client.post(url + "/points?z=М/Ж_3", data=data, headers={"X-Autosave": "1"}).json()
+    assert j["cells"]["Сосна.xlsx"]["place"] == "снята" and "снята" in j["results"]
+    page = client.get(url).text
+    assert 'value="абв"' in page and 'class="is-invalid"' in page  # введённое не пропадает, ошибка подсвечена
+    assert client.get(url + "?z=нет").status_code == 404

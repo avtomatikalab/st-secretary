@@ -29,6 +29,7 @@ from starlette.exceptions import HTTPException
 from st_secretary import __version__
 from st_secretary import commission as cm
 from st_secretary import equipment as eq
+from st_secretary import psr_run as pr
 from st_secretary import results as res
 from st_secretary import staff as sf
 from st_secretary import verify as vf
@@ -37,6 +38,7 @@ from st_secretary.exporters import contracts as ct
 from st_secretary.exporters import final as fin
 from st_secretary.exporters import judges as jd
 from st_secretary.competition import LEVEL_LABELS
+from st_secretary.disciplines import Status
 from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.importers.card_xlsx import CardError, load_card
 from st_secretary.importers.preapp_xlsx import read_preapplication
@@ -175,6 +177,13 @@ def _flash(request: Request) -> dict | None:
         "reentry_repeat": ("err", "Перезаявка записана, но она повторная: по Правилам (п. 8.5) повторные "
                                   "перезаявки не принимаются. Решение — за ГСК."),
         "opened": ("ok", "Открываю…"),
+        "run_stages": ("ok", "Этапы дистанции сохранены."),
+        "run_saved": ("ok", "Баллы сохранены."),
+        "run_nofile": ("err", "Выберите файл рабочей книги СЕКРЕТАРЬ_ST (.xls)."),
+        "run_badbook": ("err", "В файле нет листа «Протокол_группа» или он не похож на протокол СЕКРЕТАРЬ_ST. Нужна "
+                               "рабочая книга, в которой вносились баллы по этапам."),
+        "run_imported": ("ok", f"Из рабочей книги перенесено этапов: {q.get('n', '0')}, команд с баллами: "
+                               f"{q.get('t', '0')}. {q.get('notes', '')}".strip()),
         "ct_saved": ("ok", "Табель сохранён."),
         "ct_settings": ("ok", "Период работы, ставки и начисления сохранены."),
         "ct_customer": ("ok", "Сведения о заказчике сохранены — они попадут в договоры, акты и табель."),
@@ -1431,6 +1440,151 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         d.mkdir(parents=True, exist_ok=True)
         app.state.opener(d)
         return _redirect(f"{_base(f)}/contracts?done=opened#docs")
+
+    # ------------------------------------------------------------ протоколы этапов и результаты (ПСР)
+
+    def zachet_inputs(f: CompFolder, comp, z) -> list:
+        """Команды зачёта: из заявок, номера и допуск — из комиссии по допуску; не допущенные участники не в составе."""
+        if not f.preapp_files():
+            return []
+        _, teams = commission(f, comp)
+        out = []
+        for t in teams:
+            if not t.team:
+                continue
+            people = [p for p in t.persons if p.entry.zachet and p.entry.zachet.key == z.key and p.status != cm.REJECTED]
+            if not people:
+                continue
+            out.append(pr.TeamInput(t.file, t.team.team, t.team.territory, str(t.number or ""),
+                                    [pr.Member(p.entry.name.full, p.entry.qual,
+                                               p.entry.qual.label if p.entry.qual is not None else "") for p in people],
+                                    admitted=t.status != cm.REJECTED))
+        return out
+
+    def need_zachet(comp, key: str):
+        z = next((x for x in comp.zachety if x.key == key), None) if key else (comp.zachety[0] if comp.zachety else None)
+        if z is None:
+            raise HTTPException(404)
+        return z
+
+    def run_ctx(f: CompFolder, comp, z) -> tuple[dict, dict, object]:
+        data = f.run_data()
+        zdata = data.get("zachety", {}).get(z.key, {})
+        return data, zdata, pr.compute(comp, z, zdata, zachet_inputs(f, comp, z))
+
+    def results_parts(f: CompFolder, z, zdata: dict, run) -> dict:
+        return {"base": _base(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text,
+                "grid": sorted(run.rows, key=lambda r: r.start_order), "status_label": pr.STATUS_LABEL,
+                "status_short": pr.STATUS_SHORT, "statuses": list(pr.STATUS_LABEL), "FINISHED": Status.FINISHED,
+                "zq": urlencode({"z": z.key}), "pct": lambda x: f"{float(x):.2f}".replace(".", ",") if x is not None else ""}
+
+    @app.get("/c/{cid}/results")
+    def results_page(request: Request, cid: str, z: str = ""):
+        f = folder(cid)
+        comp = need_comp(f)
+        if not comp.zachety:
+            return page(request, "results.html", active="results", zachet=None, **comp_ctx(f))
+        zz = need_zachet(comp, z)
+        _, zdata, run = run_ctx(f, comp, zz)
+        return page(request, "results.html", active="results", zachet=zz, zachety=comp.zachety,
+                    **{**comp_ctx(f), **results_parts(f, zz, zdata, run)})
+
+    def _save_zachet(f: CompFolder, key: str, update) -> None:
+        data = f.run_data()
+        zdata = data.setdefault("zachety", {}).setdefault(key, {})
+        update(zdata)
+        f.save_run_data(data)
+
+    @app.post("/c/{cid}/results/stages")
+    async def results_stages(request: Request, cid: str, z: str = ""):
+        """Этапы дистанции (тур, название, МШ), параметры дистанции для фактического класса, правило равенства."""
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        form = await request.form()
+        idx = sorted({int(m.group(1)) for k in form.keys() if (m := re.fullmatch(r"st-(\d+)-name", k))})
+
+        def update(zdata):
+            used = {str(s.get("id")) for s in zdata.get("stages", [])}
+            stages = []
+            for i in idx:
+                name = " ".join(str(form.get(f"st-{i}-name", "")).split())
+                if not name:
+                    continue
+                sid = str(form.get(f"st-{i}-id", "")).strip()
+                if not sid:
+                    n = 1
+                    while f"s{n}" in used:
+                        n += 1
+                    sid = f"s{n}"
+                    used.add(sid)
+                stages.append({"id": sid, "tour": " ".join(str(form.get(f"st-{i}-tour", "")).split()), "name": name,
+                               "max": str(form.get(f"st-{i}-max", "")).strip()})
+            zdata["stages"] = stages
+            zdata["distance"] = {k: str(form.get(k, "")).strip() for k in ("km", "modes", "kv_hours")}
+            zdata["tie"] = "start" if form.get("tie") == "start" else "same"
+
+        _save_zachet(f, zz.key, update)
+        return _redirect(f"{_base(f)}/results?{urlencode({'z': zz.key, 'done': 'run_stages'})}#stages")
+
+    @app.post("/c/{cid}/results/import")
+    async def results_import(request: Request, cid: str, z: str = ""):
+        """Этапы и баллы из рабочей книги СЕКРЕТАРЬ_ST (лист «Протокол_группа»)."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        up = (await request.form()).get("book")
+        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}"
+        if up is None or not getattr(up, "filename", ""):
+            return _redirect(_with_done(back, "run_nofile"))
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / Path(up.filename).name
+            p.write_bytes(await up.read())
+            try:
+                from st_secretary.importers.sekretar_xls import read_group_protocol
+                sheet = read_group_protocol(p)
+            except ImportError:
+                return _redirect(_with_done(back, "res_noxlrd"))
+            except Exception:  # noqa: BLE001 — не та книга: объяснить, а не упасть
+                return _redirect(_with_done(back, "run_badbook"))
+        imported, notes = pr.import_group_protocol(sheet, zachet_inputs(f, comp, zz))
+        _save_zachet(f, zz.key, lambda zdata: zdata.update(imported))
+        return _redirect(_with_done(back, "run_imported", n=str(len(imported["stages"])),
+                                    t=str(len(imported["teams"])), notes=" ".join(notes)[:900]))
+
+    @app.post("/c/{cid}/results/points")
+    async def results_points(request: Request, cid: str, z: str = ""):
+        """Баллы команд по этапам и статусы. С автосохранением — возвращает суммы, места и таблицу результатов."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        form = await request.form()
+        idx = sorted({int(m.group(1)) for k in form.keys() if (m := re.fullmatch(r"p-(\d+)-file", k))})
+
+        def update(zdata):
+            ids = [str(s["id"]) for s in zdata.get("stages", [])]
+            teams = zdata.setdefault("teams", {})
+            for i in idx:
+                t = teams.setdefault(str(form.get(f"p-{i}-file")), {})
+                pts = t.setdefault("points", {})
+                for sid in ids:
+                    v = " ".join(str(form.get(f"p-{i}-{sid}", "")).split())
+                    if v:
+                        pts[sid] = v
+                    else:
+                        pts.pop(sid, None)
+                st = str(form.get(f"p-{i}-status", Status.FINISHED.value))
+                t["status"] = st if st in {s.value for s in Status} else Status.FINISHED.value
+
+        _save_zachet(f, zz.key, update)
+        if request.headers.get("x-autosave"):
+            _, zdata, run = run_ctx(f, comp, zz)
+            parts = {"comp": comp, **results_parts(f, zz, zdata, run)}
+            cells = {r.inp.file: {"total": pr.points_text(r.total),
+                                  "place": str(r.place) if r.place else pr.STATUS_SHORT[r.status] or "—",
+                                  "bad": r.bad} for r in run.rows}
+            return JSONResponse({"cells": cells, "saved": datetime.now().strftime("%H:%M:%S"),
+                                 "results": templates.get_template("_results_table.html").render(**parts)})
+        return _redirect(f"{_base(f)}/results?{urlencode({'z': zz.key, 'done': 'run_saved'})}#points")
 
     # ------------------------------------------------------------ сверка документов
 

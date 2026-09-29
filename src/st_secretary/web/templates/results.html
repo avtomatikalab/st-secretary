@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+
+{% macro stage_row(i, s) -%}
+<tr data-row>
+  <td><input type="text" name="st-{{ i }}-tour" value="{{ s.tour }}" placeholder="Тур 1" aria-label="Тур"><input type="hidden" name="st-{{ i }}-id" value="{{ s.id }}"></td>
+  <td><input type="text" name="st-{{ i }}-name" value="{{ s.name }}" placeholder="Название этапа" aria-label="Название этапа"></td>
+  <td><input type="text" inputmode="decimal" name="st-{{ i }}-max" value="{{ s.max or '' }}" aria-label="МШ этапа"></td>
+  <td class="cell-action"><button type="button" class="icon-btn" data-remove-row data-confirm="Убрать этап? Внесённые по нему баллы перестанут учитываться." title="Убрать" aria-label="Убрать">×</button></td>
+</tr>
+{%- endmacro %}
+
+{% block title %}Протоколы этапов и результаты — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Протоколы этапов и результаты</h1>
+{% if not zachet %}
+<div class="panel panel-warn"><h2>{{ icon("alert") }} В карточке нет зачётов</h2>
+  <p>Добавьте зачёт (группа и класс дистанции) в <a href="{{ base }}/card/edit">карточке соревнования</a>.</p></div>
+{% else %}
+<p class="lead">Внесите баллы этапов из протоколов судей: штраф — плюсом, премия — минусом, как в листе «Протокол_группа»
+  СЕКРЕТАРЬ_ST. Программа сразу считает сумму, места, ранг по составам, процент от победителя и выполненные разряды.
+  Команды — из заявок, номера — из комиссии по допуску.</p>
+
+{% if zachety|length > 1 %}
+<nav class="chips" aria-label="Зачёты">
+  {% for x in zachety %}<a class="chip{% if x.key == z.key %} is-active{% endif %}" href="{{ base }}/results?z={{ x.key|urlencode }}"{% if x.key == z.key %} aria-current="page"{% endif %}>{{ x.key }}</a>{% endfor %}
+</nav>
+{% endif %}
+
+<div class="tiles">
+  <div class="tile"><b>{{ run.rows|length }}</b><span>команд в зачёте {{ z.key }}</span></div>
+  <div class="tile"><b>{{ run.stages|length }}</b><span>этапов, туров: {{ run.tours|length }}</span></div>
+  <div class="tile {% if run.complete %}tile-fixed{% endif %}"><b>{{ run.rows|selectattr("status", "equalto", FINISHED)|map(attribute="filled")|sum }} / {{ (run.rows|selectattr("status", "equalto", FINISHED)|list|length) * run.stages|length }}</b><span>клеток заполнено</span></div>
+  <div class="tile"><b>{{ run.rank.formatted() if run.rank else "—" }}</b><span>ранг по составам</span></div>
+</div>
+
+<details class="panel howto" id="stages"{% if not run.stages %} open{% endif %}>
+  <summary>Этапы дистанции {{ z.key }}{% if run.stages %} — {{ run.stages|length }}{% endif %}</summary>
+  <p class="muted">Этапы по порядку, с туром. МШ (максимальный штраф этапа) нужен только для фактически пройденного класса —
+    его можно не заполнять. Бонусы и премии — отдельным этапом (например, тур «Бонус»).</p>
+  <form method="post" action="{{ base }}/results/import?{{ zq }}" enctype="multipart/form-data" class="res-import"{% if run.stages %} data-confirm="Заменить этапы и баллы зачёта {{ z.key }} данными из рабочей книги?"{% endif %}>
+    <label class="btn">{{ icon("upload", 18) }}Загрузить этапы и баллы из СЕКРЕТАРЬ_ST (.xls)
+      <input type="file" name="book" accept=".xls" class="visually-hidden" data-autosubmit></label>
+    <span class="hint">Лист «Протокол_группа»: этапы — из шапки блока «Прохождение дистанции», баллы — по названиям команд.</span>
+  </form>
+  <form method="post" action="{{ base }}/results/stages?{{ zq }}" data-guard>
+    <div class="table-wrap">
+    <table class="tbl form-tbl res-stages">
+      <colgroup><col class="c-tour"><col><col class="c-max"><col class="c-act"></colgroup>
+      <thead><tr><th>Тур</th><th>Этап</th><th>МШ</th><th></th></tr></thead>
+      <tbody id="res-stages" data-next="{{ zdata.get('stages', [])|length }}">
+        {% for s in zdata.get("stages", []) %}{{ stage_row(loop.index0, s) }}{% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" data-add-row="res-stages" data-template="tpl-stage">{{ icon("plus") }}Добавить этап</button>
+    </div>
+    {% set dist = zdata.get("distance", {}) %}
+    <div class="grid">
+      <div class="field span-3"><label for="f-km">Протяжённость, км</label><input id="f-km" name="km" type="text" inputmode="decimal" value="{{ dist.get('km', '') }}"></div>
+      <div class="field span-3"><label for="f-modes">Видов туризма (&gt; 5 % баллов)</label><input id="f-modes" name="modes" type="text" inputmode="numeric" value="{{ dist.get('modes', '') }}"></div>
+      <div class="field span-3"><label for="f-kv">КВ всей дистанции, ч</label><input id="f-kv" name="kv_hours" type="text" inputmode="decimal" value="{{ dist.get('kv_hours', '') }}"></div>
+      <div class="field span-3"><label for="f-tie">Равенство баллов</label>
+        <select id="f-tie" name="tie"><option value="same">одинаковое место (п. 8.18)</option>
+          <option value="start"{% if zdata.get("tie") == "start" %} selected{% endif %}>выше стартовавший раньше</option></select></div>
+    </div>
+    <p class="hint">Километраж, виды туризма и КВ — для фактически пройденного класса (часть 4, п. 4.3 и табл. 3); считается,
+      когда у всех этапов задан МШ. Правило равенства — из Положения или Условий (часть 4, п. 6.1.2).</p>
+    <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить этапы</button>
+  </form>
+  <template id="tpl-stage">{{ stage_row("__i__", {"id": "", "tour": run.tours[-1] if run.tours else "Тур 1", "name": "", "max": ""}) }}</template>
+</details>
+
+{% if not run.rows %}
+<div class="panel panel-warn" id="points"><h2>{{ icon("alert") }} В зачёте {{ z.key }} пока нет команд</h2>
+  <p>Команды берутся из <a href="{{ base }}/preapps">предварительных заявок</a> — по группе и классу, указанным в заявке.</p></div>
+{% elif run.stages %}
+<section class="panel" id="points">
+  <h2>Баллы по этапам</h2>
+  <p class="muted">Всё сохраняется сразу. Enter — на команду ниже, как в Excel; Tab — на следующий этап. Пустая клетка — этап
+    не внесён (0 баллов). Команда снята или не финишировала — выберите статус: место ей не присуждается.</p>
+  <form method="post" action="{{ base }}/results/points?{{ zq }}" data-points>
+  <div class="table-wrap pts-wrap">
+  <table class="tbl pts-grid">
+    <thead>
+      <tr><th rowspan="2" class="pts-sticky pts-n">№</th><th rowspan="2" class="pts-sticky pts-team">Команда</th>
+        {% for t in run.tours %}<th colspan="{{ run.stages|selectattr('tour', 'equalto', t)|list|length }}" class="pts-tour">{{ t }}</th>{% endfor %}
+        <th rowspan="2" class="pts-total">Итого</th><th rowspan="2" class="pts-place">Место</th><th rowspan="2">Статус</th></tr>
+      <tr>{% for s in run.stages %}<th class="pts-stage" title="{{ s.title }}{% if s.max_penalty is not none %} · МШ {{ pt(s.max_penalty) }}{% endif %}"><span>{{ s.name }}</span></th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+    {% for r in grid %}{% set i = loop.index0 %}
+    <tr data-team="{{ r.inp.file }}">
+      <td class="pts-sticky pts-n">{{ r.inp.number or "—" }}<input type="hidden" name="p-{{ i }}-file" value="{{ r.inp.file }}"></td>
+      <td class="pts-sticky pts-team"><b>{{ r.inp.team }}</b></td>
+      {% for s in run.stages %}<td class="pts-cell"><input type="text" inputmode="decimal" autocomplete="off" name="p-{{ i }}-{{ s.id }}" value="{{ r.raw.get(s.id, '') }}" data-stage="{{ s.id }}"{% if s.id in r.bad %} class="is-invalid"{% endif %} aria-label="{{ r.inp.team }}: {{ s.title }}"></td>{% endfor %}
+      <td class="pts-total" data-total>{{ pt(r.total) }}</td>
+      <td class="pts-place" data-place>{{ r.place or status_short[r.status] or "—" }}</td>
+      <td><select name="p-{{ i }}-status" aria-label="{{ r.inp.team }}: статус">
+        {% for s in statuses %}<option value="{{ s.value }}"{% if s == r.status %} selected{% endif %}>{{ status_label[s] }}</option>{% endfor %}
+      </select></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="adm-actions pts-actions"><button class="btn btn-ghost btn-small" type="submit">Сохранить</button>
+    <span class="adm-saved muted" aria-live="polite"></span></div>
+  </form>
+</section>
+{% endif %}
+
+{% include "_results_table.html" %}
+{% endif %}
+{% endblock %}

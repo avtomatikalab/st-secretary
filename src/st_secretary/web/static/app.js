@@ -173,6 +173,47 @@
     autosave(form, e.submitter ? { name: e.submitter.name, value: e.submitter.value } : null);
   });
 
+  // --- Баллы по этапам: сохраняются сразу; поля ввода не перерисовываются (набор не теряется) — обновляются
+  //     только суммы, места и таблица результатов. Enter — на команду ниже, как в Excel.
+  document.querySelectorAll("form[data-points]").forEach(function (form) {
+    var note = form.querySelector(".adm-saved");
+    function save() {
+      if (note) note.textContent = "Сохраняю…";
+      fetch(form.getAttribute("action"), { method: "POST", body: new FormData(form), headers: { "X-Autosave": "1" } })
+        .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+        .then(function (j) {
+          form.querySelectorAll("tr[data-team]").forEach(function (row) {
+            var c = j.cells[row.dataset.team];
+            if (!c) return;
+            row.querySelector("[data-total]").textContent = c.total;
+            row.querySelector("[data-place]").textContent = c.place;
+            row.querySelectorAll("input[data-stage]").forEach(function (inp) {
+              inp.classList.toggle("is-invalid", c.bad.indexOf(inp.dataset.stage) >= 0);
+            });
+          });
+          var live = document.querySelector("[data-live-results]");
+          if (live && j.results) {
+            var box = document.createElement("div");
+            box.innerHTML = j.results;
+            live.replaceWith(box.querySelector("[data-live-results]"));
+          }
+          if (note) note.textContent = "Сохранено в " + j.saved;
+        })
+        .catch(function () { if (note) note.textContent = "Не сохранилось — нажмите «Сохранить»"; });
+    }
+    form.addEventListener("change", save);
+    form.addEventListener("submit", function (e) { e.preventDefault(); save(); });
+    form.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" || !e.target.matches("input[data-stage]")) return;
+      e.preventDefault();
+      var cell = e.target.closest("td"), row = cell.parentElement;
+      var idx = Array.prototype.indexOf.call(row.children, cell);
+      var next = e.shiftKey ? row.previousElementSibling : row.nextElementSibling;
+      var inp = next && next.children[idx] && next.children[idx].querySelector("input");
+      if (inp) { inp.focus(); inp.select(); } else { e.target.blur(); }
+    });
+  });
+
   // --- Документы команды: переключение, поворот фото (с телефона они часто лёжа), увеличение по щелчку.
   document.querySelectorAll("[data-doc-viewer]").forEach(function (pane) {
     var view = pane.querySelector("[data-doc-view]");
