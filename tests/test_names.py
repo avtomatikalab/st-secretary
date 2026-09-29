@@ -2,7 +2,14 @@
 
 import pytest
 
-from st_secretary.names import dative, guess_sex, he_she
+from st_secretary.names import (
+    dative,
+    genitive,
+    guess_sex,
+    he_she,
+    initials,
+    role_genitive,
+)
 
 
 @pytest.mark.parametrize("fio, expected", [
@@ -23,6 +30,38 @@ from st_secretary.names import dative, guess_sex, he_she
 ])
 def test_dative(fio, expected):
     assert dative(fio) == expected
+
+
+def test_dative_fleeting_vowel():
+    assert dative("Орлов Павел Ильич") == "Орлову Павлу Ильичу"
+    assert dative("Толстой Лев Николаевич") == "Толстому Льву Николаевичу"
+
+
+@pytest.mark.parametrize("fio, expected", [
+    ("Бакин Дмитрий Ильич", "Бакина Дмитрия Ильича"),
+    ("Иванова Анна Сергеевна", "Ивановой Анны Сергеевны"),
+    ("Орлова Ольга Павловна", "Орловой Ольги Павловны"),
+    ("Бельский Андрей Ильич", "Бельского Андрея Ильича"),
+    ("Толстая Мария Олеговна", "Толстой Марии Олеговны"),
+    ("Шевченко Игорь Петрович", "Шевченко Игоря Петровича"),
+    ("Черных Любовь Ивановна", "Черных Любови Ивановны"),
+    ("Бурмага Виктор Александрович", "Бурмаги Виктора Александровича"),
+    ("Кузьмич Анна Петровна", "Кузьмич Анны Петровны"),
+    ("Никитин Никита Ильич", "Никитина Никиты Ильича"),
+    ("Гайдай Леонид Иович", "Гайдая Леонида Иовича"),
+    ("Орлов Павел Ильич", "Орлова Павла Ильича"),
+    ("Ильин Илья Петрович", "Ильина Ильи Петровича"),
+])
+def test_genitive(fio, expected):
+    assert genitive(fio) == expected
+
+
+def test_initials_and_roles():
+    assert initials("Иванов Иван Петрович") == "Иванов И.П."
+    assert initials("Иванов Иван Петрович", surname_first=False) == "И.П. Иванов"
+    assert role_genitive("Рабочий комендантской бригады") == "рабочего комендантской бригады"
+    assert role_genitive("Комендант") == "коменданта"
+    assert role_genitive("Волонтёр") is None
 
 
 def test_sex():

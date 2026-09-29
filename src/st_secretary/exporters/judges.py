@@ -14,7 +14,7 @@ from docx.shared import Pt
 
 from st_secretary.competition import Competition
 from st_secretary.exporters.awards import _new_doc, _para
-from st_secretary.names import dative, guess_sex, he_she
+from st_secretary.names import dative, guess_sex, he_she, role_genitive
 from st_secretary.results import person_key, title_of
 from st_secretary.textclean import plural
 
@@ -33,26 +33,11 @@ def disciplines_text(comp: Competition) -> str:
     return ", ".join(f"«{n}»" for n in names)
 
 
-_ROLE_GEN = {"главный": "главного", "старший": "старшего", "технический": "технического",
-             "судья": "судьи", "секретарь": "секретаря", "заместитель": "заместителя", "начальник": "начальника",
-             "председатель": "председателя", "член": "члена", "инспектор": "инспектора", "делегат": "делегата",
-             "врач": "врача", "комендант": "коменданта", "информатор": "информатора"}
-_ROLE_ADJ = ("главный", "старший", "технический")
-
-
 def role_phrase(role: str) -> str:
-    """«в качестве главного судьи», «в качестве заместителя главного секретаря». Склоняются слова до первого
-    существительного (дальше — уже родительный падеж). Незнакомая должность — «в должности: …» как есть."""
-    words = role.split()
-    out = []
-    for i, w in enumerate(words):
-        gen = _ROLE_GEN.get(w.lower())
-        if gen is None:
-            return f"в должности: {role[:1].lower() + role[1:]}"
-        out.append(gen)
-        if w.lower() not in _ROLE_ADJ:
-            return "в качестве " + " ".join(out + words[i + 1:])
-    return f"в должности: {role[:1].lower() + role[1:]}"
+    """«в качестве главного судьи», «в качестве заместителя главного секретаря». Незнакомая должность —
+    «в должности: …» как есть."""
+    gen = role_genitive(role)
+    return f"в качестве {gen}" if gen else f"в должности: {role[:1].lower() + role[1:]}"
 
 
 def _sign(doc, comp: Competition, roles=("Главный судья", "Главный секретарь")) -> None:

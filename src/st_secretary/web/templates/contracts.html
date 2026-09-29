@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Договоры, акты, табель — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Договоры, акты, табель</h1>
+<p class="lead">Отметьте дни работы каждого — из этих отметок программа сама собирает табель-наряд, договоры и акты,
+  поэтому дни и суммы в них всегда совпадают. Судьи — из карточки соревнования (лист «ГСК»); коменданта, рабочих и
+  остальных добавьте ниже. Суммы прописью, склонение должностей и реквизиты — автоматически.</p>
+<p class="hint" title="{{ personal_path }}">{{ icon("laptop", 16) }} Паспорта и счета, договоры и табель хранятся только на
+  этом компьютере — в папке «{{ personal_path.parent.name }}» в профиле пользователя, не в папке соревнования и не в облаке.</p>
+
+{% include "_contracts_tiles.html" %}
+
+<section class="panel" id="tabel-panel">
+  <h2>Табель по дням</h2>
+  <p class="muted">Галочка — рабочий день («р» в табеле). Серые колонки — дни до и после соревнований (подготовка и снятие
+    дистанции). Всё сохраняется сразу. «Без оплаты» — человек в табель и договоры не попадёт.</p>
+  {% include "_contracts_tabel.html" %}
+</section>
+
+<section class="panel" id="add">
+  <h2>Добавить человека</h2>
+  <p class="muted">Судей лучше добавлять в карточку соревнования — тогда они попадут и в справки о судействе, и в отчёт.
+    Здесь — комендант, рабочие и все, кого нет в карточке.</p>
+  <form method="post" action="{{ base }}/contracts/add" class="grid">
+    <div class="field span-5"><label for="f-add-fio">Фамилия, имя, отчество</label>
+      <input id="f-add-fio" name="fio" type="text" placeholder="Иванов Иван Иванович" required></div>
+    <div class="field span-4"><label for="f-add-role">Должность</label>
+      <input id="f-add-role" name="role" type="text" list="ct-roles" placeholder="Рабочий комендантской бригады" required>
+      <datalist id="ct-roles">{% for r in extra_roles %}<option value="{{ r }}">{% endfor %}</datalist></div>
+    <div class="field span-3"><label for="f-add-cat">Судейская категория</label>
+      <select id="f-add-cat" name="category">{% for c in categories %}<option value="{{ c }}"{% if c == "б/к" %} selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+    <div class="span-12"><button class="btn btn-primary" type="submit">{{ icon("plus") }}Добавить в табель</button></div>
+  </form>
+</section>
+
+<details class="panel howto" id="settings"{% if team and team|selectattr("rate", "none")|list %} open{% endif %}>
+  <summary>Период работы, ставки, начисления</summary>
+  <form method="post" action="{{ base }}/contracts/settings" data-guard>
+    <div class="grid">
+      <div class="field span-3"><label for="f-from">Бригада работает с</label>
+        <input id="f-from" type="date" name="from" value="{{ s['from'].isoformat() }}"></div>
+      <div class="field span-3"><label for="f-to">по</label>
+        <input id="f-to" type="date" name="to" value="{{ s['to'].isoformat() }}"></div>
+      <div class="field span-3"><label for="f-acc">Начисления на оплату, %</label>
+        <input id="f-acc" type="text" inputmode="decimal" name="accrual" value="{{ '%g'|format(s.accrual) }}"></div>
+    </div>
+    <p class="hint">Соревнования — {{ comp.dates_text }}. По умолчанию бригада работает с дня до начала по день после
+      окончания. Начисления 30 % — как в табеле 2025 г.</p>
+    <h3>Ставки за день, ₽</h3>
+    <p class="muted">По должности и судейской категории — по нормам расходов заказчика. Строки появляются сами для всех
+      сочетаний, которые есть в табеле.</p>
+    <div class="table-wrap">
+    <table class="tbl form-tbl ct-rates">
+      <thead><tr><th>Должность</th><th>Категория</th><th>Ставка, ₽ в день</th><th class="muted">Образец 2025 г.</th></tr></thead>
+      <tbody>
+      {% for key, role, cat in pairs %}
+      <tr><td>{{ role }}</td><td>{{ cat }}</td>
+        <td><input type="text" inputmode="numeric" name="rate-{{ key }}" value="{{ s.rates.get(key, '') }}" aria-label="Ставка: {{ role }}, {{ cat }}"></td>
+        <td class="muted">{{ sample.get(key, "—") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить</button>
+      <button class="btn btn-ghost" type="submit" name="do" value="sample" formnovalidate>Заполнить пустые ставки по образцу 2025 г.</button>
+    </div>
+    <p class="hint">Образец — ставки из договоров и табеля Чемпионата г. Красноярска 2025 г. (нормы расходов Красспорта):
+      главный судья и главный секретарь 1 кат. — 850, зам. главного секретаря 1 кат. — 700, зам. главного судьи 2 кат. — 630,
+      начальник дистанции и комендант — 690, судья 2 кат. — 575, судья 3 кат. — 450, рабочий — 460. Проверьте по
+      действующему приказу.</p>
+  </form>
+</details>
+
+<details class="panel howto" id="customer"{% if not customer %} open{% endif %}>
+  <summary>Заказчик (кто платит по договорам)</summary>
+  {% set c = customer or prefill %}
+  {% if not customer and prefill %}<p class="hint">{{ icon("info", 16) }} Заполнено как в соревновании «{{ prefill["from"] }}» — проверьте и сохраните.</p>{% endif %}
+  <form method="post" action="{{ base }}/contracts/customer" class="grid" data-guard>
+    {% for key, label, ph in customer_fields %}
+    <div class="field {% if key in ('name', 'requisites', 'rates_basis', 'funding') %}span-12{% else %}span-6{% endif %}">
+      <label for="f-c-{{ key }}">{{ label }}</label>
+      {% if key == "requisites" %}<textarea id="f-c-{{ key }}" name="{{ key }}" rows="5" placeholder="{{ ph }}">{{ c.get(key, "") }}</textarea>
+      {% else %}<input id="f-c-{{ key }}" name="{{ key }}" type="text" value="{{ c.get(key, '') }}" placeholder="{{ ph }}">{% endif %}
+    </div>
+    {% endfor %}
+    <p class="hint span-12">«В лице директора Иванова Ивана Ивановича» программа склоняет сама. Реквизиты — как их надо
+      напечатать в договоре, каждая строка — с новой строки.</p>
+    <div class="span-12"><button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить</button></div>
+  </form>
+</details>
+
+<section class="panel" id="docs">
+  <h2>Документы</h2>
+  <p class="muted">Сохраняются на этом компьютере в папку «Договоры и табель» и сразу открываются в Word или Excel.
+    Договор отдельного человека — по ссылке «Для договора» в табеле.</p>
+  <ul class="docs-list">
+    <li>
+      <div class="docs-what"><b>Табель-наряд.xlsx</b><span class="muted">Отметки «р» по дням, ставки, суммы и начисления;
+        дни и суммы — формулами: поправите отметку в Excel — всё пересчитается.</span></div>
+      <div class="actions">
+        <form method="post" action="{{ base }}/contracts/doc/tabel" data-busy="Готовлю…"><button class="btn btn-primary btn-small" type="submit">{{ icon("file", 16) }}Открыть</button></form>
+        <a class="btn btn-ghost btn-small" href="{{ base }}/contracts/file/tabel">{{ icon("download", 16) }}Скачать</a>
+      </div>
+    </li>
+    <li>
+      <div class="docs-what"><b>Договоры и акты.docx</b><span class="muted">Всем, кому положена оплата ({{ totals.people }} чел.):
+        договор и акт к нему, каждый с новой страницы — для печати одним файлом.</span></div>
+      <div class="actions">
+        <form method="post" action="{{ base }}/contracts/doc/all" data-busy="Готовлю…"><button class="btn btn-primary btn-small" type="submit"{% if not totals.people %} disabled{% endif %}>{{ icon("file", 16) }}Открыть</button></form>
+        <a class="btn btn-ghost btn-small" href="{{ base }}/contracts/file/all">{{ icon("download", 16) }}Скачать</a>
+      </div>
+    </li>
+  </ul>
+  <form method="post" action="{{ base }}/contracts/folder" class="docs-folder"><button class="btn btn-ghost" type="submit">{{ icon("folder") }}Папка «Договоры и табель»</button></form>
+
+  <h3>Шаблон договора</h3>
+  {% if template %}
+  <p>Используется свой шаблон: <b>{{ template.name }}</b> ({{ template.parent.name }}).</p>
+  {% if template_unknown %}<p class="text-err">{{ icon("error", 16) }} В шаблоне есть поля, которых программа не знает:
+    {{ template_unknown|join(", ") }} — сверьте их написание со списком ниже.</p>{% endif %}
+  {% else %}
+  <p>Используется встроенный шаблон — обычный договор возмездного оказания услуг с актом. Если у заказчика своя форма,
+    сохраните шаблон в папку соревнования и перенесите в него текст заказчика, оставив поля.</p>
+  {% endif %}
+  <form method="post" action="{{ base }}/contracts/template"><button class="btn" type="submit">{{ icon("edit", 18) }}{% if template and template.parent == folder.path %}Открыть шаблон в Word{% else %}Сохранить встроенный шаблон в папку соревнования и открыть{% endif %}</button></form>
+  <details class="howto ct-fields">
+    <summary>Поля шаблона — что программа подставляет</summary>
+    <p class="muted">Пишутся в двойных фигурных скобках, например <code>{{ "{{ФИО}}" }}</code>. Пустые данные — строка
+      «________________», её можно заполнить от руки.</p>
+    <table class="tbl"><tbody>
+      {% for name, what in fields %}<tr><td><code>{{ "{{" ~ name ~ "}}" }}</code></td><td class="muted">{{ what }}</td></tr>{% endfor %}
+    </tbody></table>
+  </details>
+</section>
+{% endblock %}

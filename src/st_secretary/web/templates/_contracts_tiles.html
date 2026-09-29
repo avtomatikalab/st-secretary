@@ -1,0 +1,8 @@
+{# Итоги табеля — обновляются после каждой отметки. #}
+{% set errors = issues|selectattr("severity", "equalto", ERROR)|list %}
+<div class="tiles" data-live-tiles>
+  <div class="tile"><b>{{ totals.people }}</b><span>человек к оплате · {{ totals.days }} чел.-дней</span></div>
+  <div class="tile"><b>{{ money(totals.sum) }} ₽</b><span>начислено по ставкам</span></div>
+  <div class="tile"><b>{{ money(totals.total) }} ₽</b><span>итого с начислениями {{ "%g"|format(s.accrual) }} %</span></div>
+  <div class="tile {% if errors %}tile-error{% else %}tile-fixed{% endif %}"><b>{{ errors|length }}</b><span>ошибок перед печатью</span></div>
+</div>

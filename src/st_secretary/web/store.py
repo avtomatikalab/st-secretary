@@ -13,9 +13,20 @@
         Проверка_снаряжения.json     ← перечень снаряжения, отметки, баллы
         Итоги.json                   ← места по зачётам, оценки судей, данные отчёта
         Документы по итогам/         ← дипломы, наклейки, справки, выписки на разряды, отчёт
+        Договоры_и_табель.json       ← бригада, дни, ставки, заказчик (без паспортов)
+        Шаблон договора.docx         ← свой шаблон договора и акта, если есть (иначе — встроенный)
 
 Папку можно открыть в Проводнике, скопировать на флешку, передать коллеге. Персональные данные
 (даты рождения, телефоны) хранятся только в ней.
+
+Сканы документов участников, паспорта и счета судей и всё, где они есть (договоры, табель), — отдельно,
+только на этом компьютере (папка «СТ-Секретарь — документы участников» в профиле):
+
+    СТ-Секретарь — документы участников/
+      Судьи и персонал — личные данные.json   ← паспорт, ИНН, СНИЛС, счёт; общий для всех соревнований
+      <папка соревнования>/
+        <заявка команды>/                     ← сканы и фото документов команды
+        Договоры и табель/                    ← договоры с актами, табель-наряд
 """
 
 from __future__ import annotations
@@ -47,6 +58,10 @@ COMMISSION_REPORT = "Комиссия_по_допуску.xlsx"
 EQUIPMENT = "Проверка_снаряжения.json"
 RESULTS = "Итоги.json"  # места по зачётам (из протокола СЕКРЕТАРЬ_ST или вручную), оценки судей, данные отчёта
 OUT_DIR = "Документы по итогам"  # дипломы, справки, выписки, отчёт — Word и Excel
+CONTRACTS = "Договоры_и_табель.json"
+CONTRACT_TEMPLATE = "Шаблон договора.docx"
+PERSONAL = "Судьи и персонал — личные данные.json"
+CONTRACTS_DIR = "Договоры и табель"
 # Сканы и фото документов участников (паспорта, полисы, справки): только на этом компьютере и не в облачной
 # папке — поэтому отдельно от данных соревнования (их часто держат на Google Диске или передают на флешке).
 DOCS_ROOT_NAME = "СТ-Секретарь — документы участников"
@@ -303,6 +318,17 @@ class CompFolder:
     def out_dir(self) -> Path:
         return self.path / OUT_DIR
 
+    def contracts(self) -> dict:
+        """Договоры и табель: {"period", "accrual", "rates", "customer", "people", "extra"} (см. staff.py)."""
+        return self._read_json(CONTRACTS)
+
+    def save_contracts(self, data: dict) -> None:
+        self._write_json(CONTRACTS, data)
+
+    @property
+    def contract_template(self) -> Path:
+        return self.path / CONTRACT_TEMPLATE
+
 
 class Store:
     def __init__(self, root: str | Path, docs_root: str | Path | None = None):
@@ -392,6 +418,32 @@ class Store:
             dest, n = dest_dir / f"{src.stem} ({n}){src.suffix}", n + 1
         shutil.move(src, dest)
         return dest
+
+    # ------------------------------------------------------------ судьи и персонал: паспорта, счета
+
+    @property
+    def personal_path(self) -> Path:
+        return self.docs_root / PERSONAL
+
+    def personal(self) -> dict[str, dict]:
+        """{ключ ФИО: {"birth", "passport", …}} — общий для всех соревнований: судьи приезжают из года в год."""
+        try:
+            data = json.loads(self.personal_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def save_personal(self, key: str, values: dict) -> None:
+        data = self.personal()
+        data[key] = {k: v for k, v in values.items() if v}
+        self.docs_root.mkdir(parents=True, exist_ok=True)
+        tmp = self.docs_root / f"~{PERSONAL}"
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.personal_path)
+
+    def contracts_dir(self, f: CompFolder) -> Path:
+        """Договоры и табель соревнования — там же, где сканы: в них паспорта и счета."""
+        return self.docs_root / f.id / CONTRACTS_DIR
 
     def review(self, f: CompFolder, comp: Competition) -> tuple[PreappResult, dict[str, Review]]:
         """Заявки с отметками секретаря: «проверено» у замечаний и статусы по файлам."""

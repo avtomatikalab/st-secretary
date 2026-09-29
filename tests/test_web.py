@@ -681,3 +681,70 @@ def test_report_texts_and_extracts_download(client, tmp_path, psr_card):
     wb = load_workbook(io.BytesIO(client.get(url + "/file/extracts").content))
     rows = [[c.value for c in r] for r in wb.active.iter_rows() if r[5].value == "III"]
     assert len(rows) == 3 and rows[0][2] == "02.02.1990"  # дата рождения — из заявки
+
+
+def test_contracts_tabel_personal_data_and_documents(client, tmp_path, psr_card, opened):
+    from docx import Document
+    from openpyxl import load_workbook
+
+    from test_contracts import CUSTOMER, PERSON
+
+    f = client.app.state.store.create(psr_card)
+    url = base(f) + "/contracts"
+    page = client.get(url).text
+    assert "Судьин Иван Петрович" in page and "Секретарёва Анна Ивановна" in page and "ставка не задана" not in page
+    assert page.count('type="checkbox" name="p-0-d-') == 4  # 19–22 сентября: день до и день после
+    r = client.post(url + "/add", data={"fio": "Работяга  Семён Ильич", "role": "Рабочий комендантской бригады",
+                                        "category": "б/к"}, follow_redirects=False)
+    assert "done=ct_added" in r.headers["location"]
+    assert "done=ct_exists" in client.post(url + "/add", data={"fio": "Судьин Иван Петрович", "role": "Судья"},
+                                           follow_redirects=False).headers["location"]
+
+    r = client.post(url + "/settings", data={"do": "sample"}, follow_redirects=False)
+    assert "done=ct_settings" in r.headers["location"]
+    data = f.contracts()
+    assert data["rates"] == {"главный судья|1": 850, "рабочий комендантской бригады|б/к": 460}  # чего нет в образце — пусто
+    client.post(url + "/settings", data={"from": "2025-09-19", "to": "2025-09-22", "accrual": "30",
+                                         "rate-главный судья|1": "850", "rate-главный секретарь|2": "700",
+                                         "rate-рабочий комендантской бригады|б/к": "460"})
+    days = {"p-0-key": "судьин иван петрович", "p-1-key": "секретарева анна ивановна", "p-2-key": "работяга семен ильич",
+            "p-0-d-20250919": "on", "p-0-d-20250920": "on", "p-0-d-20250921": "on", "p-0-d-20250922": "on",
+            "p-1-d-20250920": "on", "p-1-d-20250921": "on", "p-2-d-20250921": "on", "p-2-unpaid": "on"}
+    r = client.post(url + "/days", data=days, headers={"X-Autosave": "1"})
+    j = r.json()
+    assert "<b>3 400</b>" in j["team"] and "4 800,00" in j["team"]  # 4×850 + 2×700; рабочий без оплаты
+    assert "6 240,00" in j["team"] and "6 240,00 ₽" in j["tiles"]
+
+    person = url + "/person?" + urlencode({"key": "судьин иван петрович"})
+    p = client.get(person)
+    assert p.headers["cache-control"] == "no-store" and "в качестве главного судьи 1 категории" in p.text
+    r = client.post(url + "/person", data={"key": "судьин иван петрович", **dict(PERSON, inn="123456789012")},
+                    follow_redirects=False)
+    assert "done=ct_person" in r.headers["location"]
+    assert "ИНН не сходится" in client.get(person).text
+    client.post(url + "/person", data={"key": "судьин иван петрович", **PERSON})
+    assert client.app.state.store.personal()["судьин иван петрович"]["inn"] == PERSON["inn"]
+    assert client.app.state.store.personal_path.parent == tmp_path / "документы"  # не в папке соревнования
+    client.post(url + "/customer", data=CUSTOMER)
+
+    r = client.post(url + "/doc/person", data={"key": "судьин иван петрович"}, follow_redirects=False)
+    assert "done=ct_doc" in r.headers["location"]
+    doc_path = opened[-1]
+    assert doc_path.parent == tmp_path / "документы" / f.id / "Договоры и табель"
+    assert doc_path.name == "Судьин И.П. — главный судья.docx"
+    text = "\n".join(p.text for p in Document(str(doc_path)).paragraphs)
+    assert "в лице директора Начальникова Петра Сергеевича" in text and "Срок оказания услуг: 19–22 сентября" in text
+    assert "3400 (три тысячи четыреста) рублей 00 копеек" in text
+
+    ws = load_workbook(io.BytesIO(client.get(url + "/file/tabel").content)).active
+    names = [ws.cell(r, 2).value for r in range(8, 11)]
+    assert names == ["Судьин Иван Петрович", "Секретарёва Анна Ивановна", "Итого начислено"]
+    all_docs = client.get(url + "/file/all")
+    assert all_docs.status_code == 200 and all_docs.headers["cache-control"] == "no-store"
+    assert "\n".join(p.text for p in Document(io.BytesIO(all_docs.content)).paragraphs).count("ДОГОВОР № ______") == 2
+
+    r = client.post(url + "/template", follow_redirects=False)
+    assert "done=ct_template" in r.headers["location"] and f.contract_template.is_file()
+    assert "Используется свой шаблон" in client.get(url).text
+    client.post(url + "/remove", data={"key": "работяга семен ильич"})
+    assert "Работяга" not in client.get(url).text

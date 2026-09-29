@@ -494,6 +494,29 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .docs-what span { font-size: .88rem; }
 .docs-folder { margin-top: 12px; }
 
+/* ---------- договоры, акты, табель ---------- */
+.ct-tabel { padding: 0; }
+.ct-tabel form { margin: 0; }
+.ct-tabel .adm-actions { padding: 10px 14px; }
+.ct-grid { font-size: .9rem; }
+.ct-grid td { padding: 6px 8px; vertical-align: middle; }
+.ct-grid th.cb, .ct-grid td.cb { text-align: center; width: 1%; white-space: nowrap; }
+.ct-grid th.ct-day { font-size: .78rem; line-height: 1.2; }
+.ct-grid .ct-extra { background: var(--surface-2); }
+.ct-grid input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer; }
+.ct-grid .ct-n { width: 1%; color: var(--muted); }
+.ct-grid .adm-sub { white-space: normal; }
+.ct-grid th.ct-wrap { white-space: normal; width: 1%; font-size: .8rem; line-height: 1.2; }
+.ct-grid .ct-num { text-align: right; white-space: nowrap; width: 1%; }
+.ct-grid tfoot td { border-top: 2px solid var(--line-strong); background: var(--surface-2); }
+.ct-grid tr.ct-unpaid td { color: var(--muted); }
+.ct-person-link { white-space: nowrap; text-decoration: none; font-size: .88rem; }
+.ct-person-link:hover { text-decoration: underline; }
+.ct-issues-title { margin: 6px 14px 4px; }
+.ct-tabel .issues-simple { margin: 0 14px 14px; }
+.ct-rates input { width: 120px !important; }
+.ct-fields { margin-top: 12px; }
+
 /* ---------- средний экран: поля зачёта по три в ряд ---------- */
 @media (max-width: 1280px) {
   .zachet .span-2, .zachet .span-3 { grid-column: span 4; }

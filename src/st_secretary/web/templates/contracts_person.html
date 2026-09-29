@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ p.fio }} — договор — СТ-Секретарь{% endblock %}
+{% block content %}
+<a class="back" href="{{ base }}/contracts#tabel">← Договоры, акты, табель</a>
+<h1>{{ p.fio }}</h1>
+<p class="lead">{{ p.role }}{% if p.cat != "б/к" %}, {{ p.cat }} категория{% endif %} ·
+  {% if p.unpaid %}без оплаты{% elif p.days %}{{ p.days|length }} дн. ({{ p.span_text }}) × {% if p.rate is not none %}{{ p.rate }} ₽ = <b>{{ money(p.amount) }} ₽</b>{% else %}<span class="text-err">ставка не задана</span>{% endif %}{% else %}дни не отмечены{% endif %}</p>
+<p class="muted">В договоре: «в качестве {{ p.role_text }}». {% if p.from_card %}Должность и категория — из карточки соревнования.{% endif %}</p>
+
+{% set mine = per_person[p.key] %}
+{% if mine %}
+<ul class="issues-simple">
+  {% for i in mine %}<li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span><span>{{ i.text }}</span></li>{% endfor %}
+</ul>
+{% endif %}
+
+<form method="post" action="{{ base }}/contracts/person" data-guard class="panel">
+  <input type="hidden" name="key" value="{{ p.key }}">
+  {% if not p.from_card %}
+  <h2>Должность</h2>
+  <div class="grid">
+    <div class="field span-8"><label for="f-role">Должность</label>
+      <input id="f-role" name="role" type="text" value="{{ p.role }}" list="ct-roles">
+      <datalist id="ct-roles">{% for r in extra_roles %}<option value="{{ r }}">{% endfor %}</datalist></div>
+    <div class="field span-4"><label for="f-category">Судейская категория</label>
+      <select id="f-category" name="category">{% for c in categories %}<option value="{{ c }}"{% if c == p.category %} selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+  </div>
+  {% endif %}
+  <h2>Данные для договора</h2>
+  <p class="hint">{{ icon("laptop", 16) }} Хранятся только на этом компьютере (папка «{{ personal_path.parent.name }}» в профиле) и подходят для всех
+    соревнований — в следующий раз вводить заново не придётся. ИНН, СНИЛС и счёт программа проверяет по контрольным цифрам.</p>
+  <div class="grid">
+    {% for key, label, ph in personal_fields %}
+    <div class="field {% if key in ('issued_by', 'address') %}span-12{% elif key in ('bank',) %}span-8{% else %}span-4{% endif %}{% if errors.get(key) %} has-error{% endif %}">
+      <label for="f-{{ key }}">{{ label }}</label>
+      <input id="f-{{ key }}" name="{{ key }}" type="text" value="{{ values.get(key, '') }}" placeholder="{{ ph }}" autocomplete="off">
+      {% if errors.get(key) %}<p class="field-error">{{ errors[key] }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="actions"><button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить</button></div>
+</form>
+
+<section class="panel">
+  <h2>Договор и акт</h2>
+  <p class="muted">Пустые данные останутся строкой «________________» — их можно вписать от руки.</p>
+  <div class="actions">
+    <form method="post" action="{{ base }}/contracts/doc/person" data-busy="Готовлю…"><input type="hidden" name="key" value="{{ p.key }}">
+      <button class="btn btn-primary" type="submit"{% if not p.paid %} disabled{% endif %}>{{ icon("file") }}Открыть договор и акт</button></form>
+    <a class="btn btn-ghost" href="{{ base }}/contracts/file/person?key={{ p.key|urlencode }}">{{ icon("download") }}Скачать</a>
+  </div>
+  {% if not p.paid %}<p class="hint">Договор нужен, когда отмечены дни и человек работает с оплатой.</p>{% endif %}
+</section>
+
+{% if not p.from_card %}
+<form method="post" action="{{ base }}/contracts/remove" data-confirm="Убрать {{ p.fio }} из табеля? Личные данные останутся на компьютере.">
+  <input type="hidden" name="key" value="{{ p.key }}">
+  <button class="btn btn-ghost" type="submit">Убрать из табеля</button>
+</form>
+{% endif %}
+{% endblock %}

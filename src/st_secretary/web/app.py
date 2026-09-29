@@ -30,7 +30,9 @@ from st_secretary import __version__
 from st_secretary import commission as cm
 from st_secretary import equipment as eq
 from st_secretary import results as res
+from st_secretary import staff as sf
 from st_secretary.exporters import awards as aw
+from st_secretary.exporters import contracts as ct
 from st_secretary.exporters import final as fin
 from st_secretary.exporters import judges as jd
 from st_secretary.competition import LEVEL_LABELS
@@ -38,13 +40,16 @@ from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.importers.card_xlsx import CardError, load_card
 from st_secretary.importers.preapp_xlsx import read_preapplication
 from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, SEVERITY_ORDER, WARNING, Issue
+from st_secretary.money import money
+from st_secretary.names import initials
 from st_secretary.qualification import Qual
 from st_secretary.textclean import from_years
 from st_secretary.web import preapp_form as pf
 from st_secretary.web.review import CHECK, DONE, FIX, SAVE, STATUS_LABEL, is_clean, issue_key
 from st_secretary.web.forms import card_to_form, choices, empty_zachet, form_from_data, form_to_card
 from st_secretary.web.steps import BY_SLUG, STEPS
-from st_secretary.web.store import COMMISSION_REPORT, IMAGE_TYPES, SUMMARY, CompFolder, Store
+from st_secretary.web.store import (COMMISSION_REPORT, CONTRACT_TEMPLATE, IMAGE_TYPES, SUMMARY, CompFolder, Store,
+                                    safe_name)
 
 log = logging.getLogger("st_secretary.web")
 HERE = Path(__file__).parent
@@ -99,10 +104,11 @@ def team_anchor(file: str) -> str:
     return "t-" + hashlib.sha1(file.encode("utf-8")).hexdigest()[:10]
 
 
-def _with_done(url: str, done: str) -> str:
-    """Адрес с сообщением о сделанном (?done=…); якорь (#…) сохраняется."""
+def _with_done(url: str, done: str, **extra: str) -> str:
+    """Адрес с сообщением о сделанном (?done=…) и подробностями для него; якорь (#…) сохраняется."""
     parts = urlsplit(url)
-    q = [(k, v) for k, v in parse_qsl(parts.query) if k != "done"] + [("done", done)]
+    q = [(k, v) for k, v in parse_qsl(parts.query) if k != "done" and k not in extra]
+    q += [("done", done), *extra.items()]
     return urlunsplit(parts._replace(query=urlencode(q)))
 
 
@@ -169,6 +175,21 @@ def _flash(request: Request) -> dict | None:
         "reentry_repeat": ("err", "Перезаявка записана, но она повторная: по Правилам (п. 8.5) повторные "
                                   "перезаявки не принимаются. Решение — за ГСК."),
         "opened": ("ok", "Открываю…"),
+        "ct_saved": ("ok", "Табель сохранён."),
+        "ct_settings": ("ok", "Период работы, ставки и начисления сохранены."),
+        "ct_customer": ("ok", "Сведения о заказчике сохранены — они попадут в договоры, акты и табель."),
+        "ct_added": ("ok", "Человек добавлен в табель — отметьте дни его работы и заполните данные для договора."),
+        "ct_need": ("err", "Впишите ФИО и должность."),
+        "ct_exists": ("err", "Такой человек уже есть в табеле (судьи из карточки попадают туда сами)."),
+        "ct_removed": ("ok", "Убрано из табеля. Личные данные человека остались — пригодятся на других соревнованиях."),
+        "ct_person": ("ok", "Сохранено. Личные данные хранятся только на этом компьютере."),
+        "ct_doc": ("ok", "Документ сохранён в папке «Договоры и табель» на этом компьютере и открывается."),
+        "ct_template": ("ok", "Шаблон договора «Шаблон договора.docx» — в папке соревнования, открывается в Word. "
+                              "Правьте текст как нужно заказчику, поля в двойных фигурных скобках оставьте — "
+                              "программа будет брать этот файл."),
+        "ct_unknown": ("err", f"Документ открывается, но в шаблоне есть поля, которых программа не знает: "
+                              f"{q.get('fields', '')}. Они остались в тексте как есть — поправьте их в шаблоне "
+                              "по списку полей ниже."),
     }
     auto_done = done is not None and done.endswith("-done")  # заявка без замечаний — «Проверено» сразу
     if auto_done:
@@ -1149,6 +1170,256 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                 grades[res.person_key(o.fio)] = g
         f.save_results_data(data)
         return _redirect(f"{_base(f)}/awards?done=grades_saved#judges")
+
+    # ------------------------------------------------------------ договоры, акты, табель
+
+    def contract_template(f: CompFolder) -> Path | None:
+        """Свой шаблон договора: в папке соревнования, затем в папке «данные»; иначе — встроенный."""
+        for p in (f.contract_template, store.root / CONTRACT_TEMPLATE):
+            if p.is_file():
+                return p
+        return None
+
+    def staff_ctx(f: CompFolder, comp) -> dict:
+        data = f.contracts()
+        s = sf.settings(comp, data)
+        team = sf.people(comp, data)
+        personal = store.personal()
+        customer = data.get("customer", {})
+        issues = sf.check(team, personal, customer)
+        tpl = contract_template(f)
+        unknown = set()
+        if tpl:
+            try:
+                unknown = ct.template_fields(tpl) - {k for k, _ in ct.FIELDS}
+            except Exception:  # noqa: BLE001 — повреждённый файл шаблона: сказать, а не упасть
+                unknown = {"(файл шаблона не открывается)"}
+        return {"data": data, "s": s, "team": team, "personal": personal, "customer": customer, "issues": issues,
+                "totals": sf.totals(team, s["accrual"]), "template": tpl, "template_unknown": sorted(unknown),
+                "per_person": {p.key: [i for i in issues if i.person == p.fio] for p in team}}
+
+    def staff_parts(f: CompFolder, ctx: dict) -> dict:
+        return {"base": _base(f), "weekday": ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"], "money": money,
+                "missing_personal": sf.missing_personal, "personal_problems": sf.personal_problems, **ctx}
+
+    @app.get("/c/{cid}/contracts")
+    def contracts_page(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        ctx = staff_ctx(f, comp)
+        prefill = {}
+        if not ctx["customer"]:  # заказчик обычно тот же, что в прошлый раз
+            for other in store.all():
+                if other.id != f.id and (c := other.contracts().get("customer")):
+                    prefill = {"from": other.id, **c}
+                    break
+        return page(request, "contracts.html", active="contracts", pairs=sf.rate_pairs(ctx["team"]),
+                    sample=sf.RATES_KRSK_2025, customer_fields=ct.CUSTOMER_FIELDS, fields=ct.FIELDS,
+                    prefill=prefill, extra_roles=sf.EXTRA_ROLES, categories=sf.CATEGORIES,
+                    docs_dir=store.contracts_dir(f), personal_path=store.personal_path,
+                    **{**comp_ctx(f), **staff_parts(f, ctx)})
+
+    @app.post("/c/{cid}/contracts/days")
+    async def contracts_days(request: Request, cid: str):
+        """Табель: отметки дней и «без оплаты». С автосохранением — возвращает обновлённый табель."""
+        f = folder(cid)
+        comp = need_comp(f)
+        form = await request.form()
+        data = f.contracts()
+        s = sf.settings(comp, data)
+        marks = data.setdefault("people", {})
+        idx = sorted({int(m.group(1)) for k in form.keys() if (m := re.fullmatch(r"p-(\d+)-key", k))})
+        for i in idx:
+            key = str(form.get(f"p-{i}-key", ""))
+            m = marks.setdefault(key, {})
+            outside = [d for d in m.get("days", []) if sf._day(d) not in s["days"]]  # вне периода — не терять
+            m["days"] = outside + [d.isoformat() for d in s["days"] if form.get(f"p-{i}-d-{d:%Y%m%d}")]
+            m["unpaid"] = bool(form.get(f"p-{i}-unpaid"))
+        f.save_contracts(data)
+        if request.headers.get("x-autosave"):
+            parts = {"comp": comp, **staff_parts(f, staff_ctx(f, comp))}
+            return JSONResponse({"team": templates.get_template("_contracts_tabel.html").render(**parts),
+                                 "tiles": templates.get_template("_contracts_tiles.html").render(**parts),
+                                 "saved": datetime.now().strftime("%H:%M:%S")})
+        return _redirect(f"{_base(f)}/contracts?done=ct_saved#tabel")
+
+    @app.post("/c/{cid}/contracts/settings")
+    async def contracts_settings(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        form = await request.form()
+        data = f.contracts()
+        if form.get("do") == "sample":  # ставки по образцу — только для пустых
+            rates = data.setdefault("rates", {})
+            for key, _, _ in sf.rate_pairs(sf.people(comp, data)):
+                if key in sf.RATES_KRSK_2025 and not rates.get(key):
+                    rates[key] = sf.RATES_KRSK_2025[key]
+        else:
+            a, b = sf._day(form.get("from", "")), sf._day(form.get("to", ""))
+            if a and b:
+                data["period"] = {"from": min(a, b).isoformat(), "to": max(a, b).isoformat()}
+            acc = str(form.get("accrual", "")).strip().replace(",", ".")
+            try:
+                data["accrual"] = float(acc) if acc else sf.ACCRUAL
+            except ValueError:
+                pass
+            rates = {}
+            for k in form.keys():
+                if k.startswith("rate-"):
+                    v = re.sub(r"[^\d]", "", str(form.get(k, "")).split(",")[0].split(".")[0])
+                    if v:
+                        rates[k[5:]] = int(v)
+            data["rates"] = {**data.get("rates", {}), **rates}
+            for k in [k[5:] for k in form.keys() if k.startswith("rate-") and not str(form.get(k, "")).strip()]:
+                data["rates"].pop(k, None)
+        f.save_contracts(data)
+        return _redirect(f"{_base(f)}/contracts?done=ct_settings#settings")
+
+    @app.post("/c/{cid}/contracts/customer")
+    async def contracts_customer(request: Request, cid: str):
+        f = folder(cid)
+        form = await request.form()
+        data = f.contracts()
+        data["customer"] = {k: str(form.get(k, "")).strip() for k, _, _ in ct.CUSTOMER_FIELDS}
+        f.save_contracts(data)
+        return _redirect(f"{_base(f)}/contracts?done=ct_customer#customer")
+
+    @app.post("/c/{cid}/contracts/add")
+    async def contracts_add(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        form = await request.form()
+        fio = " ".join(str(form.get("fio", "")).split())
+        role = " ".join(str(form.get("role", "")).split())
+        cat = str(form.get("category", "б/к"))
+        if not fio or not role:
+            return _redirect(f"{_base(f)}/contracts?done=ct_need#add")
+        data = f.contracts()
+        if res.person_key(fio) in {p.key for p in sf.people(comp, data)}:
+            return _redirect(f"{_base(f)}/contracts?done=ct_exists#add")
+        data.setdefault("extra", []).append({"fio": fio, "role": role,
+                                             "category": cat if cat in sf.CATEGORIES else "б/к"})
+        f.save_contracts(data)
+        return _redirect(f"{_base(f)}/contracts?done=ct_added#tabel")
+
+    def need_person(f: CompFolder, comp, key: str):
+        p = next((x for x in sf.people(comp, f.contracts()) if x.key == key), None)
+        if p is None:
+            raise HTTPException(404)
+        return p
+
+    @app.get("/c/{cid}/contracts/person")
+    def contracts_person(request: Request, cid: str, key: str = ""):
+        """Личные данные для договора — только на этом компьютере; страницу браузер не запоминает."""
+        f = folder(cid)
+        comp = need_comp(f)
+        p = need_person(f, comp, key)
+        ctx = staff_ctx(f, comp)
+        values = ctx["personal"].get(p.key, {})
+        errors = {fld: why for fld, why in sf.personal_problems(values)}
+        resp = page(request, "contracts_person.html", active="contracts", p=p, values=values, errors=errors,
+                    personal_fields=sf.PERSONAL_FIELDS, categories=sf.CATEGORIES, extra_roles=sf.EXTRA_ROLES,
+                    personal_path=store.personal_path, **{**comp_ctx(f), **staff_parts(f, ctx)})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    @app.post("/c/{cid}/contracts/person")
+    async def contracts_person_save(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        form = await request.form()
+        p = need_person(f, comp, str(form.get("key", "")))
+        store.save_personal(p.key, {k: " ".join(str(form.get(k, "")).split()) for k, _, _ in sf.PERSONAL_FIELDS})
+        if not p.from_card:  # должность и категорию добавленных вручную можно поменять здесь
+            data = f.contracts()
+            for x in data.get("extra", []):
+                if res.person_key(x.get("fio", "")) == p.key:
+                    role = " ".join(str(form.get("role", "")).split())
+                    cat = str(form.get("category", ""))
+                    x["role"] = role or x.get("role", "")
+                    x["category"] = cat if cat in sf.CATEGORIES else x.get("category", "б/к")
+            f.save_contracts(data)
+        return _redirect(f"{_base(f)}/contracts/person?{urlencode({'key': p.key, 'done': 'ct_person'})}")
+
+    @app.post("/c/{cid}/contracts/remove")
+    async def contracts_remove(request: Request, cid: str):
+        f = folder(cid)
+        key = str((await request.form()).get("key", ""))
+        data = f.contracts()
+        data["extra"] = [x for x in data.get("extra", []) if res.person_key(x.get("fio", "")) != key]
+        data.get("people", {}).pop(key, None)
+        f.save_contracts(data)
+        return _redirect(f"{_base(f)}/contracts?done=ct_removed#tabel")
+
+    def build_contract_doc(f: CompFolder, kind: str, key: str = "", path: Path | None = None) -> tuple[Path, set]:
+        comp = need_comp(f)
+        ctx = staff_ctx(f, comp)
+        team, personal, customer = ctx["team"], ctx["personal"], ctx["customer"]
+        out = store.contracts_dir(f)
+        if kind == "tabel":
+            target = path or out / "Табель-наряд.xlsx"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            return ct.write_tabel(comp, team, ctx["s"]["days"], ctx["s"]["accrual"], customer, personal, target), set()
+        if kind == "all":
+            target = path or out / "Договоры и акты.docx"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            many = [ct.contract_values(comp, p, customer, personal.get(p.key, {})) for p in team if p.paid]
+            return target, ct.write_contracts(ctx["template"], many, target)
+        if kind == "person":
+            p = next((x for x in team if x.key == key), None)
+            if p is None:
+                raise HTTPException(404)
+            target = path or out / f"{safe_name(f'{initials(p.fio)} — {p.role.lower()}', 100)}.docx"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            values = ct.contract_values(comp, p, customer, personal.get(p.key, {}))
+            return target, ct.write_contract(ctx["template"], values, target)
+        raise HTTPException(404)
+
+    def contracts_back(f: CompFolder, key: str) -> str:
+        if key:
+            return f"{_base(f)}/contracts/person?{urlencode({'key': key})}"
+        return f"{_base(f)}/contracts#docs"
+
+    @app.post("/c/{cid}/contracts/doc/{kind}")
+    async def contracts_doc_open(request: Request, cid: str, kind: str):
+        f = folder(cid)
+        key = str((await request.form()).get("key", ""))
+        back = contracts_back(f, key)
+        try:
+            path, unknown = build_contract_doc(f, kind, key)
+        except PermissionError:
+            return _redirect(_with_done(back, "doc_locked"))
+        app.state.opener(path)
+        if unknown:
+            return _redirect(_with_done(back, "ct_unknown", fields=", ".join(sorted(unknown))))
+        return _redirect(_with_done(back, "ct_doc"))
+
+    @app.get("/c/{cid}/contracts/file/{kind}")
+    def contracts_doc_download(cid: str, kind: str, key: str = ""):
+        f = folder(cid)
+        name = {"tabel": "Табель-наряд.xlsx", "all": "Договоры и акты.docx"}.get(kind, "Договор.docx")
+        tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / name
+        path, _ = build_contract_doc(f, kind, key, tmp)
+        return FileResponse(path, filename=path.name, media_type=XLSX if path.suffix == ".xlsx" else DOCX,
+                            headers={"Cache-Control": "no-store"},
+                            background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
+
+    @app.post("/c/{cid}/contracts/template")
+    def contracts_template(cid: str):
+        """Сохранить встроенный шаблон в папку соревнования — чтобы поправить его в Word под своего заказчика."""
+        f = folder(cid)
+        if not f.contract_template.exists():
+            ct.default_template().save(str(f.contract_template))
+        app.state.opener(f.contract_template)
+        return _redirect(f"{_base(f)}/contracts?done=ct_template#docs")
+
+    @app.post("/c/{cid}/contracts/folder")
+    def contracts_folder(cid: str):
+        f = folder(cid)
+        d = store.contracts_dir(f)
+        d.mkdir(parents=True, exist_ok=True)
+        app.state.opener(d)
+        return _redirect(f"{_base(f)}/contracts?done=opened#docs")
 
     # ------------------------------------------------------------ шаги в разработке
 

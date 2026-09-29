@@ -127,16 +127,7 @@ class Competition:
     @property
     def dates_text(self) -> str:
         """«20–21 сентября 2025 г.» для шапок документов."""
-        months = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
-                  "сентября", "октября", "ноября", "декабря"]
-        a, b = self.date_from, self.date_to
-        if a == b:
-            return f"{a.day} {months[a.month - 1]} {a.year} г."
-        if (a.year, a.month) == (b.year, b.month):
-            return f"{a.day}–{b.day} {months[a.month - 1]} {a.year} г."
-        if a.year == b.year:
-            return f"{a.day} {months[a.month - 1]} – {b.day} {months[b.month - 1]} {a.year} г."
-        return f"{a.day} {months[a.month - 1]} {a.year} г. – {b.day} {months[b.month - 1]} {b.year} г."
+        return date_range_text(self.date_from, self.date_to)
 
     def official(self, role: str) -> Official | None:
         return next((o for o in self.officials if o.role == role), None)
@@ -206,6 +197,22 @@ class Competition:
                 warn(f"зачёт {z.key}: результат в баллах, а методика «% от победителя» не задана — "
                      "нормативы не будут рассчитаны", "Методика %")
         return out
+
+
+MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября",
+              "ноября", "декабря"]
+
+
+def date_range_text(a: date, b: date) -> str:
+    """«20–21 сентября 2025 г.», «30 сентября – 2 октября 2025 г.»."""
+    m = MONTHS_GEN
+    if a == b:
+        return f"{a.day} {m[a.month - 1]} {a.year} г."
+    if (a.year, a.month) == (b.year, b.month):
+        return f"{a.day}–{b.day} {m[a.month - 1]} {a.year} г."
+    if a.year == b.year:
+        return f"{a.day} {m[a.month - 1]} – {b.day} {m[b.month - 1]} {a.year} г."
+    return f"{a.day} {m[a.month - 1]} {a.year} г. – {b.day} {m[b.month - 1]} {b.year} г."
 
 
 def _group_key(g: str) -> str:

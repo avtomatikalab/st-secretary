@@ -1,0 +1,57 @@
+{# Табель по дням. Этот же блок сервер присылает после каждого изменения. #}
+{% from "_icons.html" import icon %}
+<article class="team ct-tabel" id="tabel">
+<form method="post" action="{{ base }}/contracts/days" data-autosave>
+  <div class="table-wrap">
+  <table class="tbl ct-grid">
+    <thead>
+      <tr><th class="ct-n">№</th><th>ФИО, должность</th>
+        {% for d in s.days %}<th class="cb ct-day{% if d < comp.date_from or d > comp.date_to %} ct-extra{% endif %}" title="{{ d|d }}">{{ weekday[d.weekday()] }}<br>{{ "%02d.%02d"|format(d.day, d.month) }}</th>{% endfor %}
+        <th class="ct-num">Дней</th><th class="ct-num">Ставка</th><th class="ct-num">Сумма, ₽</th><th class="cb ct-wrap">Без оплаты</th><th class="ct-wrap">Для договора</th></tr>
+    </thead>
+    <tbody>
+    {% for p in team %}{% set i = loop.index0 %}{% set probs = per_person[p.key] %}
+    <tr class="{% if p.unpaid %}ct-unpaid{% endif %}">
+      <td class="ct-n">{{ loop.index }}<input type="hidden" name="p-{{ i }}-key" value="{{ p.key }}"></td>
+      <td><b>{{ p.fio }}</b><span class="adm-sub">{{ p.role }}{% if p.cat != "б/к" %}, {{ p.cat }} кат.{% endif %}{% if not p.from_card %} · добавлен(а) здесь{% endif %}</span></td>
+      {% for d in s.days %}
+      <td class="cb{% if d < comp.date_from or d > comp.date_to %} ct-extra{% endif %}"><input type="checkbox" name="p-{{ i }}-d-{{ d.strftime('%Y%m%d') }}"{% if d in p.days %} checked{% endif %} aria-label="{{ p.fio }}: {{ d|d }}"></td>
+      {% endfor %}
+      <td class="ct-num">{{ p.days|length }}</td>
+      <td class="ct-num">{% if p.rate is not none %}{{ p.rate }}{% else %}<span class="text-err" title="Задайте ставку в разделе «Период и ставки»">нет</span>{% endif %}</td>
+      <td class="ct-num"><b>{{ "{:,}".format(p.amount).replace(",", " ") if p.paid else "—" }}</b></td>
+      <td class="cb"><input type="checkbox" name="p-{{ i }}-unpaid"{% if p.unpaid %} checked{% endif %} aria-label="{{ p.fio }}: без оплаты"></td>
+      <td>{% set pd = personal.get(p.key, {}) %}{% set miss = missing_personal(pd) %}{% set bad = personal_problems(pd) %}
+        <a class="ct-person-link" href="{{ base }}/contracts/person?key={{ p.key|urlencode }}">
+        {% if p.unpaid %}<span class="muted">не нужно</span>
+        {% elif bad %}<span class="text-err">{{ icon("error", 14) }} ошибка в данных</span>
+        {% elif miss %}<span class="text-warn">{{ icon("alert", 14) }} нет {{ miss|length }} из 8</span>
+        {% else %}<span class="text-ok">{{ icon("check", 14) }} всё есть</span>{% endif %} →</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><td></td><td><b>Итого начислено</b></td><td colspan="{{ s.days|length }}"></td><td class="ct-num"><b>{{ totals.days }}</b></td><td></td>
+        <td class="ct-num"><b>{{ money(totals.sum) }}</b></td><td colspan="2"></td></tr>
+      <tr><td></td><td>Начисления на оплату {{ "%g"|format(s.accrual) }} %</td><td colspan="{{ s.days|length + 2 }}"></td>
+        <td class="ct-num">{{ money(totals.accrual) }}</td><td colspan="2"></td></tr>
+      <tr><td></td><td><b>Итого</b></td><td colspan="{{ s.days|length + 2 }}"></td><td class="ct-num"><b>{{ money(totals.total) }}</b></td><td colspan="2"></td></tr>
+    </tfoot>
+  </table>
+  </div>
+  <div class="adm-actions">
+    <button class="btn btn-ghost btn-small adm-save" type="submit">Сохранить</button>
+    <span class="adm-saved muted" aria-live="polite"></span>
+  </div>
+</form>
+{% if issues %}
+<h3 class="ct-issues-title">Проверка перед печатью</h3>
+<ul class="issues-simple">
+  {% for i in issues %}
+  <li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span><span>{{ i.text }}</span></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-ok ct-issues-title">{{ icon("check-circle", 18) }} Проверка: ошибок нет — дни, ставки и данные для договоров на месте.</p>
+{% endif %}
+</article>
