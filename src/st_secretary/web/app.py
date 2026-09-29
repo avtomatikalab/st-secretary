@@ -29,6 +29,7 @@ from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException
 
 from st_secretary import __version__
+from st_secretary import backup as bk
 from st_secretary import commission as cm
 from st_secretary import equipment as eq
 from st_secretary import judge_sync as js
@@ -147,6 +148,13 @@ def _flash(request: Request) -> dict | None:
         return {"kind": "ok", "text": text} if parts else {"kind": "err", "text": "Файлы не выбраны."}
     texts = {
         "created": ("ok", "Соревнование создано. Заполните судейскую коллегию и зачёты и нажмите «Сохранить»."),
+        "backup_made": ("ok", f"Резервная копия сохранена: «{q.get('file', '')}» — в папке «Резервные копии» рядом с "
+                              "папкой «данные». Паспортные данные и сканы в копию не входят."),
+        "restored": ("ok", "Соревнование восстановлено из резервной копии — отдельной папкой, прежние данные не "
+                           "тронуты."),
+        "restore_none": ("err", "Выберите файл резервной копии (.zip)."),
+        "restore_bad": ("err", f"Не получилось восстановить: {q.get('why', '')}. Нужен архив, который сделала кнопка "
+                               "«Сделать копию» или «Скачать копию»."),
         "training": ("ok", "Учебное соревнование создано: 14 команд с выдуманными участниками, этапы дистанций заданы. "
                            "В четырёх заявках ошибки оставлены специально — найдите их в «Предварительных заявках»."),
         "imported": ("ok", "Карточка загружена из Excel. Посмотрите замечания проверки, если они есть."),
@@ -388,7 +396,39 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         f = store.create(comp, card_bytes=data)
         return _redirect(f"{_base(f)}?done=imported")
 
+    @app.post("/restore")
+    async def restore_backup(request: Request):
+        """Соревнование из резервной копии (.zip) — новой папкой, ничего не затирая."""
+        up = (await request.form()).get("backup")
+        if up is None or not getattr(up, "filename", ""):
+            return _redirect("/?done=restore_none")
+        try:
+            name = bk.restore(await up.read(), store.root, app.state.clock())
+        except bk.BackupError as e:
+            return _redirect(_with_done("/", "restore_bad", why=str(e)))
+        return _redirect(f"/c/{quote(name, safe='')}?done=restored")
+
+    @app.post("/open-backups")
+    def open_backups():
+        d = bk.backups_dir(store.root)
+        d.mkdir(parents=True, exist_ok=True)
+        app.state.opener(d)
+        return _redirect("/?done=opened")
+
     # ------------------------------------------------------------ соревнование
+
+    @app.post("/c/{cid}/backup")
+    def backup_now(cid: str):
+        f = folder(cid)
+        path = bk.make(f.path, bk.backups_dir(store.root), app.state.clock())
+        return _redirect(_with_done(f"{_base(f)}#backup", "backup_made", file=path.name))
+
+    @app.get("/c/{cid}/backup.zip")
+    def backup_download(cid: str):
+        """Копия — сразу в браузер (например, сохранить на флешку); она же остаётся в «Резервных копиях»."""
+        f = folder(cid)
+        path = bk.make(f.path, bk.backups_dir(store.root), app.state.clock())
+        return FileResponse(path, filename=path.name, media_type="application/zip")
 
     @app.get("/c/{cid}")
     def overview(request: Request, cid: str):
@@ -404,8 +444,9 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                    "warnings": r.count(WARNING), "fixed": r.count(FIXED),
                    "done": sum(v.status == DONE for v in reviews.values()), "files": len(reviews)}
         adm = adm_totals(commission(f, comp)[1]) if pre else None
+        backups = bk.listing(bk.backups_dir(store.root), f.path.name)
         return page(request, "overview.html", active="", card_issues=card_issues, files=files, pre=pre, adm=adm,
-                    **ctx)
+                    backups=backups[:5], backups_count=len(backups), backups_dir=bk.backups_dir(store.root), **ctx)
 
     @app.post("/c/{cid}/open/{what}")
     def open_thing(request: Request, cid: str, what: str):

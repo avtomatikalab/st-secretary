@@ -959,6 +959,25 @@ def test_help_opens_manual_next_to_program(client, tmp_path, monkeypatch):
     assert 'href="/help"' in client.get("/").text
 
 
+def test_backup_download_and_restore(client, tmp_path, psr_card, opened):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    assert "Копий пока нет" in client.get(base(f)).text
+    r = client.post(base(f) + "/backup", follow_redirects=False)
+    assert "done=backup_made" in r.headers["location"]
+    assert "Последняя копия" in client.get(base(f)).text
+    z = client.get(base(f) + "/backup.zip")
+    assert z.status_code == 200 and z.headers["content-type"] == "application/zip"
+    r = client.post("/restore", files={"backup": ("копия.zip", z.content, "application/zip")}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith("?done=restored")
+    restored = client.app.state.store.all()
+    assert len(restored) == 2 and all(len(x.preapp_files()) == 1 for x in restored)  # прежняя папка на месте
+    assert "Соревнование восстановлено" in client.get(r.headers["location"]).text
+    bad = client.post("/restore", files={"backup": ("x.zip", b"nope", "application/zip")}, follow_redirects=False)
+    assert "done=restore_bad" in bad.headers["location"]
+    assert "Восстановить из резервной копии" in client.get("/").text
+
+
 def test_training_competition_from_home_page(client):
     assert "Создать учебное соревнование" in client.get("/").text
     r = client.post("/training", follow_redirects=False)

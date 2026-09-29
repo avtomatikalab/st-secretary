@@ -194,6 +194,18 @@ def _free_port(start: int) -> int:
     raise UserError(f"Не нашлось свободного порта ({start}–{start + 19}). Закройте лишние программы и запустите снова.")
 
 
+def _auto_backup(store, data: Path) -> None:
+    """Копии соревнований, где что-то изменилось, — при каждом запуске (не мешает работе: в фоне)."""
+    from datetime import datetime
+
+    from st_secretary import backup
+
+    try:
+        backup.auto([f.path for f in store.all()], backup.backups_dir(data), datetime.now())
+    except OSError as e:  # диск занят или переполнен — работать это не мешает
+        print(f"Резервная копия при запуске не сделана: {e}")
+
+
 def cmd_web(a) -> int:
     loading = Loading("Загружаю программу").start()  # первая загрузка библиотек бывает небыстрой
     try:
@@ -242,6 +254,7 @@ def cmd_web(a) -> int:
                 webbrowser.open(url)
 
         threading.Thread(target=announce_when_ready, daemon=True).start()
+        threading.Thread(target=_auto_backup, args=(app.state.store, data), daemon=True).start()
         server.run()
     finally:
         loading.stop()

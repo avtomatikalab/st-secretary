@@ -61,6 +61,22 @@
   </a>
 </div>
 
+<section class="panel" id="backup">
+  <h2>{{ icon("archive") }} Резервная копия</h2>
+  <p class="muted">Копия всей папки соревнования: карточка, заявки, отметки комиссии, результаты, протоколы, документы.
+    Программа делает её сама при каждом запуске, если что-то менялось. Паспортные данные и сканы документов в копию не
+    входят — они только на этом компьютере.</p>
+  {% if backups %}<p>Последняя копия — {{ backups[0].at.strftime("%d.%m.%Y в %H:%M") }}{% if backups[0].auto %} (при запуске){% endif %},
+    {{ backups[0].size_text }}; всего копий: {{ backups_count }}.</p>{% else %}<p>Копий пока нет.</p>{% endif %}
+  <div class="actions">
+    <form method="post" action="{{ base }}/backup"><button class="btn" type="submit">{{ icon("archive", 18) }}Сделать копию сейчас</button></form>
+    <a class="btn btn-ghost" href="{{ base }}/backup.zip">{{ icon("download", 18) }}Скачать копию (.zip) — например, на флешку</a>
+    <form method="post" action="/open-backups"><button class="btn btn-ghost" type="submit">{{ icon("folder", 18) }}Папка с копиями</button></form>
+  </div>
+  <p class="hint">Перенести соревнование на другой ноутбук: скачайте копию и на другом ноутбуке на главной странице нажмите
+    «Восстановить из копии».</p>
+</section>
+
 <h2 class="section-title">Дальше по порядку</h2>
 <ol class="roadmap">
   {% for s in steps[3:] %}
