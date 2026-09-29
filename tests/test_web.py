@@ -745,6 +745,19 @@ def test_contracts_tabel_personal_data_and_documents(client, tmp_path, psr_card,
 
     r = client.post(url + "/template", follow_redirects=False)
     assert "done=ct_template" in r.headers["location"] and f.contract_template.is_file()
-    assert "Используется свой шаблон" in client.get(url).text
+    page = client.get(url).text
+    assert "Свой шаблон <b>Шаблон договора.docx</b> — для:" in page and "Всем — встроенный" not in page
+
+    # у главного судьи — своя форма договора (у заказчика так и есть: с отчётом главного судьи)
+    r = client.post(url + "/template", data={"role": "Главный судья"}, follow_redirects=False)
+    own = f.path / "Шаблон договора — главный судья.docx"
+    assert own.is_file() and opened[-1] == own
+    doc = Document(str(own))
+    doc.add_paragraph("Особое условие для {{Должность}}: отчёт в течение 5 дней.")
+    doc.save(str(own))
+    all_text = "\n".join(p.text for p in Document(io.BytesIO(client.get(url + "/file/all").content)).paragraphs)
+    assert all_text.count("Особое условие") == 1 and "Особое условие для Главный судья" in all_text
+    page = re.sub(r"\s+", " ", client.get(url).text)
+    assert "Свой шаблон <b>Шаблон договора — главный судья.docx</b> — для: главный судья." in page
     client.post(url + "/remove", data={"key": "работяга семен ильич"})
     assert "Работяга" not in client.get(url).text

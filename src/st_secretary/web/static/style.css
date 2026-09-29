@@ -516,6 +516,9 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .ct-tabel .issues-simple { margin: 0 14px 14px; }
 .ct-rates input { width: 120px !important; }
 .ct-fields { margin-top: 12px; }
+.ct-templates { margin: 6px 0; padding-left: 20px; }
+.ct-role-tpl { display: flex; gap: 8px; align-items: center; margin: 0; }
+.ct-role-tpl select { width: auto; }
 
 /* ---------- средний экран: поля зачёта по три в ряд ---------- */
 @media (max-width: 1280px) {

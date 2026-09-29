@@ -169,7 +169,7 @@ def test_blank_personal_and_custom_template(tmp_path, psr_card):
 def test_all_contracts_one_file(tmp_path, psr_card):
     team = [p for p in st.people(psr_card, team_data()) if p.paid]
     many = [ct.contract_values(psr_card, p, CUSTOMER, {}) for p in team]
-    ct.write_contracts(None, many, tmp_path / "all.docx")
+    ct.write_contracts([(None, v) for v in many], tmp_path / "all.docx")
     t = texts_of(Document(str(tmp_path / "all.docx")))
     assert t.count("ДОГОВОР № ______") == 3 and t.count("АКТ № ______") == 3
     for p in team:

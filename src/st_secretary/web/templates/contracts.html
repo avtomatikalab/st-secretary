@@ -116,15 +116,32 @@
   <form method="post" action="{{ base }}/contracts/folder" class="docs-folder"><button class="btn btn-ghost" type="submit">{{ icon("folder") }}Папка «Договоры и табель»</button></form>
 
   <h3>Шаблон договора</h3>
-  {% if template %}
-  <p>Используется свой шаблон: <b>{{ template.name }}</b> ({{ template.parent.name }}).</p>
-  {% if template_unknown %}<p class="text-err">{{ icon("error", 16) }} В шаблоне есть поля, которых программа не знает:
-    {{ template_unknown|join(", ") }} — сверьте их написание со списком ниже.</p>{% endif %}
-  {% else %}
-  <p>Используется встроенный шаблон — обычный договор возмездного оказания услуг с актом. Если у заказчика своя форма,
-    сохраните шаблон в папку соревнования и перенесите в него текст заказчика, оставив поля.</p>
+  {% if templates %}
+  <ul class="ct-templates">
+    {% for t in templates %}
+    <li>Свой шаблон <b>{{ t.path.name }}</b>{% if not t.own %} (в папке «{{ t.path.parent.name }}»){% endif %} — для:
+      {{ t.roles|join(", ")|lower }}.
+      {% if t.unknown %}<span class="text-err">{{ icon("error", 16) }} Поля, которых программа не знает:
+        {{ t.unknown|join(", ") }} — сверьте написание со списком ниже.</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
   {% endif %}
-  <form method="post" action="{{ base }}/contracts/template"><button class="btn" type="submit">{{ icon("edit", 18) }}{% if template and template.parent == folder.path %}Открыть шаблон в Word{% else %}Сохранить встроенный шаблон в папку соревнования и открыть{% endif %}</button></form>
+  {% set with_own = templates|map(attribute="roles")|sum(start=[]) %}
+  {% if team|rejectattr("role", "in", with_own)|selectattr("paid")|list %}
+  <p>{% if templates %}Остальным{% else %}Всем{% endif %} — встроенный шаблон: обычный договор возмездного оказания услуг
+    с актом.</p>
+  {% endif %}
+  <p class="muted">Если у заказчика своя форма, сохраните шаблон в папку соревнования и перенесите в него текст заказчика,
+    оставив поля. Бывает, что формы разные: главному судье — с отчётом, рабочим — «техническое обслуживание». Тогда
+    сделайте шаблон для должности — он будет только у неё.</p>
+  <div class="actions">
+    <form method="post" action="{{ base }}/contracts/template"><button class="btn" type="submit">{{ icon("edit", 18) }}Общий шаблон — открыть в Word</button></form>
+    <form method="post" action="{{ base }}/contracts/template" class="ct-role-tpl">
+      <select name="role" aria-label="Должность для своего шаблона">
+        {% for r in team|map(attribute="role")|unique %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-ghost" type="submit">Шаблон для должности</button></form>
+  </div>
   <details class="howto ct-fields">
     <summary>Поля шаблона — что программа подставляет</summary>
     <p class="muted">Пишутся в двойных фигурных скобках, например <code>{{ "{{ФИО}}" }}</code>. Пустые данные — строка

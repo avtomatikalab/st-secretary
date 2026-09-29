@@ -48,8 +48,7 @@ from st_secretary.web import preapp_form as pf
 from st_secretary.web.review import CHECK, DONE, FIX, SAVE, STATUS_LABEL, is_clean, issue_key
 from st_secretary.web.forms import card_to_form, choices, empty_zachet, form_from_data, form_to_card
 from st_secretary.web.steps import BY_SLUG, STEPS
-from st_secretary.web.store import (COMMISSION_REPORT, CONTRACT_TEMPLATE, IMAGE_TYPES, SUMMARY, CompFolder, Store,
-                                    safe_name)
+from st_secretary.web.store import COMMISSION_REPORT, IMAGE_TYPES, SUMMARY, CompFolder, Store, safe_name
 
 log = logging.getLogger("st_secretary.web")
 HERE = Path(__file__).parent
@@ -184,8 +183,8 @@ def _flash(request: Request) -> dict | None:
         "ct_removed": ("ok", "Убрано из табеля. Личные данные человека остались — пригодятся на других соревнованиях."),
         "ct_person": ("ok", "Сохранено. Личные данные хранятся только на этом компьютере."),
         "ct_doc": ("ok", "Документ сохранён в папке «Договоры и табель» на этом компьютере и открывается."),
-        "ct_template": ("ok", "Шаблон договора «Шаблон договора.docx» — в папке соревнования, открывается в Word. "
-                              "Правьте текст как нужно заказчику, поля в двойных фигурных скобках оставьте — "
+        "ct_template": ("ok", f"Шаблон «{q.get('file', 'Шаблон договора.docx')}» — в папке соревнования, открывается "
+                              "в Word. Правьте текст как нужно заказчику, поля в двойных фигурных скобках оставьте — "
                               "программа будет брать этот файл."),
         "ct_unknown": ("err", f"Документ открывается, но в шаблоне есть поля, которых программа не знает: "
                               f"{q.get('fields', '')}. Они остались в тексте как есть — поправьте их в шаблоне "
@@ -1173,12 +1172,10 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
 
     # ------------------------------------------------------------ договоры, акты, табель
 
-    def contract_template(f: CompFolder) -> Path | None:
-        """Свой шаблон договора: в папке соревнования, затем в папке «данные»; иначе — встроенный."""
-        for p in (f.contract_template, store.root / CONTRACT_TEMPLATE):
-            if p.is_file():
-                return p
-        return None
+    def template_for(f: CompFolder, role: str) -> Path | None:
+        """Свой шаблон договора для должности или общий: в папке соревнования, затем в папке «данные»;
+        None — встроенный."""
+        return ct.find_template([f.path, store.root], role)
 
     def staff_ctx(f: CompFolder, comp) -> dict:
         data = f.contracts()
@@ -1187,15 +1184,20 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         personal = store.personal()
         customer = data.get("customer", {})
         issues = sf.check(team, personal, customer)
-        tpl = contract_template(f)
-        unknown = set()
-        if tpl:
+        used: dict[Path, list[str]] = {}  # свой шаблон → для кого
+        for p in team:
+            if p.paid and (tpl := template_for(f, p.role)):
+                used.setdefault(tpl, []).append(p.role)
+        templates_info = []
+        for tpl, roles in used.items():
             try:
-                unknown = ct.template_fields(tpl) - {k for k, _ in ct.FIELDS}
+                unknown = sorted(ct.template_fields(tpl) - {k for k, _ in ct.FIELDS})
             except Exception:  # noqa: BLE001 — повреждённый файл шаблона: сказать, а не упасть
-                unknown = {"(файл шаблона не открывается)"}
+                unknown = ["(файл шаблона не открывается)"]
+            templates_info.append({"path": tpl, "roles": sorted(set(roles)), "unknown": unknown,
+                                   "own": tpl.parent == f.path})
         return {"data": data, "s": s, "team": team, "personal": personal, "customer": customer, "issues": issues,
-                "totals": sf.totals(team, s["accrual"]), "template": tpl, "template_unknown": sorted(unknown),
+                "totals": sf.totals(team, s["accrual"]), "templates": templates_info,
                 "per_person": {p.key: [i for i in issues if i.person == p.fio] for p in team}}
 
     def staff_parts(f: CompFolder, ctx: dict) -> dict:
@@ -1363,8 +1365,9 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         if kind == "all":
             target = path or out / "Договоры и акты.docx"
             target.parent.mkdir(parents=True, exist_ok=True)
-            many = [ct.contract_values(comp, p, customer, personal.get(p.key, {})) for p in team if p.paid]
-            return target, ct.write_contracts(ctx["template"], many, target)
+            items = [(template_for(f, p.role), ct.contract_values(comp, p, customer, personal.get(p.key, {})))
+                     for p in team if p.paid]
+            return target, ct.write_contracts(items, target)
         if kind == "person":
             p = next((x for x in team if x.key == key), None)
             if p is None:
@@ -1372,7 +1375,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             target = path or out / f"{safe_name(f'{initials(p.fio)} — {p.role.lower()}', 100)}.docx"
             target.parent.mkdir(parents=True, exist_ok=True)
             values = ct.contract_values(comp, p, customer, personal.get(p.key, {}))
-            return target, ct.write_contract(ctx["template"], values, target)
+            return target, ct.write_contract(template_for(f, p.role), values, target)
         raise HTTPException(404)
 
     def contracts_back(f: CompFolder, key: str) -> str:
@@ -1405,13 +1408,20 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                             background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
 
     @app.post("/c/{cid}/contracts/template")
-    def contracts_template(cid: str):
-        """Сохранить встроенный шаблон в папку соревнования — чтобы поправить его в Word под своего заказчика."""
+    async def contracts_template(request: Request, cid: str):
+        """Шаблон в папку соревнования — поправить в Word под форму заказчика. role — шаблон для одной должности
+        (копия общего), иначе — общий (копия встроенного)."""
         f = folder(cid)
-        if not f.contract_template.exists():
-            ct.default_template().save(str(f.contract_template))
-        app.state.opener(f.contract_template)
-        return _redirect(f"{_base(f)}/contracts?done=ct_template#docs")
+        role = " ".join(str((await request.form()).get("role", "")).split())
+        target = f.path / ct.template_name(role)
+        if not target.exists():
+            general = f.path / ct.template_name()
+            if role and general.is_file():
+                shutil.copyfile(general, target)
+            else:
+                ct.default_template().save(str(target))
+        app.state.opener(target)
+        return _redirect(_with_done(f"{_base(f)}/contracts#docs", "ct_template", file=target.name))
 
     @app.post("/c/{cid}/contracts/folder")
     def contracts_folder(cid: str):

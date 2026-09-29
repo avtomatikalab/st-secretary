@@ -252,11 +252,26 @@ def write_contract(template: Path | None, values: dict[str, str], path: str | Pa
     return unknown
 
 
-def write_contracts(template: Path | None, many: list[dict[str, str]], path: str | Path) -> set[str]:
-    """Все договоры с актами одним файлом — каждый с новой страницы (для печати)."""
+def template_name(role: str = "") -> str:
+    """«Шаблон договора.docx» — общий; «Шаблон договора — главный судья.docx» — для одной должности
+    (у заказчика бывают разные формы: главному судье — с отчётом, рабочим — «техническое обслуживание»)."""
+    return f"Шаблон договора — {' '.join(role.lower().split())}.docx" if role else "Шаблон договора.docx"
+
+
+def find_template(folders: list[Path], role: str) -> Path | None:
+    """Шаблон для должности: сначала в первой папке (соревнования) — для должности, затем общий; потом в следующей."""
+    for d in folders:
+        for name in (template_name(role), template_name()):
+            if (d / name).is_file():
+                return d / name
+    return None
+
+
+def write_contracts(items: list[tuple[Path | None, dict[str, str]]], path: str | Path) -> set[str]:
+    """Все договоры с актами одним файлом — каждый с новой страницы (для печати). items — (шаблон, значения)."""
     unknown: set[str] = set()
     base = None
-    for values in many:
+    for template, values in items:
         doc = _load(template)
         unknown |= fill(doc, values)
         if base is None:
