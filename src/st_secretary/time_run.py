@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from fractions import Fraction
 
+from st_secretary import start_list
 from st_secretary.competition import Competition, Zachet
 from st_secretary.disciplines import Status
 from st_secretary.disciplines.speleo import SpeleoRun, standings
@@ -148,12 +149,9 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     expected = str(zdata.get("expected", "")).strip()
     spp = int(spp_set) if spp_set in ("15", "30") else (15 if expected.isdigit() and int(expected) <= 30 else 30)
 
-    def order_key(t: TeamInput):
-        n = re.sub(r"\D", "", t.number)
-        return (0, int(n)) if n else (1, 0)
-
+    planned = start_list.planned_starts(zdata, teams)  # «Время старта — время, указанное в стартовом протоколе»
     rows: list[TeamResult] = []
-    for i, t in enumerate(sorted(teams, key=order_key), start=1):
+    for i, t in enumerate(start_list.ordered(teams, zdata), start=1):
         d = stored.get(t.file, {})
         raw = {k: str(v) for k, v in d.get("points", {}).items() if k in known and str(v).strip() != ""}
         pts, bad, removals = {}, [], 0
@@ -184,6 +182,8 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 bad.append(field)
                 continue
             setattr(r, field, val if val is not None else (Fraction(0) if field == "cutoffs" else None))
+        if r.start is None and "start" not in r.bad and t.file in planned:
+            r.start, r.planned_start = Fraction(planned[t.file]), True
         for sid in [b for b in bad if b in known]:
             st = next(s for s in stages if s.id == sid)
             issues.append(Issue(ERROR, f"«{t.team}», {st.title}: «{raw[sid]}» — не число и не «с» (снятие)",

@@ -10,6 +10,7 @@ import hashlib
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,7 @@ from st_secretary import practice as pt_
 from st_secretary import psr_run as pr
 from st_secretary import results as res
 from st_secretary import staff as sf
+from st_secretary import start_list as sl
 from st_secretary import time_run as tr
 from st_secretary import verify as vf
 from st_secretary.exporters import awards as aw
@@ -42,6 +44,7 @@ from st_secretary.exporters import contracts as ct
 from st_secretary.exporters import final as fin
 from st_secretary.exporters import judges as jd
 from st_secretary.exporters import results_protocol as rp
+from st_secretary.exporters import start_protocol as sp
 from st_secretary.competition import LEVEL_LABELS
 from st_secretary.disciplines import Status
 from st_secretary.exporters.commission_xlsx import write_commission_report
@@ -52,6 +55,7 @@ from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, SEV
 from st_secretary.money import money
 from st_secretary.names import initials
 from st_secretary.qualification import Qual
+from st_secretary.reference import discipline_by_code, norm_edition
 from st_secretary.textclean import from_years
 from st_secretary.web import preapp_form as pf
 from st_secretary.web.board import BoardServer, create_board_app, qr_svg
@@ -214,6 +218,14 @@ def _flash(request: Request) -> dict | None:
         "run_open_protests": ("err", "Есть протесты без решения — сначала запишите решения по ним."),
         "run_official": ("ok", "Результаты утверждены: официальный протокол сохранён в папку «Протоколы» и открывается. "
                                "Места и разряды переданы в «Награждение и документы по итогам»."),
+        "start_drawn": ("ok", "Жеребьёвка проведена — порядок старта ниже. Он сразу действует в таблице результатов и на "
+                              "телефонах судей. Опубликуйте стартовый протокол не позднее чем за час до старта."),
+        "start_saved": ("ok", "Порядок и время старта сохранены."),
+        "start_times": ("ok", "Время старта сохранено."),
+        "start_bad_time": ("err", "Время первого старта — в виде чч:мм, например 10:00."),
+        "start_empty": ("err", "В зачёте нет допущенных команд — жеребьёвать некого."),
+        "start_published": ("ok", f"Стартовый протокол сохранён в папку «Протоколы» и открывается — распечатайте и "
+                                  f"вывесите. Протесты по допуску — до {q.get('until', '')} (п. 8.17)."),
         "judge_issued": ("ok", "Ссылка этапа готова. Прежняя ссылка этого этапа (если была) больше не работает."),
         "judge_revoked": ("ok", "Ссылка этапа отозвана — с неё больше ничего не придёт. Уже присланное сохранено."),
         "board_on": ("ok", "Табло включено для этого соревнования."),
@@ -1501,7 +1513,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                                     [pr.Member(p.entry.name.full, p.entry.qual,
                                                p.entry.qual.label if p.entry.qual is not None else "", p.entry.chip)
                                      for p in people],
-                                    admitted=t.status != cm.REJECTED))
+                                    admitted=t.status != cm.REJECTED, representative=t.team.representative))
         return out
 
     def need_zachet(comp, key: str):
@@ -1520,6 +1532,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
 
     def results_parts(f: CompFolder, z, zdata: dict, run) -> dict:
         return {"base": _base(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text, "ck": tr.clock_text,
+                "tod": tr.time_of_day_text,
                 "res": lambda r: pr.result_text(run, r), "is_time": run.kind == "time",
                 "from_phone": lambda sid, file: js.from_phone(zdata, sid, file),
                 "grid": sorted(run.rows, key=lambda r: r.start_order), "status_label": pr.STATUS_LABEL,
@@ -1797,6 +1810,163 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             raise HTTPException(404)
         return FileResponse(p, filename=p.name, media_type=XLSX)
 
+    # ------------------------------------------------------------ жеребьёвка и стартовые протоколы
+
+    def start_ctx(f: CompFolder, comp, z, teams: list | None = None):
+        """(данные зачёта, команды, ранги составов, стартовый протокол)."""
+        zdata = f.run_data().get("zachety", {}).get(z.key, {})
+        teams = zachet_inputs(f, comp, z) if teams is None else teams
+        try:
+            norms = norm_edition(comp.norms_edition)
+        except KeyError:
+            norms = None
+        fmt = discipline_by_code(z.discipline_code).rank_format
+        ranks = {t.file: sl.team_rank(t.members, fmt, norms) for t in teams}
+        return zdata, teams, ranks, sl.build(z, zdata, teams, ranks, start_default(f, comp)[0])
+
+    def start_default(f: CompFolder, comp) -> tuple[date, str]:
+        """День и время старта по умолчанию — «Начало соревнований» у комиссии по допуску или первый день."""
+        adm = _parse_dt(cm.settings(f.admission())["start_at"])
+        if adm is None:
+            return comp.date_from, ""
+        return adm.date(), f"{adm:%H:%M}" if adm.hour or adm.minute else ""
+
+    def start_name(z) -> str:
+        return f"Стартовый протокол {safe_name(z.key.replace('/', '-'))}.xlsx"
+
+    @app.get("/c/{cid}/start")
+    def start_page(request: Request, cid: str, z: str = ""):
+        f = folder(cid)
+        comp = need_comp(f)
+        if not comp.zachety:
+            return page(request, "start.html", active="start", zachet=None, **comp_ctx(f))
+        zz = need_zachet(comp, z)
+        _, teams, _, lst = start_ctx(f, comp, zz)
+        pub = _parse_dt(lst.published["at"]) if lst.published else None
+        day, first = start_default(f, comp)
+        return page(request, "start.html", active="start", zachet=zz, zachety=comp.zachety, sl=lst,
+                    methods=sl.METHODS, hm=sl.hm_text, rank_text=sp.rank_text, draw_line=sp.draw_line(lst),
+                    zq=urlencode({"z": zz.key}), pub_at=pub, until=pub + PROTEST_HOUR if pub else None,
+                    defaults={"day": day.isoformat(), "first": first}, is_time=tr.is_time_discipline(zz),
+                    publish_by=lst.first_start - PROTEST_HOUR if lst.first_start else None, now=app.state.clock(),
+                    not_admitted=[t.team for t in teams if not t.admitted], **comp_ctx(f))
+
+    @app.post("/c/{cid}/start/draw")
+    async def start_draw(request: Request, cid: str, z: str = ""):
+        """Настройки жеребьёвки и времени старта; с action=draw — провести жеребьёвку (порядок заново)."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        form = await request.form()
+        back = f"{_base(f)}/start?{urlencode({'z': zz.key})}"
+        first = str(form.get("first", "")).strip()
+        try:
+            sl.parse_hm(first)
+        except ValueError:
+            return _redirect(_with_done(back + "#times", "start_bad_time"))
+        method = str(form.get("method", "random"))
+        new = {"method": method if method in sl.METHODS else "random", "groups": str(form.get("groups", "2")).strip(),
+               "strong": "first" if form.get("strong") == "first" else "last",
+               "day": str(form.get("day", "")).strip(), "first": first,
+               "interval": str(form.get("interval", "")).strip().replace(",", ".")}
+        new = {k: v for k, v in new.items() if k in form}  # у жеребьёвки и времени старта — разные формы
+        drawing = form.get("action") == "draw"
+        order, seed = [], None
+        if drawing:
+            zdata, teams, ranks, _ = start_ctx(f, comp, zz)
+            admitted = [t for t in teams if t.admitted]
+            if not admitted:
+                return _redirect(_with_done(back, "start_empty"))
+            st = sl.settings({"draw": {**zdata.get("draw", {}), **new}})
+            seed = secrets.randbelow(900000) + 100000  # шесть цифр — легко записать и проверить
+            order = sl.draw(admitted, st["method"], seed, ranks, st["groups"], st["strong"] == "last")
+        now = app.state.clock()
+
+        def update(d):
+            dr = d.setdefault("draw", {})
+            dr.update(new)
+            if drawing:
+                dr.update(order=order, at=now.isoformat(timespec="minutes"), seed=seed, done_method=new["method"])
+                for k in ("times", "edited"):  # ручные правки — от прежнего порядка
+                    dr.pop(k, None)
+
+        _save_zachet(f, zz.key, update)
+        return _redirect(_with_done(back + ("#order" if drawing else "#times"),
+                                    "start_drawn" if drawing else "start_times"))
+
+    @app.post("/c/{cid}/start/order")
+    async def start_order(request: Request, cid: str, z: str = ""):
+        """Порядок вручную (номера, вытянутые на жеребьёвке, или перестановка) и время старта отдельных команд."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        form = await request.form()
+        _, _, _, lst = start_ctx(f, comp, zz)
+        known = {r.inp.file for r in lst.rows}
+        rows = []
+        for i in range(len(lst.rows)):
+            file = str(form.get(f"file-{i}", ""))
+            if file not in known:
+                continue
+            pos = re.sub(r"\D", "", str(form.get(f"pos-{i}", "")))
+            rows.append((int(pos) if pos else 10**6, i, file, str(form.get(f"time-{i}", "")).strip()))
+        rows.sort()
+        order = [r[2] for r in rows]
+        times = {r[2]: r[3] for r in rows if r[3]}
+        before = [r.inp.file for r in lst.rows]
+        now = app.state.clock()
+
+        def update(d):
+            dr = d.setdefault("draw", {})
+            if not dr.get("at"):  # жеребьёвку провели на совещании — порядок внесён вручную
+                dr.update(at=now.isoformat(timespec="minutes"), done_method="manual", method="manual")
+            elif order != before and dr.get("done_method") != "manual":
+                dr["edited"] = now.isoformat(timespec="minutes")
+            dr["order"] = order + [x for x in dr.get("order", []) if x not in order]
+            dr["times"] = times
+
+        _save_zachet(f, zz.key, update)
+        return _redirect(_with_done(f"{_base(f)}/start?{urlencode({'z': zz.key})}#order", "start_saved"))
+
+    @app.post("/c/{cid}/start/publish")
+    def start_publish(cid: str, z: str = ""):
+        """Стартовый протокол в Excel; время публикации — начало часа на протесты по допуску (п. 8.17)."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        _, _, _, lst = start_ctx(f, comp, zz)
+        back = f"{_base(f)}/start?{urlencode({'z': zz.key})}#publish"
+        if not lst.rows:
+            return _redirect(_with_done(back, "start_empty"))
+        now = app.state.clock()
+        f.protocols_dir.mkdir(exist_ok=True)
+        path = f.protocols_dir / start_name(zz)
+        try:
+            sp.write_start_protocol(comp, lst, path, now)
+        except PermissionError:
+            return _redirect(_with_done(back, "doc_locked"))
+
+        def update(d):
+            dr = d.setdefault("draw", {})
+            if not dr.get("at"):  # без жеребьёвки — по номерам: порядок фиксируется публикацией
+                dr.update(order=[r.inp.file for r in lst.rows], at=now.isoformat(timespec="minutes"),
+                          done_method="number")
+            dr["published"] = {"at": now.isoformat(timespec="minutes"), "fp": lst.fingerprint, "file": path.name}
+
+        _save_zachet(f, zz.key, update)
+        app.state.opener(path)
+        return _redirect(_with_done(back, "start_published", until=f"{now + PROTEST_HOUR:%H:%M}"))
+
+    @app.get("/c/{cid}/start/file")
+    def start_file(cid: str, z: str = ""):
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        info = f.run_data().get("zachety", {}).get(zz.key, {}).get("draw", {}).get("published")
+        p = f.protocols_dir / Path(info["file"]).name if info else None
+        if p is None or not p.is_file():
+            raise HTTPException(404)
+        return FileResponse(p, filename=p.name, media_type=XLSX)
+
     # ------------------------------------------------------------ табло (Wi-Fi ноутбука)
 
     board_helpers = {"pt": pr.points_text, "status_label": pr.STATUS_LABEL, "FINISHED": Status.FINISHED,
@@ -1830,7 +2000,16 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         blocks = []
         for z in comp.zachety:
             _, zdata, run = run_ctx(f, comp, z)
+            start = None
+            if zdata.get("draw", {}).get("published"):  # стартовый протокол — с момента публикации
+                lst = start_ctx(f, comp, z, [r.inp for r in run.rows])[3]
+                pub = _parse_dt(lst.published["at"])
+                start = {"rows": lst.rows, "hm": sl.hm_text,
+                         "label": f"Опубликован {pub:%d.%m в %H:%M}" + (" — после публикации менялся, уточняйте у "
+                                                                         "секретаря" if lst.changed else "")}
             if not run.stages:
+                if start:
+                    blocks.append({"z": z, "run": None, "start": start})
                 continue
             st = protocol_state(zdata, run, now)
             if st["official"] and not st["changed_after_official"]:
@@ -1841,7 +2020,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                     label += f", протесты принимаются до {st['until']:%H:%M}"
             else:
                 label, final = f"Текущие результаты на {now:%H:%M} — не окончательные", False
-            blocks.append({"z": z, "run": run, "label": label, "final": final, **board_helpers,
+            blocks.append({"z": z, "run": run, "label": label, "final": final, **board_helpers, "start": start,
+                           "started": any(r.place or r.filled for r in run.rows),
                            "res": lambda r, run=run: pr.result_text(run, r)})
         return {"title": comp.title, "dates": comp.dates_text, "place": comp.place, "zachety": blocks}
 

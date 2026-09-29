@@ -21,6 +21,10 @@
 <p class="lead">Внесите баллы этапов из протоколов судей: штраф — плюсом, премия — минусом, как в листе «Протокол_группа»
   СЕКРЕТАРЬ_ST. Программа сразу считает сумму, места, ранг по составам, процент от победителя и выполненные разряды.
   Команды — из заявок, номера — из комиссии по допуску.</p>
+{% set dr = zdata.get("draw", {}) %}
+<p class="hint">{% if dr.get("at") %}Порядок команд — как в <a href="{{ base }}/start?{{ zq }}">стартовом протоколе</a>
+  (жеребьёвка {{ dr.at[8:10] }}.{{ dr.at[5:7] }} в {{ dr.at[11:16] }}).{% else %}Порядок команд — по стартовым номерам:
+  <a href="{{ base }}/start?{{ zq }}">жеребьёвка</a> ещё не проводилась.{% endif %}</p>
 
 {% if zachety|length > 1 %}
 <nav class="chips" aria-label="Зачёты">
@@ -127,7 +131,8 @@
       {% if is_time %}{% set d = zdata.get("teams", {}).get(r.inp.file, {}) %}
       <td class="pts-cell"><input type="text" inputmode="numeric" autocomplete="off" name="p-{{ i }}-chip" value="{{ r.chip }}" class="pts-chip" aria-label="{{ r.inp.team }}: чип"></td>
       {% for fld, lbl in (("start", "старт"), ("finish", "финиш"), ("cutoffs", "отсечки")) %}
-      <td class="pts-cell"><input type="text" inputmode="numeric" autocomplete="off" name="p-{{ i }}-{{ fld }}" value="{{ d.get(fld, '') }}" data-stage="{{ fld }}" class="pts-time{% if fld in r.bad %} is-invalid{% endif %}" aria-label="{{ r.inp.team }}: {{ lbl }}" placeholder="{{ 'мм:сс' if fld == 'cutoffs' else 'чч:мм:сс' }}"></td>
+      <td class="pts-cell"><input type="text" inputmode="numeric" autocomplete="off" name="p-{{ i }}-{{ fld }}" value="{{ d.get(fld, '') }}" data-stage="{{ fld }}" class="pts-time{% if fld in r.bad %} is-invalid{% endif %}" aria-label="{{ r.inp.team }}: {{ lbl }}{% if fld == 'start' and r.planned_start %} (по стартовому протоколу {{ tod(r.start) }}){% endif %}"
+        placeholder="{{ tod(r.start) if fld == 'start' and r.planned_start else ('мм:сс' if fld == 'cutoffs' else 'чч:мм:сс') }}"{% if fld == 'start' and r.planned_start %} title="Время старта по стартовому протоколу — впишите, если команда стартовала в другое время"{% endif %}></td>
       {% endfor %}{% endif %}
       {% for s in run.stages %}{% set ph = from_phone(s.id, r.inp.file) %}<td class="pts-cell"><input type="text" inputmode="decimal" autocomplete="off" name="p-{{ i }}-{{ s.id }}" value="{{ r.raw.get(s.id, '') }}" data-stage="{{ s.id }}" class="{% if s.id in r.bad %}is-invalid{% endif %}{% if ph %} pts-phone{% endif %}" aria-label="{{ r.inp.team }}: {{ s.title }}{% if ph %} (с телефона судьи){% endif %}"{% if ph %} title="С телефона судьи этапа"{% endif %}></td>{% endfor %}
       <td class="pts-total" data-total>{% if is_time %}{{ res(r) if r.status == FINISHED else "" }}{% else %}{{ pt(r.total) }}{% endif %}</td>

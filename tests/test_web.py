@@ -440,7 +440,7 @@ def test_overview_steps_and_errors(client, psr_card, opened):
     f = client.app.state.store.create(psr_card)
     r = client.get(base(f))
     assert "Дальше по порядку" in r.text and "Комиссия по допуску" in r.text and "И.П. Судьин, СС1К" in r.text
-    assert "Жеребьёвка или порядок старта" in client.get(base(f) + "/step/start").text
+    assert client.get(base(f) + "/step/start").status_code == 404  # жеребьёвка готова — своя страница
     assert client.get(base(f) + "/step/admission").status_code == 404  # готовый шаг — своя страница
     assert client.get(base(f) + "/step/card").status_code == 404  # готовый шаг открывается не здесь
     assert client.get("/c/нет такого").status_code == 404
@@ -888,6 +888,66 @@ def test_preliminary_protests_official_to_awards(client, tmp_path, psr_card, ope
     r = client.post(url + "/protest" + q, data={"at": "2025-09-21T16:50", "team": "Кедр", "text": "поздно"},
                     follow_redirects=False)
     assert "done=run_protest_late" in r.headers["location"]
+
+
+def test_draw_start_protocol_publish_and_board(client, tmp_path, psr_card, opened):
+    from datetime import datetime
+
+    from openpyxl import load_workbook
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    url = base(f) + "/start"
+    q = "?z=М/Ж_3"
+    page = client.get(url).text
+    assert "1. Жеребьёвка — зачёт М/Ж_3" in page and "Лебедев Антон Игоревич (I)" in page
+    assert "Провести жеребьёвку" in page and "по стартовым номерам" in client.get(base(f) + "/results").text
+
+    clock = {"now": datetime(2025, 9, 19, 20, 15)}
+    client.app.state.clock = lambda: clock["now"]
+    assert "done=start_bad_time" in client.post(url + "/draw" + q, data={"first": "25:00", "action": "save"},
+                                                follow_redirects=False).headers["location"]
+    client.post(url + "/draw" + q, data={"day": "2025-09-20", "first": "10:00", "interval": "5", "action": "save"})
+    r = client.post(url + "/draw" + q, data={"method": "random", "groups": "2", "strong": "last", "action": "draw"},
+                    follow_redirects=False)
+    assert "done=start_drawn" in r.headers["location"]
+    dr = f.run_data()["zachety"]["М/Ж_3"]["draw"]
+    assert sorted(dr["order"]) == ["Кедр.xlsx", "Сосна.xlsx"] and 100000 <= dr["seed"] <= 999999
+    assert dr["first"] == "10:00" and dr["interval"] == "5" and dr["done_method"] == "random"  # время не затёрто
+    page = client.get(url).text
+    assert "Провести жеребьёвку заново" in page and f"число жребия {dr['seed']}" in page
+    assert "как в <a" in client.get(base(f) + "/results").text  # таблица результатов — в порядке старта
+
+    first = dr["order"][0]
+    other = dr["order"][1]
+    r = client.post(url + "/order" + q, data={"file-0": first, "pos-0": "2", "time-0": "",
+                                              "file-1": other, "pos-1": "1", "time-1": "10:30"},
+                    follow_redirects=False)
+    assert "done=start_saved" in r.headers["location"]
+    dr = f.run_data()["zachety"]["М/Ж_3"]["draw"]
+    assert dr["order"] == [other, first] and dr["times"] == {other: "10:30"} and dr["edited"] == "2025-09-19T20:15"
+
+    clock["now"] = datetime(2025, 9, 20, 8, 30)
+    r = client.post(url + "/publish" + q, follow_redirects=False)
+    assert "done=start_published" in r.headers["location"] and "until=09%3A30" in r.headers["location"]
+    path = opened[-1]
+    assert path.parent == f.protocols_dir and path.name == "Стартовый протокол М-Ж_3.xlsx"
+    cells = [c for row in load_workbook(path).active.iter_rows(values_only=True) for c in row if c]
+    assert "СТАРТОВЫЙ ПРОТОКОЛ" in cells and "10:30" in cells and "10:05" in cells
+    assert any("порядок изменён вручную 19.09.2025 в 20:15" in str(c) for c in cells)
+    page = client.get(url).text
+    assert "Опубликован 20.09 в 08:30" in page and "Принимаются до <b>09:30</b>" in page
+    assert client.get(url + "/file" + q).status_code == 200
+
+    client.post(url + "/order" + q, data={"file-0": other, "pos-0": "2", "file-1": first, "pos-1": "1"})
+    assert "опубликуйте заново" in client.get(url).text  # после публикации порядок поменяли
+
+    client.post(base(f) + "/board/toggle", data={"on": "1"})
+    board = TestClient(client.app.state.board.app).get("/").text
+    assert "Стартовый протокол" in board and "Кедр" in board and "10:30" not in board  # время Кедра теперь 10:00
+    assert "после публикации менялся" in board
+    assert client.get(base(f) + "/step/start").status_code == 404
 
 
 def test_board_shows_only_enabled_competitions_and_only_results(client, tmp_path, psr_card):

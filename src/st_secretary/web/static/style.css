@@ -582,6 +582,21 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 }
 
 /* ---------- узкий экран ---------- */
+/* жеребьёвка и стартовые протоколы */
+.st-methods { border: 0; padding: 0; margin: 0 0 12px; display: grid; gap: 8px; }
+.st-methods legend { font-weight: 600; margin-bottom: 4px; }
+.st-method { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.st-method input { margin-top: 4px; width: 18px; height: 18px; flex: none; }
+.st-rank { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: -2px 0 4px 28px; }
+.st-rank label { display: inline-flex; gap: 6px; align-items: center; }
+.st-rank .hint { flex-basis: 100%; margin: 0; }
+input.st-num { width: 64px; text-align: center; }
+input.st-time { width: 92px; text-align: center; }
+input.st-time.is-manual { font-weight: 700; }
+.st-tbl td { vertical-align: middle; } .st-tbl .adm-sub { white-space: normal; }
+.st-rank label { white-space: nowrap; }
+.st-tbl .st-members { font-size: .88rem; min-width: 260px; }
+
 @media (max-width: 1000px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
   .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }

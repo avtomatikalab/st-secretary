@@ -33,6 +33,8 @@
   @media (min-width: 760px) { .wide { display: table-cell; } body { font-size: 18px; } }
   .list a { display: block; padding: 12px 14px; border-top: 1px solid var(--line); color: var(--accent); text-decoration: none; font-weight: 600; }
   footer { color: var(--muted); font-size: .8rem; text-align: center; padding: 8px; }
+  details.start { border-bottom: 1px solid var(--line); }
+  details.start summary { padding: 4px 14px 10px; cursor: pointer; font-weight: 600; color: var(--accent); }
 </style>
 </head>
 <body>
@@ -42,6 +44,21 @@
   {% for b in data.zachety %}{% set run = b.run %}
   <section>
     <h2>{{ b.z.key }} — «{{ b.z.discipline_name }}», {{ b.z.distance_class }} класс</h2>
+    {% if b.start %}
+    <details class="start"{% if not run or not b.started %} open{% endif %}>
+      <summary>Стартовый протокол <span class="sub">— {{ b.start.label }}</span></summary>
+      <table>
+        <thead><tr><th class="place">№ п/п</th><th>Команда</th><th class="num">Старт</th></tr></thead>
+        <tbody>
+        {% for r in b.start.rows %}
+        <tr><td class="place">{{ r.pos }}</td><td>{{ r.inp.team }}{% if r.inp.number %} (№ {{ r.inp.number }}){% endif %}<span class="terr">{{ r.inp.territory }}</span></td>
+          <td class="num res">{{ b.start.hm(r.time) or "—" }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+    {% if run %}
     <p class="label{% if not b.final %} warn{% endif %}">{{ b.label }}</p>
     {% if run.rows %}
     <table>
@@ -61,6 +78,7 @@
       </tbody>
     </table>
     {% else %}<p class="label">Команд пока нет.</p>{% endif %}
+    {% endif %}
   </section>
   {% endfor %}
 </main>

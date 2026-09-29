@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_form.html" import issue_list %}
+{% block title %}Жеребьёвка и стартовые протоколы — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Жеребьёвка и стартовые протоколы</h1>
+{% if not zachet %}
+<div class="panel panel-warn"><h2>{{ icon("alert") }} В карточке нет зачётов</h2>
+  <p>Добавьте зачёт (группа и класс дистанции) в <a href="{{ base }}/card/edit">карточке соревнования</a>.</p></div>
+{% else %}
+<p class="lead">Очерёдность старта определяется жеребьёвкой — для каждого зачёта отдельно (Правила, раздел 3, п. 8.4).
+  В протокол попадают команды, допущенные <a href="{{ base }}/admission">комиссией по допуску</a>. Порядок старта сразу
+  действует в <a href="{{ base }}/results?{{ zq }}">таблице результатов</a> и на телефонах судей. Стартовый протокол
+  публикуется не позднее чем за час до старта.</p>
+
+{% if zachety|length > 1 %}
+<nav class="chips" aria-label="Зачёты">
+  {% for x in zachety %}<a class="chip{% if x.key == zachet.key %} is-active{% endif %}" href="{{ base }}/start?z={{ x.key|urlencode }}"{% if x.key == zachet.key %} aria-current="page"{% endif %}>{{ x.key }}</a>{% endfor %}
+</nav>
+{% endif %}
+
+<div class="tiles">
+  <div class="tile"><b>{{ sl.rows|length }}</b><span>команд в протоколе {{ zachet.key }}</span></div>
+  <div class="tile {% if sl.drawn %}tile-fixed{% endif %}"><b>{{ sl.drawn_at.strftime("%d.%m %H:%M") if sl.drawn else "нет" }}</b><span>жеребьёвка</span></div>
+  <div class="tile"><b>{{ sl.first_start.strftime("%H:%M") if sl.first_start else "—" }}</b><span>первый старт{% if sl.start_day %}, {{ sl.start_day.strftime("%d.%m") }}{% endif %}</span></div>
+  <div class="tile {% if sl.published and not sl.changed %}tile-fixed{% endif %}"><b>{{ pub_at.strftime("%H:%M") if pub_at else "нет" }}</b><span>опубликован</span></div>
+</div>
+
+{% if sl.issues %}<div class="panel">{{ issue_list(sl.issues) }}</div>{% endif %}
+{% if not_admitted %}<p class="hint">Не допущены — в протокол не входят: {{ not_admitted|join(", ") }}.</p>{% endif %}
+
+<section class="panel" id="draw">
+  <h2>1. Жеребьёвка — зачёт {{ zachet.key }}</h2>
+  {% if sl.drawn %}<p><span class="status-badge gear-ok">{{ icon("check", 14) }} проведена</span> {{ draw_line }}</p>{% endif %}
+  <form method="post" action="{{ base }}/start/draw?{{ zq }}">
+    <fieldset class="st-methods">
+      <legend>Способ</legend>
+      {% for key, label in methods.items() %}
+      <label class="st-method"><input type="radio" name="method" value="{{ key }}"{% if sl.settings.method == key %} checked{% endif %}>
+        <span>{{ label }}</span></label>
+      {% if key == "rank" %}
+      <div class="st-rank">
+        <label>Групп <input type="text" inputmode="numeric" name="groups" value="{{ sl.settings.groups }}" class="st-num" aria-label="Число групп"></label>
+        <label>Сильные стартуют <select name="strong" aria-label="Кто стартует первым">
+          <option value="last">последними</option><option value="first"{% if sl.settings.strong == "first" %} selected{% endif %}>первыми</option></select></label>
+        <span class="hint">Ранг состава — баллы разрядов участников, как в стартовом протоколе СЕКРЕТАРЬ_ST.</span>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </fieldset>
+    <p class="hint">Компьютерная жеребьёвка случайными числами допускается Правилами. Программа записывает время
+      и число жребия — их видно в протоколе. «По жеребьёвке на совещании» — кнопка расставит команды по номерам,
+      затем впишите в колонку «Порядок» номера, которые вытянули представители, и нажмите «Сохранить порядок».</p>
+    <button class="btn btn-primary" type="submit" name="action" value="draw"{% if sl.drawn %} data-confirm="Жеребьёвка уже проведена {{ sl.drawn_at.strftime('%d.%m в %H:%M') }}. Провести заново? Порядок старта изменится{% if sl.published %}, стартовый протокол придётся опубликовать заново{% endif %}."{% endif %}>
+      {{ icon("shuffle", 18) }}{% if sl.drawn %}Провести жеребьёвку заново{% else %}Провести жеребьёвку{% endif %}</button>
+  </form>
+</section>
+
+<section class="panel" id="times">
+  <h2>2. Время старта</h2>
+  <form method="post" action="{{ base }}/start/draw?{{ zq }}" class="grid">
+    <div class="field span-3"><label for="f-day">День старта</label>
+      <input id="f-day" type="date" name="day" value="{{ sl.settings.day or defaults.day }}"></div>
+    <div class="field span-3"><label for="f-first">Первый старт, чч:мм</label>
+      <input id="f-first" type="text" name="first" value="{{ sl.settings.first or defaults.first }}" placeholder="10:00" inputmode="numeric"></div>
+    <div class="field span-3"><label for="f-iv">Интервал, минут</label>
+      <input id="f-iv" type="text" name="interval" value="{{ sl.settings.interval }}" placeholder="5" inputmode="decimal"></div>
+    <div class="span-12"><p class="hint">Без времени первого старта протокол будет без времени — только очерёдность.
+      Интервал 0 — все стартуют одновременно. Время отдельной команды можно поправить в таблице ниже.
+      {% if is_time %}В этом зачёте время из протокола — время старта команды, если старт не вписан и не загружен из SPORTident
+      (раздел 3, часть 8, п. 1.5.5).{% endif %}</p>
+      <button class="btn" type="submit" name="action" value="save">{{ icon("check", 18) }}Сохранить время старта</button></div>
+  </form>
+</section>
+
+<section class="panel" id="order">
+  <h2>3. Порядок старта</h2>
+  {% if not sl.rows %}
+  <p>Допущенных команд в зачёте {{ zachet.key }} пока нет. Команды берутся из <a href="{{ base }}/preapps">заявок</a>,
+    допуск — в <a href="{{ base }}/admission">комиссии по допуску</a>.</p>
+  {% else %}
+  <p class="muted">Порядок — номер в очереди старта: поменяйте числа и нажмите «Сохранить порядок», программа расставит команды
+    по ним. Время — пустое значит «по расчёту» (серым); вписанное — для этой команды вручную.</p>
+  <form method="post" action="{{ base }}/start/order?{{ zq }}" data-guard>
+  <div class="table-wrap">
+  <table class="tbl st-tbl">
+    <thead><tr><th>Порядок</th><th>№</th><th>Команда</th><th>Состав (разряд)</th><th>Ранг</th><th>Время старта</th></tr></thead>
+    <tbody>
+    {% for r in sl.rows %}{% set i = loop.index0 %}
+    <tr{% if sl.drawn and not r.drawn %} class="sev-warning"{% endif %}>
+      <td><input type="text" inputmode="numeric" name="pos-{{ i }}" value="{{ r.pos }}" class="st-num" aria-label="{{ r.inp.team }}: порядок старта">
+        <input type="hidden" name="file-{{ i }}" value="{{ r.inp.file }}"></td>
+      <td>{{ r.inp.number or "—" }}</td>
+      <td><b>{{ r.inp.team }}</b><span class="adm-sub">{{ r.inp.territory }}{% if r.inp.representative %} · {{ r.inp.representative }}{% endif %}</span>
+        {% if sl.drawn and not r.drawn %}<span class="adm-sub text-warn">не было при жеребьёвке</span>{% endif %}</td>
+      <td class="st-members">{% for m in r.inp.members %}{{ m.fio }} ({{ m.qual_label or "б/р" }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
+      <td>{{ rank_text(r.rank) or "—" }}</td>
+      <td><input type="text" inputmode="numeric" name="time-{{ i }}" value="{{ hm(r.time) if r.manual_time else '' }}"
+                 placeholder="{{ hm(r.time) if not r.manual_time else '' }}" class="st-time{% if r.manual_time %} is-manual{% endif %}"
+                 aria-label="{{ r.inp.team }}: время старта"></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <button class="btn" type="submit">{{ icon("check", 18) }}Сохранить порядок</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if sl.rows %}
+<section class="panel" id="publish">
+  <h2>4. Стартовый протокол</h2>
+  <ol class="res-steps">
+    <li class="{% if sl.published and not sl.changed %}is-done{% endif %}"><b>Опубликовать.</b>
+      {% if sl.published %}Опубликован {{ pub_at.strftime("%d.%m в %H:%M") }}
+        (<a href="{{ base }}/start/file?{{ zq }}">скачать</a>).
+        {% if sl.changed %}<span class="text-err">{{ icon("error", 16) }} После публикации порядок или время менялись —
+          опубликуйте заново.</span>{% endif %}
+      {% else %}Программа сохранит протокол в Excel (папка «Протоколы») и откроет его — распечатайте и вывесите на стенд
+        информации.{% endif %}
+      <form method="post" action="{{ base }}/start/publish?{{ zq }}" class="res-inline"{% if not sl.drawn %} data-confirm="Жеребьёвка не проводилась — опубликовать протокол в порядке стартовых номеров?"{% endif %}>
+        <button class="btn{% if not sl.published or sl.changed %} btn-primary{% endif %}" type="submit">{{ icon("file", 18) }}{% if sl.published %}Опубликовать заново{% else %}Опубликовать стартовый протокол{% endif %}</button></form></li>
+    <li class="{% if sl.published and sl.first_start and (sl.first_start - pub_at).total_seconds() >= 3600 %}is-done{% endif %}"><b>Не позднее чем за час до старта</b> (п. 8.4).
+      {% if sl.first_start %}Первый старт — {{ sl.first_start.strftime("%d.%m в %H:%M") }}: опубликуйте до
+        <b>{{ publish_by.strftime("%H:%M") }}</b>{% if publish_by.date() != sl.first_start.date() %} накануне{% endif %}.
+      {% else %}Укажите день и время первого старта — программа напомнит, до какого времени опубликовать.{% endif %}</li>
+    <li class="{% if until and until <= now %}is-done{% endif %}"><b>Час на протесты по допуску</b> (п. 8.17).
+      {% if until %}Принимаются до <b>{{ until.strftime("%H:%M") }}</b> и рассматриваются до старта.
+      {% else %}Начнётся после публикации.{% endif %}</li>
+  </ol>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

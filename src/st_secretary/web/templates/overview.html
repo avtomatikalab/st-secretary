@@ -62,13 +62,12 @@
 </div>
 
 <h2 class="section-title">Дальше по порядку</h2>
-<p class="muted">Эти шаги появятся в следующих версиях. Нажмите, чтобы посмотреть, что в них будет.</p>
 <ol class="roadmap">
-  {% for s in steps if not s.ready %}
+  {% for s in steps[3:] %}
   <li><a href="{{ step_url(base, s) }}">
     <span class="step-num">{{ steps.index(s) + 1 }}</span>
     <div><b>{{ s.title }}</b><span>{{ s.lead }}</span></div>
-    <span class="soon">этап {{ s.stage }}</span>
+    {% if not s.ready %}<span class="soon">этап {{ s.stage }}</span>{% endif %}
   </a></li>
   {% endfor %}
 </ol>

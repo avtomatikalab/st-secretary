@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass, field
 from fractions import Fraction
 
+from st_secretary import start_list
 from st_secretary.competition import Competition, Zachet
 from st_secretary.disciplines import Status
 from st_secretary.disciplines.psr import (
@@ -109,6 +110,7 @@ class TeamInput:
     number: str  # стартовый номер (из комиссии по допуску)
     members: list[Member]
     admitted: bool = True
+    representative: str = ""
 
 
 @dataclass
@@ -134,6 +136,7 @@ class TeamResult:
     removals: int = 0  # снятий с этапов
     chip: str = ""
     auto_status: bool = False  # статус поставлен программой (превышено КВ)
+    planned_start: bool = False  # старт не вписан — взят из стартового протокола
 
     @property
     def filled(self) -> int:
@@ -177,11 +180,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     issues: list[Issue] = []
     rows: list[TeamResult] = []
 
-    def order_key(t: TeamInput):
-        n = re.sub(r"\D", "", t.number)
-        return (0, int(n)) if n else (1, 0)
-
-    for i, t in enumerate(sorted(teams, key=order_key), start=1):
+    for i, t in enumerate(start_list.ordered(teams, zdata), start=1):  # порядок старта — по жеребьёвке
         d = stored.get(t.file, {})
         raw = {k: str(v) for k, v in d.get("points", {}).items() if k in known and str(v).strip() != ""}
         pts, bad = {}, []

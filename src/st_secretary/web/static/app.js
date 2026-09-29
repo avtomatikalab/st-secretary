@@ -65,6 +65,13 @@
     });
   });
 
+  // --- Подтверждение у отдельной кнопки (например, «Провести жеребьёвку» заново).
+  document.querySelectorAll("button[data-confirm]").forEach(function (b) {
+    b.addEventListener("click", function (e) {
+      if (!window.confirm(b.dataset.confirm)) e.preventDefault();
+    });
+  });
+
   // --- Долгие действия: показать, что идёт работа.
   document.querySelectorAll("form[data-busy]").forEach(function (form) {
     form.addEventListener("submit", function () {
