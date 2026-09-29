@@ -202,7 +202,9 @@ def cmd_web(a) -> int:
 
             from st_secretary.web.app import create_app
         except ImportError as e:
-            raise UserError(f"Не установлены библиотеки для работы в браузере ({e.name}). Выполните: uv sync") from None
+            fix = ("Распакуйте архив программы заново (папку «данные» не трогайте)" if os.environ.get("ST_PORTABLE")
+                   else "Выполните: uv sync")
+            raise UserError(f"Не установлены библиотеки для работы в браузере ({e.name}). {fix}") from None
 
         if _already_running(a.port):  # второй запуск — просто открыть уже работающую программу
             loading.stop()
