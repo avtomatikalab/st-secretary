@@ -541,6 +541,10 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .pts-grid .pts-total, .pts-grid .pts-place { text-align: right; font-weight: 700; white-space: nowrap; }
 .pts-grid select { width: auto; min-height: 30px; font-size: .82rem; }
 .pts-actions { padding: 8px 0 0; }
+.pts-cell input.pts-phone, .pts-legend { background: var(--info-bg); border-color: var(--info-line); color: var(--info); }
+.pts-legend { padding: 0 4px; border-radius: 4px; border: 1px solid var(--info-line); }
+.jd-link { font-size: .85rem; }
+.jd-act { white-space: nowrap; } .jd-act form { display: inline-block; margin: 2px 0; }
 .res-tbl .res-num { text-align: right; white-space: nowrap; }
 .res-tbl tr.res-out td { color: var(--muted); }
 .res-steps { margin: 0 0 16px; padding-left: 22px; display: grid; gap: 12px; }

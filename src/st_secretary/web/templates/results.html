@@ -6,6 +6,7 @@
   <td><input type="text" name="st-{{ i }}-tour" value="{{ s.tour }}" placeholder="Тур 1" aria-label="Тур"><input type="hidden" name="st-{{ i }}-id" value="{{ s.id }}"></td>
   <td><input type="text" name="st-{{ i }}-name" value="{{ s.name }}" placeholder="Название этапа" aria-label="Название этапа"></td>
   <td><input type="text" inputmode="decimal" name="st-{{ i }}-max" value="{{ s.max or '' }}" aria-label="МШ этапа"></td>
+  <td><input type="text" inputmode="numeric" name="st-{{ i }}-kv" value="{{ s.kv or '' }}" aria-label="КВ этапа, минут"></td>
   <td class="cell-action"><button type="button" class="icon-btn" data-remove-row data-confirm="Убрать этап? Внесённые по нему баллы перестанут учитываться." title="Убрать" aria-label="Убрать">×</button></td>
 </tr>
 {%- endmacro %}
@@ -36,8 +37,8 @@
 
 <details class="panel howto" id="stages"{% if not run.stages %} open{% endif %}>
   <summary>Этапы дистанции {{ z.key }}{% if run.stages %} — {{ run.stages|length }}{% endif %}</summary>
-  <p class="muted">Этапы по порядку, с туром. МШ (максимальный штраф этапа) нужен только для фактически пройденного класса —
-    его можно не заполнять. Бонусы и премии — отдельным этапом (например, тур «Бонус»).</p>
+  <p class="muted">Этапы по порядку, с туром. МШ (максимальный штраф этапа) нужен только для фактически пройденного класса,
+    КВ этапа — для таймера на телефоне судьи; их можно не заполнять. Бонусы и премии — отдельным этапом (тур «Бонус»).</p>
   <form method="post" action="{{ base }}/results/import?{{ zq }}" enctype="multipart/form-data" class="res-import"{% if run.stages %} data-confirm="Заменить этапы и баллы зачёта {{ z.key }} данными из рабочей книги?"{% endif %}>
     <label class="btn">{{ icon("upload", 18) }}Загрузить этапы и баллы из СЕКРЕТАРЬ_ST (.xls)
       <input type="file" name="book" accept=".xls" class="visually-hidden" data-autosubmit></label>
@@ -46,8 +47,8 @@
   <form method="post" action="{{ base }}/results/stages?{{ zq }}" data-guard>
     <div class="table-wrap">
     <table class="tbl form-tbl res-stages">
-      <colgroup><col class="c-tour"><col><col class="c-max"><col class="c-act"></colgroup>
-      <thead><tr><th>Тур</th><th>Этап</th><th>МШ</th><th></th></tr></thead>
+      <colgroup><col class="c-tour"><col><col class="c-max"><col class="c-max"><col class="c-act"></colgroup>
+      <thead><tr><th>Тур</th><th>Этап</th><th>МШ</th><th>КВ, мин</th><th></th></tr></thead>
       <tbody id="res-stages" data-next="{{ zdata.get('stages', [])|length }}">
         {% for s in zdata.get("stages", []) %}{{ stage_row(loop.index0, s) }}{% endfor %}
       </tbody>
@@ -69,7 +70,7 @@
       когда у всех этапов задан МШ. Правило равенства — из Положения или Условий (часть 4, п. 6.1.2).</p>
     <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить этапы</button>
   </form>
-  <template id="tpl-stage">{{ stage_row("__i__", {"id": "", "tour": run.tours[-1] if run.tours else "Тур 1", "name": "", "max": ""}) }}</template>
+  <template id="tpl-stage">{{ stage_row("__i__", {"id": "", "tour": run.tours[-1] if run.tours else "Тур 1", "name": "", "max": "", "kv": ""}) }}</template>
 </details>
 
 {% if not run.rows %}
@@ -79,7 +80,9 @@
 <section class="panel" id="points">
   <h2>Баллы по этапам</h2>
   <p class="muted">Всё сохраняется сразу. Enter — на команду ниже, как в Excel; Tab — на следующий этап. Пустая клетка — этап
-    не внесён (0 баллов). Команда снята или не финишировала — выберите статус: место ей не присуждается.</p>
+    не внесён (0 баллов). Команда снята или не финишировала — выберите статус: место ей не присуждается.
+    <span class="pts-legend">Синим</span> — пришло с <a href="{{ base }}/judges?{{ zq }}">телефона судьи этапа</a>; чтобы увидеть
+    новое с телефонов, обновите страницу (F5).</p>
   <form method="post" action="{{ base }}/results/points?{{ zq }}" data-points>
   <div class="table-wrap pts-wrap">
   <table class="tbl pts-grid">
@@ -94,7 +97,7 @@
     <tr data-team="{{ r.inp.file }}">
       <td class="pts-sticky pts-n">{{ r.inp.number or "—" }}<input type="hidden" name="p-{{ i }}-file" value="{{ r.inp.file }}"></td>
       <td class="pts-sticky pts-team"><b>{{ r.inp.team }}</b></td>
-      {% for s in run.stages %}<td class="pts-cell"><input type="text" inputmode="decimal" autocomplete="off" name="p-{{ i }}-{{ s.id }}" value="{{ r.raw.get(s.id, '') }}" data-stage="{{ s.id }}"{% if s.id in r.bad %} class="is-invalid"{% endif %} aria-label="{{ r.inp.team }}: {{ s.title }}"></td>{% endfor %}
+      {% for s in run.stages %}{% set ph = from_phone(s.id, r.inp.file) %}<td class="pts-cell"><input type="text" inputmode="decimal" autocomplete="off" name="p-{{ i }}-{{ s.id }}" value="{{ r.raw.get(s.id, '') }}" data-stage="{{ s.id }}" class="{% if s.id in r.bad %}is-invalid{% endif %}{% if ph %} pts-phone{% endif %}" aria-label="{{ r.inp.team }}: {{ s.title }}{% if ph %} (с телефона судьи){% endif %}"{% if ph %} title="С телефона судьи этапа"{% endif %}></td>{% endfor %}
       <td class="pts-total" data-total>{{ pt(r.total) }}</td>
       <td class="pts-place" data-place>{{ r.place or status_short[r.status] or "—" }}</td>
       <td><select name="p-{{ i }}-status" aria-label="{{ r.inp.team }}: статус">

@@ -937,3 +937,60 @@ def test_board_qr_and_addresses():
     svg = qr_svg("http://192.168.0.2:8780/")
     assert svg.startswith("<svg") and "</svg>" in svg
     assert all(not ip.startswith("127.") for ip in lan_addresses())
+
+
+def test_judge_phone_link_sync_and_conflicts(client, tmp_path, psr_card):
+    import json
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    q = "?z=М/Ж_3"
+    client.post(base(f) + "/results/stages" + q, data={"st-0-tour": "Тур 1", "st-0-name": "Узлы", "st-0-kv": "15",
+                                                        "st-1-tour": "Тур 1", "st-1-name": "Бивак"})
+    page = client.get(base(f) + "/judges" + q).text
+    assert "Ссылки этапов — зачёт М/Ж_3" in page and page.count("Выдать ссылку") == 2
+    r = client.post(base(f) + "/judges/link" + q, data={"stage": "s1"}, follow_redirects=False)
+    assert "done=judge_issued" in r.headers["location"]
+    token = next(iter(f.run_data()["judge_links"]))
+
+    phone = TestClient(client.app.state.board.app)
+    assert "Ссылка не действует" in phone.get("/j/нетакой").text
+    p = phone.get(f"/j/{token}")
+    assert p.status_code == 200 and p.headers["cache-control"] == "no-store" and "Тур 1 · Узлы" in p.text
+    data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', p.text, re.S).group(1))
+    assert [t["team"] for t in data["teams"]] == ["Кедр", "Сосна"] and data["stage"]["kv"] == 15
+    assert data["sync_url"] == f"/j/{token}/sync" and data["records"] == {}
+
+    body = {"device": "т-abc", "records": [
+        {"file": "Кедр.xlsx", "points": "20", "arrive": "10:05:00", "leave": "10:17:00", "updated": 1000},
+        {"file": "Сосна.xlsx", "points": "", "arrive": "10:20:00", "removed": True, "reason": "опасно", "updated": 1000},
+        {"file": "../../Карточка_соревнования.xlsx", "points": "1", "updated": 1000}]}
+    j = phone.post(f"/j/{token}/sync", json=body).json()
+    assert j["ok"] and j["saved"] == ["Кедр.xlsx", "Сосна.xlsx"]  # чужой файл — не записан
+    assert f.run_data()["zachety"]["М/Ж_3"]["teams"]["Кедр.xlsx"]["points"]["s1"] == "20"
+    res = client.get(base(f) + "/results" + q).text
+    assert 'value="20" data-stage="s1" class=" pts-phone"' in res
+    assert "«Сосна», Тур 1 · Узлы: судья этапа отметил снятие с этапа: опасно" in res
+    jp = client.get(base(f) + "/judges" + q).text
+    assert "2 из 2" in jp and f"/judges/phone/{token}" in jp  # судья прислал обе команды; открыть страницу судьи здесь
+    local = client.get(base(f) + f"/judges/phone/{token}").text
+    assert f"/judges/phone/{token}/sync" in local  # на ноутбуке — отправка в саму программу, без Wi-Fi
+
+    # секретарь поправил по протесту — телефон таблицу не перезаписывает, расхождение видно
+    by = {name: i for i, name in re.findall(r'name="p-(\d)-file" value="([^"]+)"', res)}
+    client.post(base(f) + "/results/points" + q, data={f"p-{i}-file": n for n, i in by.items()}
+                | {f"p-{by['Кедр.xlsx']}-s1": "25"})
+    body["records"] = [{"file": "Кедр.xlsx", "points": "18", "updated": 2000}]
+    phone.post(f"/j/{token}/sync", json=body)
+    res = client.get(base(f) + "/results" + q).text
+    assert 'value="25"' in res and "«Кедр», Тур 1 · Узлы: судья этапа прислал 18" in res and "в таблице 25" in res
+
+    again = phone.get(f"/j/{token}").text  # на телефон приходят уже принятые записи (например, с другого телефона)
+    recs = json.loads(re.search(r'id="data">(.*?)</script>', again, re.S).group(1))["records"]
+    assert recs["Кедр.xlsx"]["points"] == "18" and recs["Кедр.xlsx"]["file"] == "Кедр.xlsx"
+    client.post(base(f) + "/judges/link" + q, data={"stage": "s1", "do": "revoke"})
+    r = phone.post(f"/j/{token}/sync", json=body)
+    assert r.status_code == 404 and "ссылка больше не действует" in r.json()["error"]
+    assert phone.post(f"/j/{token}/sync", content=b"not json").status_code == 400
+    assert "Раздача по Wi-Fi не включена" in client.get(base(f) + "/judges/print" + q).text

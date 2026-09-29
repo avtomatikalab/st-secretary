@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Карточки судей этапов — {{ comp.title }}</title>
+<style>
+  body { font: 14px/1.35 "Segoe UI", Arial, sans-serif; color: #111; margin: 16px; background: #fff; }
+  h1 { font-size: 18px; margin: 0 0 4px; } .sub { color: #555; margin: 0 0 12px; }
+  .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10mm; }
+  .card { border: 1px dashed #888; border-radius: 6px; padding: 8mm; break-inside: avoid; text-align: center; }
+  .card h2 { font-size: 20px; margin: 0; } .tour { color: #555; margin: 2px 0 8px; }
+  .card svg { width: 55mm; height: 55mm; }
+  .link { font-family: Consolas, monospace; font-size: 12px; word-break: break-all; margin: 6px 0 0; }
+  .how { font-size: 12px; color: #333; margin: 8px 0 0; text-align: left; }
+  .noprint { margin: 0 0 12px; }
+  @media print { .noprint { display: none; } body { margin: 0; } }
+</style>
+</head>
+<body>
+<p class="noprint"><button onclick="window.print()">Распечатать</button></p>
+<h1>{{ comp.title }}</h1>
+<p class="sub">Зачёт {{ z.key }} — ссылки судей этапов. Подключите телефон к Wi-Fi ноутбука секретариата и наведите камеру на QR-код.</p>
+{% if not running %}
+<p><b>Раздача по Wi-Fi не включена</b> — включите её на странице «Телефоны судей этапов», затем откройте карточки снова:
+  адрес в QR-коде зависит от сети ноутбука.</p>
+{% elif not cards %}
+<p><b>У этапов ещё нет ссылок</b> — выдайте их на странице «Телефоны судей этапов».</p>
+{% else %}
+<div class="cards">
+  {% for c in cards %}
+  <div class="card">
+    <h2>{{ c.s.name }}</h2>
+    <p class="tour">{{ c.s.tour }}{% if c.s.kv_minutes %} · КВ {{ c.s.kv_minutes }} мин{% endif %}</p>
+    {{ c.qr|safe }}
+    <p class="link">{{ c.link }}</p>
+    <p class="how">Вкладку не закрывать до конца работы этапа. Без связи записи хранятся в телефоне и уходят на ноутбук,
+      когда телефон снова в Wi-Fi.</p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+</body>
+</html>

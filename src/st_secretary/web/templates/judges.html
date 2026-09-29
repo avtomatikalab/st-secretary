@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Телефоны судей этапов — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Телефоны судей этапов</h1>
+{% if not zachet %}
+<div class="panel panel-warn"><h2>{{ icon("alert") }} В карточке нет зачётов</h2>
+  <p>Добавьте зачёт в <a href="{{ base }}/card/edit">карточке соревнования</a>, затем этапы — на странице результатов.</p></div>
+{% else %}
+<p class="lead">Судья этапа открывает на телефоне ссылку своего этапа (QR-код) и отмечает у команд прибытие, убытие,
+  баллы этапа, снятие с причиной. На дистанции связь не нужна: всё хранится в телефоне и приходит в
+  <a href="{{ base }}/results?{{ zq }}">таблицу баллов</a>, когда телефон снова в Wi-Fi ноутбука. Если секретарь уже вписал
+  в клетку другое (например, после протеста), таблица не меняется — расхождение видно в результатах.</p>
+
+{% if zachety|length > 1 %}
+<nav class="chips" aria-label="Зачёты">
+  {% for x in zachety %}<a class="chip{% if x.key == zachet.key %} is-active{% endif %}" href="{{ base }}/judges?z={{ x.key|urlencode }}">{{ x.key }}</a>{% endfor %}
+</nav>
+{% endif %}
+
+<section class="panel">
+  <h2>1. Раздача по Wi-Fi</h2>
+  {% if running %}
+  <p><span class="status-badge gear-ok">{{ icon("check", 14) }} работает</span>
+    {% if urls %}— телефоны судей открывают ссылки по адресу <code>{{ urls[0] }}</code>{% endif %}</p>
+  {% if not urls %}<p class="text-warn">{{ icon("alert", 16) }} Ноутбук не подключён ни к какой сети — включите точку доступа
+    Wi-Fi и подключите к ней ноутбук и телефоны судей.</p>{% endif %}
+  {% else %}
+  <p>Та же раздача, что и для табло. Телефоны судей подключаются к Wi-Fi ноутбука на базе — перед выходом на этапы.</p>
+  <form method="post" action="{{ base }}/judges/server?{{ zq }}" data-busy="Запускаю…">
+    <button class="btn btn-primary" type="submit">{{ icon("wifi-off", 18) }}Раздать по Wi-Fi</button></form>
+  {% if error %}<p class="text-err">{{ icon("error", 16) }} {{ error }}</p>{% endif %}
+  <p class="hint">При первом включении Windows спросит разрешение в брандмауэре — разрешите для частной сети.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>2. Ссылки этапов — зачёт {{ zachet.key }}</h2>
+  {% if not stages %}
+  <p>Этапов пока нет — задайте их на <a href="{{ base }}/results?{{ zq }}#stages">странице результатов</a>.</p>
+  {% else %}
+  <div class="actions">
+    <form method="post" action="{{ base }}/judges/link?{{ zq }}"><input type="hidden" name="stage" value="*">
+      <button class="btn" type="submit">{{ icon("plus", 18) }}Ссылки всем этапам без ссылки</button></form>
+    <a class="btn btn-ghost" href="{{ base }}/judges/print?{{ zq }}" target="_blank" rel="noopener">{{ icon("file", 18) }}Карточки с QR для печати</a>
+  </div>
+  <div class="table-wrap">
+  <table class="tbl jd-tbl">
+    <thead><tr><th>Этап</th><th>КВ</th><th>Ссылка</th><th>Прислано</th><th></th></tr></thead>
+    <tbody>
+    {% for x in stages %}
+    <tr>
+      <td><b>{{ x.s.name }}</b><span class="adm-sub">{{ x.s.tour }}</span></td>
+      <td>{{ x.s.kv_minutes ~ " мин" if x.s.kv_minutes else "—" }}</td>
+      <td>{% if x.token %}{% if x.link %}<code class="jd-link">{{ x.link }}</code>{% else %}<span class="muted">код {{ x.token }} — адрес появится, когда включена раздача</span>{% endif %}
+          <a class="jd-open" href="{{ base }}/judges/phone/{{ x.token }}" target="_blank" rel="noopener">открыть здесь</a>
+          {% else %}<span class="muted">нет</span>{% endif %}</td>
+      <td>{% if x.sum.teams %}{{ x.sum.teams }} из {{ x.sum.of }}<span class="adm-sub">в {{ x.sum.last[11:16] }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="jd-act">
+        <form method="post" action="{{ base }}/judges/link?{{ zq }}"{% if x.token %} data-confirm="Выдать новую ссылку этапу «{{ x.s.name }}»? Старая перестанет работать — судье нужно будет открыть новую."{% endif %}>
+          <input type="hidden" name="stage" value="{{ x.s.id }}"><input type="hidden" name="do" value="issue">
+          <button class="btn btn-small" type="submit">{{ "Новая ссылка" if x.token else "Выдать ссылку" }}</button></form>
+        {% if x.token %}<form method="post" action="{{ base }}/judges/link?{{ zq }}" data-confirm="Отозвать ссылку этапа «{{ x.s.name }}»? Уже присланное останется.">
+          <input type="hidden" name="stage" value="{{ x.s.id }}"><input type="hidden" name="do" value="revoke">
+          <button class="btn btn-ghost btn-small" type="submit">Отозвать</button></form>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="hint">КВ этапа (для таймера на телефоне) задаётся в этапах дистанции на странице результатов. «Открыть здесь» —
+    страница судьи на ноутбуке: посмотреть, что видит судья, или внести за судью, если у него сел телефон.</p>
+  {% endif %}
+</section>
+
+<details class="panel howto">
+  <summary>Как это работает на дистанции</summary>
+  <ol>
+    <li>На базе, до выхода на этапы: включите раздачу, распечатайте карточки с QR, раздайте судьям. Судья подключает
+      телефон к Wi-Fi ноутбука и наводит камеру на QR своего этапа — открывается страница этапа.</li>
+    <li>На этапе связь не нужна. Вкладку <b>не закрывать</b>: без связи страница заново не откроется. Записи всё равно
+      хранятся в телефоне и не пропадут.</li>
+    <li>Вернувшись на базу (или в зоне Wi-Fi) — всё уходит на ноутбук само; вверху страницы судьи видно «Всё отправлено».</li>
+    <li>Время прибытия и убытия — по часам телефона: попросите судей сверить часы перед стартом.</li>
+  </ol>
+</details>
+{% endif %}
+{% endblock %}

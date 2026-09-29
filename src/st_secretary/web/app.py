@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -29,6 +30,7 @@ from starlette.exceptions import HTTPException
 from st_secretary import __version__
 from st_secretary import commission as cm
 from st_secretary import equipment as eq
+from st_secretary import judge_sync as js
 from st_secretary import psr_run as pr
 from st_secretary import results as res
 from st_secretary import staff as sf
@@ -201,6 +203,8 @@ def _flash(request: Request) -> dict | None:
         "run_open_protests": ("err", "Есть протесты без решения — сначала запишите решения по ним."),
         "run_official": ("ok", "Результаты утверждены: официальный протокол сохранён в папку «Протоколы» и открывается. "
                                "Места и разряды переданы в «Награждение и документы по итогам»."),
+        "judge_issued": ("ok", "Ссылка этапа готова. Прежняя ссылка этого этапа (если была) больше не работает."),
+        "judge_revoked": ("ok", "Ссылка этапа отозвана — с неё больше ничего не придёт. Уже присланное сохранено."),
         "board_on": ("ok", "Табло включено для этого соревнования."),
         "board_off": ("ok", "Табло для этого соревнования выключено — его результатов на табло не видно."),
         "board_started": ("ok", "Табло раздаётся по Wi-Fi — адрес и QR-код ниже. Если Windows спросит разрешение "
@@ -245,6 +249,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     app.state.store = store
     app.state.opener = opener or open_in_os
     app.state.clock = datetime.now  # часы — отдельно, чтобы в тестах проверять «час на протесты»
+    run_lock = threading.RLock()  # Результаты_дистанции.json: пишут и страница секретаря, и телефоны судей
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.filters["d"] = _fmt_date
@@ -1496,10 +1501,13 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     def run_ctx(f: CompFolder, comp, z) -> tuple[dict, dict, object]:
         data = f.run_data()
         zdata = data.get("zachety", {}).get(z.key, {})
-        return data, zdata, pr.compute(comp, z, zdata, zachet_inputs(f, comp, z))
+        run = pr.compute(comp, z, zdata, zachet_inputs(f, comp, z))
+        run.issues += js.judge_issues(zdata, run.stages, {r.inp.file: r.inp.team for r in run.rows})
+        return data, zdata, run
 
     def results_parts(f: CompFolder, z, zdata: dict, run) -> dict:
         return {"base": _base(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text,
+                "from_phone": lambda sid, file: js.from_phone(zdata, sid, file),
                 "grid": sorted(run.rows, key=lambda r: r.start_order), "status_label": pr.STATUS_LABEL,
                 "status_short": pr.STATUS_SHORT, "statuses": list(pr.STATUS_LABEL), "FINISHED": Status.FINISHED,
                 "zq": urlencode({"z": z.key}), "pct": lambda x: f"{float(x):.2f}".replace(".", ",") if x is not None else ""}
@@ -1517,10 +1525,11 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                     **{**comp_ctx(f), **results_parts(f, zz, zdata, run)})
 
     def _save_zachet(f: CompFolder, key: str, update) -> None:
-        data = f.run_data()
-        zdata = data.setdefault("zachety", {}).setdefault(key, {})
-        update(zdata)
-        f.save_run_data(data)
+        with run_lock:  # секретарь и телефоны судей пишут в один файл — по очереди
+            data = f.run_data()
+            zdata = data.setdefault("zachety", {}).setdefault(key, {})
+            update(zdata)
+            f.save_run_data(data)
 
     @app.post("/c/{cid}/results/stages")
     async def results_stages(request: Request, cid: str, z: str = ""):
@@ -1545,7 +1554,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                     sid = f"s{n}"
                     used.add(sid)
                 stages.append({"id": sid, "tour": " ".join(str(form.get(f"st-{i}-tour", "")).split()), "name": name,
-                               "max": str(form.get(f"st-{i}-max", "")).strip()})
+                               "max": str(form.get(f"st-{i}-max", "")).strip(),
+                               "kv": str(form.get(f"st-{i}-kv", "")).strip()})
             zdata["stages"] = stages
             zdata["distance"] = {k: str(form.get(k, "")).strip() for k in ("km", "modes", "kv_hours")}
             zdata["tie"] = "start" if form.get("tie") == "start" else "same"
@@ -1791,7 +1801,141 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             blocks.append({"z": z, "run": run, "label": label, "final": final, **board_helpers})
         return {"title": comp.title, "dates": comp.dates_text, "place": comp.place, "zachety": blocks}
 
-    app.state.board = BoardServer(create_board_app(board_list, board_data), host=board_host)
+    # ------------------------------------------------------------ телефоны судей этапов
+
+    def judge_link(token: str):
+        """Этап по коду ссылки: (папка, карточка, зачёт, этап) или None."""
+        for f in store.all():
+            link = js.tokens(f.run_data()).get(token)
+            if not link:
+                continue
+            try:
+                comp = f.load()
+            except Exception:  # noqa: BLE001 — карточка не читается: ссылка не работает
+                return None
+            z = next((x for x in comp.zachety if x.key == link.get("z")), None)
+            if z is None:
+                return None
+            zdata = f.run_data().get("zachety", {}).get(z.key, {})
+            stage = next((s for s in pr.stages_of(zdata) if s.id == link.get("stage")), None)
+            return (f, comp, z, stage) if stage else None
+        return None
+
+    def judge_page(token: str) -> dict | None:
+        found = judge_link(token)
+        if found is None:
+            return None
+        f, comp, z, stage = found
+        _, zdata, run = run_ctx(f, comp, z)
+        log = zdata.get("judge", {}).get(stage.id, {})
+        teams = [{"file": r.inp.file, "team": r.inp.team, "number": r.inp.number}
+                 for r in sorted(run.rows, key=lambda r: r.start_order)]
+        return {"title": comp.title, "zachet": z.key, "stage": {"title": stage.title, "kv": stage.kv_minutes},
+                "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams,
+                            "stage": {"kv": stage.kv_minutes},
+                            "records": {file: {**rec, "file": file} for file, rec in log.items()}}}
+
+    def judge_receive(token: str, payload: dict) -> dict | None:
+        found = judge_link(token)
+        if found is None:
+            return None
+        f, comp, z, stage = found
+        files = {t.file for t in zachet_inputs(f, comp, z)}
+        records = [js.Record.from_json(r) for r in payload.get("records", [])[:500] if isinstance(r, dict)]
+        device = " ".join(str(payload.get("device", "")).split())[:40] or "телефон"
+        now = app.state.clock()
+        out = {}
+        _save_zachet(f, z.key, lambda zdata: out.update(js.merge(zdata, stage.id, records, files, device,
+                                                                 now.isoformat(timespec="seconds"))))
+        return {"saved": out.get("saved", []), "time": f"{now:%H:%M:%S}"}
+
+    app.state.board = BoardServer(create_board_app(board_list, board_data, judge_page, judge_receive), host=board_host)
+
+    @app.get("/c/{cid}/judges")
+    def judges_page(request: Request, cid: str, z: str = ""):
+        f = folder(cid)
+        comp = need_comp(f)
+        if not comp.zachety:
+            return page(request, "judges.html", active="judges", zachet=None, **comp_ctx(f))
+        zz = need_zachet(comp, z)
+        data, zdata, run = run_ctx(f, comp, zz)
+        srv = app.state.board
+        urls = srv.urls() if srv.running else []
+        stages = []
+        for s in run.stages:
+            t = js.stage_token(data, zz.key, s.id)
+            link = f"{urls[0]}j/{t}" if t and urls else ""
+            stages.append({"s": s, "token": t, "link": link, "sum": js.stage_summary(zdata, s.id, len(run.rows))})
+        return page(request, "judges.html", active="judges", zachet=zz, zachety=comp.zachety, stages=stages,
+                    running=srv.running, urls=urls, error=srv.error, zq=urlencode({"z": zz.key}), run=run,
+                    **comp_ctx(f))
+
+    @app.post("/c/{cid}/judges/link")
+    async def judges_link(request: Request, cid: str, z: str = ""):
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        form = await request.form()
+        sid, do = str(form.get("stage", "")), str(form.get("do", "issue"))
+        with run_lock:
+            data = f.run_data()
+            if sid == "*":  # ссылки всем этапам, у которых их ещё нет
+                for s in data.get("zachety", {}).get(zz.key, {}).get("stages", []):
+                    if not js.stage_token(data, zz.key, str(s["id"])):
+                        js.issue_token(data, zz.key, str(s["id"]), app.state.clock().isoformat(timespec="minutes"))
+            elif do == "revoke":
+                js.revoke_token(data, zz.key, sid)
+            else:
+                js.issue_token(data, zz.key, sid, app.state.clock().isoformat(timespec="minutes"))
+            f.save_run_data(data)
+        done = "judge_revoked" if do == "revoke" else "judge_issued"
+        return _redirect(f"{_base(f)}/judges?{urlencode({'z': zz.key, 'done': done})}")
+
+    @app.post("/c/{cid}/judges/server")
+    async def judges_server(request: Request, cid: str, z: str = ""):
+        f = folder(cid)
+        ok = app.state.board.start()
+        return _redirect(f"{_base(f)}/judges?{urlencode({'z': z, 'done': 'board_started' if ok else 'board_failed'})}")
+
+    @app.get("/c/{cid}/judges/phone/{token}")
+    def judges_phone(request: Request, cid: str, token: str):
+        """Страница судьи этапа на ноутбуке: посмотреть, что видит судья, или внести за судью (сел телефон)."""
+        folder(cid)
+        info = judge_page(token)
+        if info is not None:
+            info["payload"]["sync_url"] = f"{_base(folder(cid))}/judges/phone/{token}/sync"
+        return templates.TemplateResponse(request, "judge.html", {"info": info}, status_code=200 if info else 404,
+                                          headers={"Cache-Control": "no-store"})
+
+    @app.post("/c/{cid}/judges/phone/{token}/sync")
+    async def judges_phone_sync(request: Request, cid: str, token: str):
+        folder(cid)
+        try:
+            payload = await request.json()
+        except ValueError:
+            payload = None
+        if not isinstance(payload, dict):
+            return JSONResponse({"ok": False, "error": "не те данные"}, status_code=400)
+        res = judge_receive(token, payload)
+        if res is None:
+            return JSONResponse({"ok": False, "error": "ссылка больше не действует"}, status_code=404)
+        return JSONResponse({"ok": True, **res})
+
+    @app.get("/c/{cid}/judges/print")
+    def judges_print(request: Request, cid: str, z: str = ""):
+        """Карточки с QR-кодами этапов — распечатать и раздать судьям."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        data, _, run = run_ctx(f, comp, zz)
+        urls = app.state.board.urls() if app.state.board.running else []
+        cards = []
+        for s in run.stages:
+            t = js.stage_token(data, zz.key, s.id)
+            if t and urls:
+                link = f"{urls[0]}j/{t}"
+                cards.append({"s": s, "link": link, "qr": qr_svg(link)})
+        return templates.TemplateResponse(request, "judges_print.html", {"comp": comp, "z": zz, "cards": cards,
+                                                                         "running": bool(urls)})
 
     @app.get("/c/{cid}/board")
     def board_page(request: Request, cid: str):
@@ -1806,9 +1950,10 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     async def board_toggle(request: Request, cid: str):
         f = folder(cid)
         on = (await request.form()).get("on") == "1"
-        data = f.run_data()
-        data["board"] = {"on": on}
-        f.save_run_data(data)
+        with run_lock:
+            data = f.run_data()
+            data["board"] = {"on": on}
+            f.save_run_data(data)
         return _redirect(f"{_base(f)}/board?done={'board_on' if on else 'board_off'}")
 
     @app.post("/c/{cid}/board/server")

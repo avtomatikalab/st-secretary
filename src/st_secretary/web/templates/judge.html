@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if info %}{{ info.stage.title }} — судья этапа{% else %}Ссылка не действует{% endif %}</title>
+<style>
+  :root { --bg: #f2f4f6; --surface: #fff; --text: #1a2027; --muted: #5b6671; --line: #d9dfe4; --accent: #1b6b57;
+          --ok: #1f6b3a; --ok-bg: #e4f4e8; --warn: #8a5300; --warn-bg: #fff4d4; --err: #b3261e; --err-bg: #fdecea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11161b; --surface: #1a2027; --text: #e8edf2; --muted: #9aa6b2; --line: #2c343d; --accent: #5cc6a4;
+            --ok: #7fd8a0; --ok-bg: #16301f; --warn: #f0c060; --warn-bg: #3a2f10; --err: #ff8a80; --err-bg: #3b1714; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 18px/1.4 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
+  header { background: var(--surface); border-bottom: 1px solid var(--line); padding: 12px 14px; }
+  h1 { font-size: 1.2rem; margin: 0; } .sub { color: var(--muted); font-size: .88rem; }
+  #status { position: sticky; top: 0; z-index: 5; padding: 10px 14px; font-weight: 600; font-size: .95rem; border-bottom: 1px solid var(--line); }
+  #status.ok { background: var(--ok-bg); color: var(--ok); } #status.wait { background: var(--warn-bg); color: var(--warn); }
+  #status.err { background: var(--err-bg); color: var(--err); }
+  main { padding: 10px 12px 60px; max-width: 700px; margin: 0 auto; }
+  .note { color: var(--muted); font-size: .85rem; margin: 6px 2px 10px; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+  .filters button { flex: 1; min-width: 70px; padding: 9px 6px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--text); font: inherit; font-size: .85rem; }
+  .filters button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .team { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0 0 10px; }
+  .team[hidden] { display: none; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .name { font-weight: 700; font-size: 1.1rem; } .num { color: var(--muted); font-weight: 600; margin-right: 6px; }
+  .timer { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+  .timer.over { color: var(--err); }
+  .times { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+  .btn { width: 100%; min-height: 48px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+    color: var(--text); font: inherit; font-weight: 600; }
+  .btn.go { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn small { display: block; font-weight: 400; font-size: .8rem; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin: 6px 0 3px; }
+  input[type=text] { width: 100%; min-height: 48px; font: inherit; font-size: 1.15rem; padding: 6px 10px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  input.pts { font-size: 1.4rem; font-weight: 700; text-align: center; }
+  input.bad { border-color: var(--err); background: var(--err-bg); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+  .check { display: flex; align-items: center; gap: 10px; min-height: 48px; font-size: 1rem; color: var(--text); }
+  .check input { width: 26px; height: 26px; }
+  .sent { font-size: .78rem; color: var(--muted); text-align: right; margin-top: 4px; }
+</style>
+</head>
+<body>
+{% if not info %}
+<header><h1>Ссылка не действует</h1></header>
+<main><p>Эта ссылка этапа больше не работает — секретарь выдал новую. Попросите у секретаря новый QR-код этапа.</p>
+  <p class="note">Если вы уже что-то записали на этом телефоне по старой ссылке — не очищайте браузер и покажите телефон секретарю.</p></main>
+{% else %}
+<header>
+  <h1>{{ info.stage.title }}</h1>
+  <div class="sub">{{ info.title }} · зачёт {{ info.zachet }}{% if info.stage.kv %} · КВ этапа {{ info.stage.kv }} мин{% endif %}</div>
+</header>
+<div id="status" class="ok" role="status" aria-live="polite">Загружаю…</div>
+<main>
+  <p class="note">Всё записанное хранится в телефоне и уходит на ноутбук секретаря само, когда телефон в Wi-Fi.
+    <b>Не закрывайте эту вкладку на дистанции</b>: без связи страница заново не откроется (записи при этом не пропадут).
+    Время прибытия и убытия — по часам телефона; чтобы поправить время, нажмите на него.</p>
+  <div class="filters" role="group" aria-label="Какие команды показывать">
+    <button type="button" data-f="all" aria-pressed="true">Все</button>
+    <button type="button" data-f="wait" aria-pressed="false">Не было</button>
+    <button type="button" data-f="on" aria-pressed="false">На этапе</button>
+    <button type="button" data-f="done" aria-pressed="false">Прошли</button>
+  </div>
+  <div id="teams"></div>
+</main>
+<script type="application/json" id="data">{{ info.payload|tojson }}</script>
+<script>
+(function () {
+  "use strict";
+  var info = JSON.parse(document.getElementById("data").textContent);
+  var KEY = "st-judge:" + info.token, busy = false, filter = "all", lastError = "";
+  var device = localStorage.getItem("st-judge-device");
+  if (!device) { device = "т-" + Math.random().toString(36).slice(2, 8); localStorage.setItem("st-judge-device", device); }
+  var st;
+  try { st = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { st = {}; }
+  st.records = st.records || {}; st.sent = st.sent || {};
+  // с ноутбука — то, что уже принято (например, с другого телефона); своё более новое — не затираем
+  Object.keys(info.records).forEach(function (f) {
+    var s = info.records[f], l = st.records[f];
+    if (!l || (l.updated || 0) < (s.updated || 0)) { st.records[f] = s; st.sent[f] = s.updated || 0; }
+  });
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { lastError = "память телефона переполнена"; } }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function clock(d) { return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()); }
+  function secs(t) { var m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t || ""); return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0)) : null; }
+  function dur(s) { s = Math.max(0, Math.round(s)); var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+    return (h ? h + ":" + pad(m) : m) + ":" + pad(s % 60); }
+  function rec(f) { return st.records[f] || (st.records[f] = { file: f, points: "", arrive: "", leave: "", removed: false, reason: "", note: "", updated: 0 }); }
+  function pending() { return Object.keys(st.records).map(function (f) { return st.records[f]; })
+    .filter(function (r) { return (st.sent[r.file] || 0) < (r.updated || 0); }); }
+  function stateOf(r) { return r.leave || r.removed || r.points ? "done" : r.arrive ? "on" : "wait"; }
+  function isNum(v) { return v === "" || /^[-+−]?\d+([.,]\d+)?$/.test(v.replace(/\s/g, "")); }
+
+  function status() {
+    var el = document.getElementById("status"), n = pending().length;
+    if (lastError) { el.className = "err"; el.textContent = "Не отправлено: " + n + ". " + lastError; return; }
+    if (n) { el.className = "wait"; el.textContent = "Не отправлено: " + n + " — нет связи с ноутбуком. Записи в телефоне, уйдут сами."; return; }
+    el.className = "ok"; el.textContent = "✓ Всё отправлено на ноутбук" + (st.lastSent ? " в " + st.lastSent : "");
+  }
+  function sync() {
+    var list = pending();
+    status();
+    if (busy || !list.length) return;
+    busy = true;
+    fetch(info.sync_url, { method: "POST", headers: { "Content-Type": "application/json" },
+                           body: JSON.stringify({ device: device, records: list }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        if (x.ok && x.j.ok) {
+          list.forEach(function (r) { st.sent[r.file] = r.updated; });
+          st.lastSent = x.j.time; lastError = ""; save();
+          list.forEach(function (r) { paint(r.file); });  // «✓ на ноутбуке» у отправленных команд
+        } else { lastError = (x.j && x.j.error) || "ноутбук не принял записи"; }
+      })
+      .catch(function () { lastError = ""; })  // нет связи — просто ждём
+      .then(function () { busy = false; status(); });
+  }
+  function change(f, patch) {
+    var r = rec(f);
+    Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
+    r.updated = Date.now();
+    save(); paint(f); sync();
+  }
+  function editTime(f, field, label) {
+    var v = window.prompt(label + " (чч:мм:сс, пусто — стереть)", rec(f)[field]);
+    if (v === null) return;
+    v = v.trim();
+    if (v && secs(v) === null) { window.alert("Время — в виде 14:05:30"); return; }
+    var patch = {}; patch[field] = v; change(f, patch);
+  }
+
+  var box = document.getElementById("teams");
+  info.teams.forEach(function (t) {
+    var c = document.createElement("section");
+    c.className = "team"; c.dataset.file = t.file;
+    c.innerHTML =
+      '<div class="top"><div><span class="num"></span><span class="name"></span></div><span class="timer"></span></div>' +
+      '<div class="times"><button type="button" class="btn go" data-act="arrive"></button>' +
+      '<button type="button" class="btn" data-act="leave"></button></div>' +
+      '<div class="row"><div><label>Баллы этапа</label><input type="text" class="pts" inputmode="decimal" autocomplete="off"></div>' +
+      '<label class="check"><input type="checkbox" class="rm"> Снята с этапа</label></div>' +
+      '<div class="why" hidden><label>Причина снятия</label><input type="text" class="reason"></div>' +
+      '<label>Заметка</label><input type="text" class="memo" placeholder="например: взяли подсказку">' +
+      '<div class="sent"></div>';
+    c.querySelector(".num").textContent = t.number ? "№" + t.number : "";
+    c.querySelector(".name").textContent = t.team;
+    c.querySelector(".pts").setAttribute("aria-label", t.team + ": баллы этапа");
+    c.querySelector(".reason").setAttribute("aria-label", t.team + ": причина снятия");
+    c.querySelector(".memo").setAttribute("aria-label", t.team + ": заметка");
+    box.appendChild(c);
+    var f = t.file;
+    c.querySelector('[data-act=arrive]').addEventListener("click", function () {
+      if (rec(f).arrive) editTime(f, "arrive", "Время прибытия"); else change(f, { arrive: clock(new Date()) });
+    });
+    c.querySelector('[data-act=leave]').addEventListener("click", function () {
+      if (rec(f).leave) editTime(f, "leave", "Время убытия"); else change(f, { leave: clock(new Date()) });
+    });
+    var pts = c.querySelector(".pts");
+    pts.addEventListener("input", function () { pts.classList.toggle("bad", !isNum(pts.value)); });
+    pts.addEventListener("change", function () { change(f, { points: pts.value.trim() }); });
+    c.querySelector(".rm").addEventListener("change", function (e) { change(f, { removed: e.target.checked }); });
+    c.querySelector(".reason").addEventListener("change", function (e) { change(f, { reason: e.target.value.trim() }); });
+    c.querySelector(".memo").addEventListener("change", function (e) { change(f, { note: e.target.value.trim() }); });
+    paint(f);
+  });
+  function paint(f) {
+    var c = box.querySelector('[data-file="' + (window.CSS && CSS.escape ? CSS.escape(f) : f) + '"]');
+    if (!c) return;
+    var r = rec(f);
+    c.querySelector('[data-act=arrive]').innerHTML = r.arrive ? "Прибыла<small>" + r.arrive + " — изменить</small>" : "Прибыла — сейчас";
+    c.querySelector('[data-act=leave]').innerHTML = r.leave ? "Убыла<small>" + r.leave + " — изменить</small>" : "Убыла — сейчас";
+    c.querySelector('[data-act=arrive]').classList.toggle("go", !r.arrive);
+    c.querySelector('[data-act=leave]').classList.toggle("go", !!r.arrive && !r.leave);
+    var pts = c.querySelector(".pts");
+    if (document.activeElement !== pts) { pts.value = r.points || ""; pts.classList.toggle("bad", !isNum(pts.value)); }
+    c.querySelector(".rm").checked = !!r.removed;
+    c.querySelector(".why").hidden = !r.removed;
+    var reason = c.querySelector(".reason"); if (document.activeElement !== reason) reason.value = r.reason || "";
+    var memo = c.querySelector(".memo"); if (document.activeElement !== memo) memo.value = r.note || "";
+    var s = st.sent[f] || 0;
+    c.querySelector(".sent").textContent = !r.updated ? "" : s >= r.updated ? "✓ на ноутбуке" : "ждёт отправки";
+    c.dataset.state = stateOf(r);
+    c.hidden = filter !== "all" && filter !== c.dataset.state;
+    tick(c, r);
+  }
+  function tick(c, r) {
+    var el = c.querySelector(".timer"), a = secs(r.arrive), l = secs(r.leave);
+    if (a === null) { el.textContent = ""; el.classList.remove("over"); return; }
+    var now = new Date(), cur = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    var spent = (l === null ? cur : l) - a; if (spent < 0) spent += 86400;
+    el.textContent = (l === null ? "на этапе " : "на этапе было ") + dur(spent);
+    el.classList.toggle("over", !!info.stage.kv && spent > info.stage.kv * 60);
+  }
+  document.querySelectorAll(".filters button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      filter = b.dataset.f;
+      document.querySelectorAll(".filters button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+      info.teams.forEach(function (t) { paint(t.file); });
+    });
+  });
+  setInterval(function () { box.querySelectorAll(".team").forEach(function (c) { tick(c, rec(c.dataset.file)); }); }, 1000);
+  setInterval(sync, 15000);
+  window.addEventListener("online", sync);
+  window.addEventListener("beforeunload", function (e) { if (pending().length) { e.preventDefault(); e.returnValue = ""; } });
+  save(); sync();
+})();
+</script>
+{% endif %}
+</body>
+</html>

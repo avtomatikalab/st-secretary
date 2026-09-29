@@ -1,12 +1,14 @@
-"""Местное табло: результаты на телефонах участников и зрителей через Wi-Fi ноутбука секретариата.
+"""Раздача по Wi-Fi ноутбука секретариата: табло для всех и страницы судей этапов.
 
 Основная программа открывается только на этом компьютере (127.0.0.1): в ней заявки, паспорта, договоры.
-Табло — отдельный маленький сервер только для чтения: он показывает результаты соревнований, для которых
-секретарь включил табло, и больше ничего. Страница обновляется сама раз в 30 секунд; без скриптов
-и без интернета — открывается на любом телефоне.
+Для телефонов — отдельный маленький сервер:
+- табло (только чтение): результаты соревнований, для которых секретарь включил табло, и больше ничего;
+  страница обновляется сама раз в 30 секунд, без скриптов и без интернета;
+- страница судьи этапа по ссылке с кодом этапа (/j/<код>): отметки команд и баллы этапа; без кода — ничего
+  не изменить, с кодом — только свой этап.
 
-Запускается кнопкой на странице «Онлайн-табло» и слушает все сетевые адреса ноутбука (0.0.0.0) — при первом
-включении Windows спросит разрешение в брандмауэре, нужно разрешить для частной сети.
+Запускается кнопкой в программе и слушает все сетевые адреса ноутбука (0.0.0.0) — при первом включении
+Windows спросит разрешение в брандмауэре, нужно разрешить для частной сети.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException
 
@@ -52,11 +54,37 @@ def qr_svg(text: str) -> str:
     return segno.make(text, error="m").svg_inline(scale=6, dark="#1a2027", light="#ffffff")
 
 
-def create_board_app(boards: Callable[[], list[dict]], board: Callable[[str], dict | None]) -> FastAPI:
+def create_board_app(boards: Callable[[], list[dict]], board: Callable[[str], dict | None],
+                     judge_page: Callable[[str], dict | None] | None = None,
+                     judge_sync: Callable[[str, dict], dict | None] | None = None) -> FastAPI:
     """boards() — соревнования с включённым табло: [{"id", "title", "dates"}];
-    board(id) — {"title", "dates", "place", "zachety": [{"z", "run", "state", "label"}], …} или None."""
+    board(id) — {"title", "dates", "place", "zachety": [{"z", "run", "state", "label"}], …} или None;
+    judge_page(код) — данные страницы судьи этапа или None (нет такой ссылки);
+    judge_sync(код, присланное) — принять записи с телефона, {"saved": [...], "time": "..."} или None."""
     app = FastAPI(title="СТ-Секретарь — табло", docs_url=None, redoc_url=None, openapi_url=None)
     templates = Jinja2Templates(directory=HERE / "templates")
+
+    @app.get("/j/{token}")
+    def judge(request: Request, token: str):
+        info = judge_page(token) if judge_page else None
+        if info is None:
+            return templates.TemplateResponse(request, "judge.html", {"info": None}, status_code=404,
+                                              headers={"Cache-Control": "no-store"})
+        return templates.TemplateResponse(request, "judge.html", {"info": info}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/j/{token}/sync")
+    async def judge_post(request: Request, token: str):
+        try:
+            payload = await request.json()
+        except ValueError:
+            payload = None
+        if not isinstance(payload, dict) or not isinstance(payload.get("records", []), list):
+            return JSONResponse({"ok": False, "error": "не те данные"}, status_code=400)
+        res = judge_sync(token, payload) if judge_sync else None
+        if res is None:
+            return JSONResponse({"ok": False, "error": "ссылка больше не действует — попросите новую у секретаря"},
+                                status_code=404)
+        return JSONResponse({"ok": True, **res})
 
     def render(request: Request, **ctx) -> HTMLResponse:
         return templates.TemplateResponse(request, "board.html", {"refresh": REFRESH_SECONDS, "prefix": "", **ctx})
