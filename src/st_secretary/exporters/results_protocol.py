@@ -16,8 +16,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from st_secretary.competition import Competition
-from st_secretary.disciplines import Status
-from st_secretary.psr_run import STATUS_LABEL, ZachetRun, points_text, result_text
+from st_secretary.psr_run import ZachetRun, points_text, result_text
 from st_secretary.time_run import clock_text
 
 THIN = Side(style="thin", color="7F7F7F")
