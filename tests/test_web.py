@@ -663,3 +663,21 @@ def test_judge_grades_go_to_certificates(client, psr_card):
     assert "Оценка судейства: «отлично»." in texts and "Оценка судейства: «хорошо»." in texts
     sk = client.get(url + "/file/sk")
     assert sk.status_code == 200 and sk.content[:2] == b"PK"
+
+
+def test_report_texts_and_extracts_download(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    url = base(f) + "/awards"
+    client.post(url + "/manual", data={"zachet": "М/Ж_3", "r-0-team": "Кедр", "r-0-place": "1", "r-0-norm": "III"})
+    r = client.post(url + "/report", data={"protests": "подан один протест, отклонён", "base": "Всё хорошо."},
+                    follow_redirects=False)
+    assert "done=report_saved" in r.headers["location"]
+    assert "подан один протест, отклонён" in client.get(url).text
+    from docx import Document
+    texts = [p.text for p in Document(io.BytesIO(client.get(url + "/file/report").content)).paragraphs]
+    assert "Подан один протест, отклонён." in texts and "Всё хорошо." in texts
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(client.get(url + "/file/extracts").content))
+    rows = [[c.value for c in r] for r in wb.active.iter_rows() if r[5].value == "III"]
+    assert len(rows) == 3 and rows[0][2] == "02.02.1990"  # дата рождения — из заявки

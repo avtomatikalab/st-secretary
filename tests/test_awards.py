@@ -5,6 +5,8 @@ from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+from conftest import make_application
 from docx import Document
 from openpyxl import load_workbook
 
@@ -13,8 +15,6 @@ from st_secretary.exporters import awards as aw
 from st_secretary.importers.preapp_xlsx import read_preapplication
 from st_secretary.importers.sekretar_xls import ResultRow
 from st_secretary.preapp import process
-
-from conftest import make_application
 
 
 def protocol():
@@ -100,14 +100,32 @@ def test_judging_certificates(tmp_path, psr_card):
     assert t.count("СПРАВКА") == 2 and "ФЕДЕРАЦИЯ СПОРТИВНОГО ТУРИЗМА" in t
     assert ("Дана Судьину Ивану Петровичу в том, что он участвовал в судействе Чемпионата города N по "
             "спортивному туризму — дисциплина «дистанция - комбинированная», 20–21 сентября 2025 г., "
-            "окрестности г. N, в должности главный судья.") in t
+            "окрестности г. N, в качестве главного судьи.") in t
     assert any(s.startswith("Дана Секретарёвой Анне Ивановне в том, что она участвовала") for s in t)
     assert "Оценка судейства: «отлично»." in t and "Оценка судейства: «________________»." in t
     assert any("И.П. Судьин, СС1К, г. Красноярск" in s for s in t)
 
 
+@pytest.mark.parametrize("role, expected", [
+    ("Главный судья", "в качестве главного судьи"),
+    ("Заместитель главного секретаря", "в качестве заместителя главного секретаря"),
+    ("Начальник дистанции", "в качестве начальника дистанции"),
+    ("Председатель комиссии по допуску", "в качестве председателя комиссии по допуску"),
+    ("Старший судья этапа", "в качестве старшего судьи этапа"),
+    ("Судья-хронометрист", "в должности: судья-хронометрист"),
+    ("Главный", "в должности: главный"),
+])
+def test_role_phrase(role, expected):
+    from st_secretary.exporters.judges import role_phrase
+
+    assert role_phrase(role) == expected
+
+
 def test_sk_and_subjects_certificates(tmp_path, psr_card):
-    from st_secretary.exporters.judges import write_sk_certificate, write_subjects_certificate
+    from st_secretary.exporters.judges import (
+        write_sk_certificate,
+        write_subjects_certificate,
+    )
 
     doc = Document(write_sk_certificate(psr_card, tmp_path / "sk.docx"))
     t = [p.text for p in doc.paragraphs if p.text]
@@ -118,3 +136,53 @@ def test_sk_and_subjects_certificates(tmp_path, psr_card):
     assert table[1] == ["1", "Главный судья", "Судьин Иван Петрович", "СС1К", "г. Красноярск"]
     t = text_of(write_subjects_certificate(psr_card, ["Красноярск", "Томск", "Красноярск"], tmp_path / "s.docx"))
     assert "Количество субъектов РФ, принявших участие в соревнованиях: 2" in t and "2. Томск" in t
+
+
+# ------------------------------------------------------------------ выписки на разряды и отчёт
+
+
+def kedr_preapps(tmp_path, psr_card):
+    a = make_application(tmp_path / "Кедр.xlsx", "Кедр", "Красноярск", "Лебедев Антон Игоревич", "89135550000", 3, [
+        ["Кедр", "Красноярск", "Лебедев Антон Игоревич", "Лебедев Антон Игоревич", "02.02.1990", "III", "м", "М/Ж", 3],
+        ["Кедр", "Красноярск", "Лебедев Антон Игоревич", "Зуева Мария Олеговна", "05.06.1996", "III", "ж", "М/Ж", 3],
+        ["Кедр", "Красноярск", "Лебедев Антон Игоревич", "Носов Глеб Андреевич", "09.09.2010", "б/р", "м", "М/Ж", 3],
+    ])
+    return process([read_preapplication(a)], psr_card)
+
+
+def test_extracts_only_norms_with_birth_dates(tmp_path, psr_card):
+    from st_secretary.exporters.final import extract_count, write_extracts
+
+    z = zres(psr_card, kedr_preapps(tmp_path, psr_card))
+    assert extract_count(z) == 6  # Кедр и Сосна выполнили II — по 3 человека
+    ws = load_workbook(write_extracts(z, psr_card, tmp_path / "e.xlsx")).active
+    cells = [[c.value for c in row] for row in ws.iter_rows()]
+    flat = [str(v) for row in cells for v in row if v is not None]
+    assert "ВЫПИСКА ИЗ ПРОТОКОЛА СОРЕВНОВАНИЙ" in flat and any("код ВРВС 0840161811Я" in v for v in flat)
+    assert any("квалификационный ранг соревнований: 71,7" in v for v in flat)
+    rows = [r for r in cells if r[1] and r[5] == "II"]
+    assert len(rows) == 6 and rows[0][:6] == ["1", "Лебедев Антон Игоревич", "02.02.1990", "III", "-283", "II"]
+    assert [r for r in rows if r[1] == "Орлов Павел Ильич"][0][2] == "нет в заявке"  # без даты — видно сразу
+    assert not any(r[1] == "Ким Олег Борисович" for r in cells)  # 3 место без норматива — не в выписке
+    assert any(str(v).startswith("Главный судья") for v in flat)
+
+
+def test_chief_judge_report(tmp_path, psr_card):
+    from st_secretary.exporters.final import write_report
+
+    pre = kedr_preapps(tmp_path, psr_card)
+    grades = {res.person_key("Судьин Иван Петрович"): "отлично"}
+    doc = Document(write_report(psr_card, zres(psr_card, pre), pre.entries, ["Красноярск"], grades,
+                                {"base": "Материальная база соответствовала требованиям."}, tmp_path / "r.docx"))
+    t = [p.text for p in doc.paragraphs if p.text]
+    assert "о проведении: Чемпионат города N по спортивному туризму" in t
+    assert "в период с «20» сентября 2025 г. по «21» сентября 2025 г." in t
+    assert ("2. Общее количество участников, допущенных до соревнований, — 3, из них мужчин — 2, "
+            "женщин — 1.") in t
+    assert any(s.startswith("4. Из общего числа участников по возрасту: до 16 лет — 1") for s in t)  # 2010 г. р.
+    assert "I место — команда «Кедр» (Красноярск): Лебедев Антон, Зуева Мария, Носов Глеб" in t
+    assert "Выполнили нормативы: II — 6 чел." in t
+    assert "Протесты, жалобы в ГСК не подавались." in t  # текст по умолчанию
+    assert "Материальная база соответствовала требованиям." in t
+    table = [[c.text for c in r.cells] for r in doc.tables[0].rows]
+    assert table[1] == ["1", "Судьин Иван Петрович", "СС1К", "г. Красноярск", "Главный судья", "отлично"]

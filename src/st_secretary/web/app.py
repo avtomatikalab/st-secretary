@@ -31,6 +31,7 @@ from st_secretary import commission as cm
 from st_secretary import equipment as eq
 from st_secretary import results as res
 from st_secretary.exporters import awards as aw
+from st_secretary.exporters import final as fin
 from st_secretary.exporters import judges as jd
 from st_secretary.competition import LEVEL_LABELS
 from st_secretary.exporters.commission_xlsx import write_commission_report
@@ -154,6 +155,7 @@ def _flash(request: Request) -> dict | None:
         "res_bad": ("err", "Файл не похож на итоговый протокол СЕКРЕТАРЬ_ST. Нужен протокол результатов (.xls), "
                            "сохранённый кнопкой «Считать протокол»."),
         "res_noxlrd": ("err", "Для чтения .xls не установлена библиотека xlrd — выполните в папке программы: uv sync."),
+        "report_saved": ("ok", "Тексты для отчёта сохранены — нажмите «Открыть» у отчёта главного судьи."),
         "grades_saved": ("ok", "Оценки судейства сохранены — они попадут в справки о судействе и отчёт."),
         "doc_ready": ("ok", "Документ сохранён в папке «Документы по итогам» и открывается."),
         "doc_locked": ("err", "Этот документ сейчас открыт в Word или Excel. Закройте его и нажмите кнопку ещё раз."),
@@ -974,8 +976,10 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             blocks.append({"z": z, "res": by_key.get(z.key), "teams": teams})
         grades = data.get("judges", {})
         judges = [{"o": o, "grade": grades.get(res.person_key(o.fio), "")} for o in comp.officials if o.fio]
+        report = {**{k: "" for k in fin.REPORT_DEFAULTS}, **data.get("report", {})}
         return page(request, "awards.html", active="awards", blocks=blocks, docs=AWARD_DOCS, judges=judges,
-                    grades=GRADES,
+                    grades=GRADES, report=report, report_defaults=fin.REPORT_DEFAULTS,
+                    extracts=fin.extract_count(zres),
                     has_results=any(b["res"] for b in blocks), medals=aw.medal_count(zres),
                     norms=["", "3ю", "2ю", "1ю", "III", "II", "I", "КМС"], out_dir=f.out_dir, **comp_ctx(f))
 
@@ -1092,7 +1096,37 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         "subjects": ("Справка о количестве субъектов.docx", "Для всероссийских и межрегиональных (ЕВСК, п. 67.14): "
                                                             "территории допущенных команд.",
                      lambda f, comp, p: jd.write_subjects_certificate(comp, admitted_territories(f, comp), p)),
+        "extracts": ("Выписки на разряды.xlsx", "Выписки из протокола для присвоения разрядов (ЕВСК, п. 67.8.2): "
+                                                "только выполнившие норматив, с датой рождения из заявки.",
+                     lambda f, comp, p: fin.write_extracts(_results(f, comp), comp, p)),
+        "report": ("Отчёт главного судьи.docx", "Состав участников, результаты, жалобы, материальная база, "
+                                                "судейская коллегия с оценками — по отчёту 2025 г.",
+                   lambda f, comp, p: write_report(f, comp, p)),
     }
+
+    def admitted_people(f: CompFolder, comp) -> tuple[list, list[str]]:
+        """Участники и территории команд, допущенных комиссией; если комиссия не велась — все заявившиеся."""
+        if not f.preapp_files():
+            return [], []
+        _, teams = commission(f, comp)
+        ok = [t for t in teams if t.status == cm.ADMITTED and t.team] or [t for t in teams if t.team]
+        people = [p.entry for t in ok for p in t.persons if p.status != cm.REJECTED]
+        return people, [t.team.territory for t in ok]
+
+    def write_report(f: CompFolder, comp, path: Path) -> Path:
+        data = f.results_data()
+        people, terr = admitted_people(f, comp)
+        return fin.write_report(comp, _results(f, comp), people, terr, data.get("judges", {}),
+                                data.get("report", {}), path)
+
+    @app.post("/c/{cid}/awards/report")
+    async def awards_report_texts(request: Request, cid: str):
+        f = folder(cid)
+        form = await request.form()
+        data = f.results_data()
+        data["report"] = {k: str(form.get(k, "")).strip() for k in fin.REPORT_DEFAULTS}
+        f.save_results_data(data)
+        return _redirect(f"{_base(f)}/awards?done=report_saved#report")
 
     def admitted_territories(f: CompFolder, comp) -> list[str]:
         """Территории команд, допущенных комиссией; если комиссия не велась — всех заявившихся."""

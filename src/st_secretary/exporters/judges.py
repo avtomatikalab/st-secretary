@@ -33,6 +33,28 @@ def disciplines_text(comp: Competition) -> str:
     return ", ".join(f"«{n}»" for n in names)
 
 
+_ROLE_GEN = {"главный": "главного", "старший": "старшего", "технический": "технического",
+             "судья": "судьи", "секретарь": "секретаря", "заместитель": "заместителя", "начальник": "начальника",
+             "председатель": "председателя", "член": "члена", "инспектор": "инспектора", "делегат": "делегата",
+             "врач": "врача", "комендант": "коменданта", "информатор": "информатора"}
+_ROLE_ADJ = ("главный", "старший", "технический")
+
+
+def role_phrase(role: str) -> str:
+    """«в качестве главного судьи», «в качестве заместителя главного секретаря». Склоняются слова до первого
+    существительного (дальше — уже родительный падеж). Незнакомая должность — «в должности: …» как есть."""
+    words = role.split()
+    out = []
+    for i, w in enumerate(words):
+        gen = _ROLE_GEN.get(w.lower())
+        if gen is None:
+            return f"в должности: {role[:1].lower() + role[1:]}"
+        out.append(gen)
+        if w.lower() not in _ROLE_ADJ:
+            return "в качестве " + " ".join(out + words[i + 1:])
+    return f"в должности: {role[:1].lower() + role[1:]}"
+
+
 def _sign(doc, comp: Competition, roles=("Главный судья", "Главный секретарь")) -> None:
     for role in roles:
         o = comp.official(role)
@@ -55,8 +77,7 @@ def write_judging_certificates(comp: Competition, grades: dict[str, str], path: 
         sex = guess_sex(o.fio)
         he, took = he_she(sex)
         text = (f"Дана {dative(o.fio, sex)} в том, что {he} {took} в судействе {title_of(comp)} — "
-                f"дисциплина {disciplines_text(comp)}, {comp.dates_text}, {comp.place}, в должности "
-                f"{o.role[:1].lower() + o.role[1:]}.")
+                f"дисциплина {disciplines_text(comp)}, {comp.dates_text}, {comp.place}, {role_phrase(o.role)}.")
         _para(doc, text, 12, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=8)
         grade = grades.get(person_key(o.fio), "")
         _para(doc, f"Оценка судейства: «{grade or '________________'}».", 12, align=WD_ALIGN_PARAGRAPH.LEFT,

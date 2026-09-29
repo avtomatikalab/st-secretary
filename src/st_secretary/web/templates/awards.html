@@ -108,17 +108,34 @@
   {% endif %}
 </section>
 
+<section class="panel" id="report">
+  <h2>Отчёт главного судьи: тексты</h2>
+  <p class="muted">Цифры (участники, пол, возраст, разряды, призёры, судьи) программа берёт сама — из комиссии по допуску,
+    результатов и карточки. Здесь — то, что пишется словами. Пустое поле — в отчёт пойдёт текст по умолчанию (серым).</p>
+  <form method="post" action="{{ base }}/awards/report" data-guard class="grid">
+    {% for key, label in (("not_arrived", "Не прибыли на соревнования"), ("records", "Рекорды"),
+                          ("protests", "Протесты и жалобы"), ("base", "Материальная база"),
+                          ("notes", "Замечания и предложения")) %}
+    <div class="field span-6">
+      <label for="f-{{ key }}">{{ label }}</label>
+      <textarea id="f-{{ key }}" name="{{ key }}" rows="2" placeholder="{{ report_defaults[key] }}">{{ report[key] }}</textarea>
+    </div>
+    {% endfor %}
+    <div class="span-12"><button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить тексты</button></div>
+  </form>
+</section>
+
 <section class="panel" id="docs">
   <h2>Документы</h2>
   <p class="muted">Сохраняются в папку «Документы по итогам» в папке соревнования и сразу открываются в Word или Excel —
-    там их можно поправить перед печатью.{% if has_results %} Призёров для медалей: {{ medals }}.{% else %} Сначала внесите результаты.{% endif %}</p>
+    там их можно поправить перед печатью.{% if has_results %} Призёров для медалей: {{ medals }}; выполнили нормативы: {{ extracts }} чел.{% else %} Для дипломов, наклеек, списка и выписок сначала внесите результаты.{% endif %}</p>
   <ul class="docs-list">
     {% for kind, d in docs.items() %}
     <li>
       <div class="docs-what"><b>{{ d[0] }}</b><span class="muted">{{ d[1] }}</span></div>
       <div class="actions">
         <form method="post" action="{{ base }}/awards/doc/{{ kind }}" data-busy="Готовлю…">
-          <button class="btn btn-primary btn-small" type="submit"{% if not has_results and kind in ("diplomas", "stickers", "awardees") %} disabled{% endif %}>{{ icon("file", 16) }}Открыть</button>
+          <button class="btn btn-primary btn-small" type="submit"{% if not has_results and kind in ("diplomas", "stickers", "awardees", "extracts") %} disabled{% endif %}>{{ icon("file", 16) }}Открыть</button>
         </form>
         <a class="btn btn-ghost btn-small" href="{{ base }}/awards/file/{{ kind }}">{{ icon("download", 16) }}Скачать</a>
       </div>
