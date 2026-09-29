@@ -45,6 +45,7 @@ from st_secretary.competition import LEVEL_LABELS
 from st_secretary.disciplines import Status
 from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.importers.card_xlsx import CardError, load_card
+from st_secretary.importers.si_reader import read_si_reader
 from st_secretary.importers.preapp_xlsx import read_preapplication
 from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, SEVERITY_ORDER, WARNING, Issue
 from st_secretary.money import money
@@ -184,6 +185,14 @@ def _flash(request: Request) -> dict | None:
                                   "перезаявки не принимаются. Решение — за ГСК."),
         "opened": ("ok", "Открываю…"),
         "run_stages": ("ok", "Этапы дистанции сохранены."),
+        "si_nofile": ("err", "Выберите файл si_reader.csv из SPORTident Reader."),
+        "si_bad": ("err", f"Файл не прочитан: {q.get('why', '')}. Нужен экспорт SportIdent Reader «Config+ (card readout)»."),
+        "si_done": ("ok" if not q.get("unknown") else "err",
+                    f"Прочитано чипов: {q.get('n', '0')}, заполнено команд: {q.get('t', '0')}."
+                    + (f" Чипы без команды: {q.get('unknown')} — впишите чип в колонку «Чип» у команды и загрузите файл "
+                       "ещё раз." if q.get("unknown") else "")
+                    + (f" Время по чипу заменило вписанное вручную у команд: {q.get('replaced')} — проверьте."
+                       if q.get("replaced") else "")),
         "run_saved": ("ok", "Баллы сохранены."),
         "run_nofile": ("err", "Выберите файл рабочей книги СЕКРЕТАРЬ_ST (.xls)."),
         "run_badbook": ("err", "В файле нет листа «Протокол_группа» или он не похож на протокол СЕКРЕТАРЬ_ST. Нужна "
@@ -1563,7 +1572,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             zdata["stages"] = stages
             zdata["distance"] = {k: str(form.get(k, "")).strip() for k in ("km", "modes", "kv_hours")}
             zdata["tie"] = "start" if form.get("tie") == "start" else "same"
-            for k in ("spp", "expected", "kv"):  # дисциплины по времени: эквивалент балла, расчётное время, КВ
+            for k in ("spp", "expected", "kv", "cutoff_pairs"):  # по времени: эквивалент балла, расчётное время, КВ, отсечки SI
                 if k in form:
                     zdata[k] = str(form.get(k, "")).strip()
             if "removed_order" in form:
@@ -1596,6 +1605,26 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         _save_zachet(f, zz.key, lambda zdata: zdata.update(imported))
         return _redirect(_with_done(back, "run_imported", n=str(len(imported["stages"])),
                                     t=str(len(imported["teams"])), notes=" ".join(notes)[:900]))
+
+    @app.post("/c/{cid}/results/si")
+    async def results_si(request: Request, cid: str, z: str = ""):
+        """SPORTident Reader (si_reader.csv): старт, финиш и отсечки команд по чипам."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        up = (await request.form()).get("csv")
+        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}#points"
+        if up is None or not getattr(up, "filename", ""):
+            return _redirect(_with_done(back, "si_nofile"))
+        try:
+            cards = read_si_reader(await up.read())
+        except ValueError as e:
+            return _redirect(_with_done(back, "si_bad", why=str(e)))
+        teams = zachet_inputs(f, comp, zz)
+        out = {}
+        _save_zachet(f, zz.key, lambda zdata: out.update(tr.apply_si(zdata, cards, teams)))
+        return _redirect(_with_done(back, "si_done", n=str(len(cards)), t=str(out["teams"]),
+                                    unknown=", ".join(out["unknown"])[:600], replaced=", ".join(out["replaced"])[:600]))
 
     @app.post("/c/{cid}/results/points")
     async def results_points(request: Request, cid: str, z: str = ""):

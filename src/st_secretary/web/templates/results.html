@@ -68,6 +68,8 @@
       <div class="field span-3"><label for="f-ro">Со снятиями с этапов</label>
         <select id="f-ro" name="removed_order"><option value="after">после прошедших полностью (п. 6.5)</option>
           <option value="count"{% if zdata.get("removed_order") == "count" %} selected{% endif %}>… и выше тот, у кого снятий меньше</option></select></div>
+      <div class="field span-6"><label for="f-cut">Станции отсечек SPORTident (начало-конец)</label>
+        <input id="f-cut" name="cutoff_pairs" type="text" value="{{ zdata.get('cutoff_pairs', '') }}" placeholder="31-32; 41-42"></div>
     </div>
     <p class="hint">Сейчас 1 балл = <b>{{ run.seconds_per_point }} с</b>: по Правилам 15 с при расчётном времени до 30 минут, иначе 30 с
       (спелео п. 6.4, пешеходные п. 6.3.6), если в Условиях не сказано иное. Время на дистанции больше КВ — место не присуждается.</p>
@@ -96,7 +98,13 @@
 <section class="panel" id="points">
   <h2>{% if is_time %}Время и штрафные баллы{% else %}Баллы по этапам{% endif %}</h2>
   {% if is_time %}<p class="muted">Старт и финиш — <b>чч:мм:сс</b> (единое судейское время), отсечки — сумма за дистанцию,
-    <b>мм:сс</b>. В клетках этапов — штрафные баллы (дробные — через запятую: 0,3), снятие с этапа — буква <b>с</b>.</p>{% endif %}
+    <b>мм:сс</b>. В клетках этапов — штрафные баллы (дробные — через запятую: 0,3), снятие с этапа — буква <b>с</b>.</p>
+  <form method="post" action="{{ base }}/results/si?{{ zq }}" enctype="multipart/form-data" class="res-import">
+    <label class="btn">{{ icon("upload", 18) }}Загрузить si_reader.csv (SPORTident Reader)
+      <input type="file" name="csv" accept=".csv,.txt" class="visually-hidden" data-autosubmit></label>
+    <span class="hint">Старт и финиш — по чипу команды (колонка «Чип» или номер чипа из заявки), отсечки — по станциям из
+      настроек этапов. Можно загружать сколько угодно раз: берётся последнее считывание каждого чипа.</span>
+  </form>{% endif %}
   <p class="muted">Всё сохраняется сразу. Enter — на команду ниже, как в Excel; Tab — на следующий этап. Пустая клетка — этап
     не внесён (0 баллов). Команда снята или не финишировала — выберите статус: место ей не присуждается.
     <span class="pts-legend">Синим</span> — пришло с <a href="{{ base }}/judges?{{ zq }}">телефона судьи этапа</a>; чтобы увидеть

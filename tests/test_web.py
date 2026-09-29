@@ -1035,3 +1035,28 @@ def test_speleo_zachet_times_protocol_and_board(client, tmp_path, psr_card):
     assert "Время на дистанции" in cells and "18:34,5" in cells and "Снятий" in cells
     client.post(base(f) + "/board/toggle", data={"on": "1"})
     assert "18:34,5" in TestClient(client.app.state.board.app).get("/").text
+
+
+def test_si_reader_upload_fills_times(client, tmp_path, psr_card):
+    from dataclasses import replace
+
+    from st_secretary.competition import Zachet
+    from test_si_reader import csv, line
+
+    comp = replace(psr_card, zachety=[Zachet("М/Ж", 3, "0840271811Я", team_size=3)])
+    f = client.app.state.store.create(comp)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    url, q = base(f) + "/results", "?z=М/Ж_3"
+    client.post(url + "/stages" + q, data={"st-0-name": "Колодец", "cutoff_pairs": "31-32", "kv": ""})
+    client.post(url + "/points" + q, data={"p-0-file": "Кедр.xlsx", "p-0-chip": "2001234"})
+    data = csv(line(1, "2001234", "10:00:00", "10:30:00", [("31", "10:05:00"), ("32", "10:08:00")]),
+               line(2, "2007777", "10:00:00", "10:40:00"))
+    r = client.post(url + "/si" + q, files={"csv": ("si_reader.csv", data, "text/csv")}, follow_redirects=False)
+    loc = r.headers["location"]
+    assert "done=si_done" in loc and "unknown=2007777" in loc
+    d = f.run_data()["zachety"]["М/Ж_3"]["teams"]["Кедр.xlsx"]
+    assert (d["start"], d["finish"], d["cutoffs"]) == ("10:00:00", "10:30:00", "3:00")
+    page = client.get(url + q).text
+    assert "27:00" in page  # 30 мин − 3 мин отсечки
+    bad = client.post(url + "/si" + q, files={"csv": ("x.csv", b"a;b\n1;2\n", "text/csv")}, follow_redirects=False)
+    assert "done=si_bad" in bad.headers["location"]

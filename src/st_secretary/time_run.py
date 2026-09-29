@@ -89,6 +89,55 @@ def clock_text(sec: Fraction | None, tenths: bool = True) -> str:
     return ("−" if neg else "") + out
 
 
+def duration_text(sec: Fraction) -> str:
+    """Отсечки для клетки: «4:30» (мм:сс) или «1:04:30»."""
+    return clock_text(sec)
+
+
+def time_of_day_text(sec: Fraction | None) -> str:
+    """Время суток всегда «чч:мм:сс» (с десятыми, если есть): «00:12:10», а не «12:10» — иначе прочтётся как 12 ч."""
+    if sec is None:
+        return ""
+    whole = int(sec)
+    out = f"{whole // 3600 % 24:02d}:{whole % 3600 // 60:02d}:{whole % 60:02d}"
+    frac = sec - whole
+    return out + ("," + str(int(frac * 10)) if frac else "")
+
+
+def apply_si(zdata: dict, cards: list, teams: list[TeamInput]) -> dict:
+    """Карты SI Reader → старт, финиш и отсечки команд зачёта (по чипу команды или участника из заявки).
+    Возвращает {"teams": сколько команд заполнено, "unknown": [чипы без команды], "replaced": [команды,
+    у которых вручную вписанное время заменено временем чипа]}."""
+    from st_secretary.importers.si_reader import cutoffs_from, parse_pairs
+
+    stored = zdata.setdefault("teams", {})
+    owner = {}
+    for t in teams:
+        chip = str(stored.get(t.file, {}).get("chip", "")).strip()
+        for c in ([chip] if chip else []) + [m.chip for m in t.members if m.chip]:
+            owner.setdefault(c, t)
+    pairs = parse_pairs(zdata.get("cutoff_pairs", ""))
+    done, unknown, replaced = set(), [], []
+    for card in cards:
+        t = owner.get(card.siid)
+        if t is None:
+            unknown.append(card.siid)
+            continue
+        d = stored.setdefault(t.file, {})
+        new = {"start": time_of_day_text(card.start), "finish": time_of_day_text(card.finish)}
+        if pairs and (cut := cutoffs_from(card, pairs)) is not None:
+            new["cutoffs"] = duration_text(cut)
+        new = {k: v for k, v in new.items() if v}
+        manual = [k for k, v in new.items() if d.get(k) and not d.get("si") and str(d.get(k)) != v]
+        if manual:
+            replaced.append(t.team)
+        d.update(new)
+        d["chip"] = d.get("chip") or card.siid
+        d["si"] = {"siid": card.siid, "read_on": card.read_on}
+        done.add(t.file)
+    return {"teams": len(done), "unknown": unknown, "replaced": replaced}
+
+
 def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -> ZachetRun:
     stages = stages_of(zdata)
     known = {s.id for s in stages}
