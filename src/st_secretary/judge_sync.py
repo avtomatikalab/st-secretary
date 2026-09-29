@@ -9,7 +9,9 @@
 - баллы попадают в таблицу секретаря, если клетка пустая или в ней то, что этот этап присылал раньше;
 - если секретарь уже вписал другое (например, после протеста), таблица не меняется, а на странице результатов
   появляется расхождение «судья прислал 20, в таблице 25» — решает человек;
-- снятие с этапа не меняет статус команды на дистанции (в ПСР это штраф этапа), а видно секретарю.
+- снятие с этапа не меняет статус команды на дистанции (в ПСР это штраф этапа), а видно секретарю;
+- отсечки (спелео, пешеходные): судья включает и выключает секундомер отсечки на телефоне; сумма отсечек со всех
+  этапов попадает в колонку «Отсечки», если секретарь не вписал туда своё (тогда — расхождение, как с баллами).
 
 Ссылки — по случайному коду на этап: без кода с телефона ничего не изменить; код можно отозвать.
 """
@@ -18,9 +20,11 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
+from fractions import Fraction
 
 from st_secretary.issues import INFO, WARNING, Issue
 from st_secretary.psr_run import Stage, parse_points
+from st_secretary.time_run import duration_text, parse_duration
 
 _ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # без похожих друг на друга символов (l/1, o/0)
 
@@ -65,6 +69,8 @@ class Record:
     reason: str = ""
     note: str = ""
     updated: int = 0  # когда запись изменили на телефоне, мс — для порядка присылок с одного телефона
+    cutoff: str = ""  # сумма отсечек на этапе, «м:сс» (секундомер на телефоне)
+    cut_on: str = ""  # отсечка идёт с этого времени (часы телефона) — ещё не остановлена
 
     @classmethod
     def from_json(cls, d: dict) -> Record:
@@ -76,7 +82,8 @@ class Record:
         except (TypeError, ValueError):
             updated = 0
         return cls(clip(d.get("file"), 300), clip(d.get("points"), 20), clip(d.get("arrive"), 8), clip(d.get("leave"), 8),
-                   bool(d.get("removed")), clip(d.get("reason")), clip(d.get("note"), 500), updated)
+                   bool(d.get("removed")), clip(d.get("reason")), clip(d.get("note"), 500), updated,
+                   clip(d.get("cutoff"), 12), clip(d.get("cut_on"), 8))
 
 
 def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], device: str, received: str,
@@ -98,8 +105,10 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
         before = str(prev.get("points", "")).strip()
         log[rec.file] = {"points": rec.points, "arrive": rec.arrive, "leave": rec.leave, "removed": rec.removed,
                          "reason": rec.reason, "note": rec.note, "updated": rec.updated, "device": device,
-                         "received": received}
+                         "received": received, "cutoff": rec.cutoff, "cut_on": rec.cut_on}
         saved.append(rec.file)
+        if not merge_cutoffs(zdata, rec.file):
+            conflicts += 1
         if removal_mark and not rec.points:  # спелео: снятие с этапа — «с» в клетке этапа (или снять отметку)
             if rec.removed and cell in ("", before, removal_mark):
                 pts_cell[sid] = removal_mark
@@ -116,6 +125,40 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
             elif not _same(cell, rec.points):
                 conflicts += 1
     return {"saved": saved, "conflicts": conflicts}
+
+
+def phone_cutoffs(zdata: dict, file: str) -> Fraction | None:
+    """Сумма отсечек, присланных с телефонов всех этапов (None — ни один этап отсечек не присылал)."""
+    total, any_sent = Fraction(0), False
+    for log in zdata.get("judge", {}).values():
+        v = str(log.get(file, {}).get("cutoff", "")).strip()
+        if not v:
+            continue
+        try:
+            total += parse_duration(v)
+            any_sent = True
+        except ValueError:
+            continue  # не время — видно в журнале этапа
+    return total if any_sent else None
+
+
+def merge_cutoffs(zdata: dict, file: str) -> bool:
+    """Сумма отсечек с телефонов → колонка «Отсечки», если там пусто или прежняя сумма с телефонов.
+    False — секретарь вписал своё, и оно расходится с телефонами."""
+    total = phone_cutoffs(zdata, file)
+    if total is None:
+        return True
+    team = zdata.setdefault("teams", {}).setdefault(file, {})
+    text = duration_text(total)
+    cell = str(team.get("cutoffs", "")).strip()
+    if cell in ("", str(team.get("cutoffs_phone", "")).strip()):
+        team["cutoffs"], team["cutoffs_phone"] = text, text
+        return True
+    team["cutoffs_phone_new"] = text  # для сообщения о расхождении
+    try:
+        return parse_duration(cell) == total
+    except ValueError:
+        return False
 
 
 def _same(a: str, b: str) -> bool:
@@ -152,6 +195,18 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
             if rec.get("removed"):
                 why = f": {rec['reason']}" if rec.get("reason") else ""
                 out.append(Issue(INFO, f"«{team}», {st.title}: судья этапа отметил снятие с этапа{why}", team=team))
+    for file, t in teams.items():
+        total = phone_cutoffs(zdata, file)
+        cell = str(t.get("cutoffs", "")).strip()
+        if total is None or not cell:
+            continue
+        try:
+            same = parse_duration(cell) == total
+        except ValueError:
+            same = False
+        if not same:
+            out.append(Issue(WARNING, f"«{team_names.get(file, file)}»: отсечки с телефонов судей — {duration_text(total)}, "
+                                      f"в таблице {cell} — проверьте", team=team_names.get(file, file)))
     return out
 
 
@@ -159,12 +214,16 @@ def stage_summary(zdata: dict, sid: str, total_teams: int) -> dict:
     """Сколько команд судья этапа уже прислал и когда последний раз."""
     log = zdata.get("judge", {}).get(sid, {})
     last = max((str(r.get("received", "")) for r in log.values()), default="")
-    return {"teams": sum(1 for r in log.values() if r.get("points") or r.get("arrive") or r.get("removed")),
+    return {"teams": sum(1 for r in log.values()
+                         if r.get("points") or r.get("arrive") or r.get("removed") or r.get("cutoff")),
             "of": total_teams, "last": last}
 
 
 def from_phone(zdata: dict, sid: str, file: str) -> bool:
-    """Клетка таблицы — из телефона судьи (то же значение, что в журнале этапа)."""
+    """Клетка таблицы — из телефона судьи (то же значение, что в журнале этапа). sid «cutoffs» — сумма отсечек."""
+    if sid == "cutoffs":
+        t = zdata.get("teams", {}).get(file, {})
+        return bool(t.get("cutoffs")) and t.get("cutoffs") == t.get("cutoffs_phone")
     rec = zdata.get("judge", {}).get(sid, {}).get(file)
     cell = str(zdata.get("teams", {}).get(file, {}).get("points", {}).get(sid, "")).strip()
     return bool(rec and cell and _same(cell, str(rec.get("points", ""))))

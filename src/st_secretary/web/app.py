@@ -2114,7 +2114,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                  for r in sorted(run.rows, key=lambda r: r.start_order)]
         return {"title": comp.title, "zachet": z.key, "stage": {"title": stage.title, "kv": stage.kv_minutes},
                 "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams,
-                            "stage": {"kv": stage.kv_minutes},
+                            "stage": {"kv": stage.kv_minutes, "cutoffs": tr.is_time_discipline(z)},
                             "records": {file: {**rec, "file": file} for file, rec in log.items()}}}
 
     def judge_receive(token: str, payload: dict) -> dict | None:

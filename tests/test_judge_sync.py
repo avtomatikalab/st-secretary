@@ -1,7 +1,7 @@
 """Телефоны судей: ссылки по этапам, слияние присланного с таблицей секретаря, расхождения."""
 
 from st_secretary import judge_sync as js
-from st_secretary.psr_run import stages_of
+from st_secretary.psr_run import Stage, stages_of
 
 FILES = {"Кедр.xlsx", "Сосна.xlsx"}
 NAMES = {"Кедр.xlsx": "Кедр", "Сосна.xlsx": "Сосна"}
@@ -77,3 +77,21 @@ def test_speleo_removal_goes_to_table_as_mark():
     assert "s2" not in z["teams"]["Кедр.xlsx"]["points"]  # судья снял отметку — клетка снова пустая
     js.merge(z, "s2", [js.Record("Сосна.xlsx", "", removed=True, updated=1)], FILES, "т-1", "2025-09-21T11:06:00")
     assert "s2" not in z["teams"]["Сосна.xlsx"]["points"]  # ПСР: снятие с этапа в таблицу не идёт
+
+
+def test_cutoffs_from_phones_sum_over_stages_and_keep_secretary_value():
+    zdata = {"stages": [{"id": "s1", "name": "Колодец"}, {"id": "s2", "name": "Шкуродёр"}], "teams": {}}
+    files = {"Кедр.xlsx"}
+    js.merge(zdata, "s1", [js.Record("Кедр.xlsx", cutoff="2:30", updated=1)], files, "т-1", "2026-10-04T10:00:00")
+    js.merge(zdata, "s2", [js.Record("Кедр.xlsx", cutoff="1:00", cut_on="", updated=2)], files, "т-2",
+             "2026-10-04T10:20:00")
+    assert zdata["teams"]["Кедр.xlsx"]["cutoffs"] == "3:30" and js.from_phone(zdata, "cutoffs", "Кедр.xlsx")
+    zdata["teams"]["Кедр.xlsx"]["cutoffs"] = "4:00"  # секретарь поправил по протоколу
+    out = js.merge(zdata, "s2", [js.Record("Кедр.xlsx", cutoff="2:00", updated=3)], files, "т-2",
+                   "2026-10-04T10:25:00")  # с телефонов теперь 4:30
+    assert out["conflicts"] == 1 and zdata["teams"]["Кедр.xlsx"]["cutoffs"] == "4:00"
+    assert not js.from_phone(zdata, "cutoffs", "Кедр.xlsx")
+    stages = [Stage("s1", "", "Колодец"), Stage("s2", "", "Шкуродёр")]
+    texts = [i.text for i in js.judge_issues(zdata, stages, {"Кедр.xlsx": "Кедр"})]
+    assert "«Кедр»: отсечки с телефонов судей — 4:30, в таблице 4:00 — проверьте" in texts
+    assert js.Record.from_json({"file": "Кедр.xlsx", "cutoff": "5:00", "cut_on": "10:01:02"}).cut_on == "10:01:02"
