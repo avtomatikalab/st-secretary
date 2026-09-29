@@ -6,6 +6,7 @@
     СТ-Секретарь/
         СТ-Секретарь.bat      — запуск (двойной щелчок)
         Прочтите меня.txt     — как запустить, где данные, как обновить
+        Инструкция секретаря.pdf — со снимками экрана (кнопка «Инструкция» в программе открывает её)
         LICENSE.txt           — лицензия AGPL-3.0 (исходный код — на GitHub)
         program/              — Python (официальная сборка «embeddable» с python.org) и библиотеки
     Папка «данные» появляется рядом при первом запуске; в архиве её нет, поэтому обновление её не трогает.
@@ -161,6 +162,9 @@ def build(out_dir: Path) -> Path:
         (top / "Прочтите меня.txt").write_text(README.format(version=ver, py=PY_VERSION).replace("\n", "\r\n"),
                                                encoding="utf-8-sig", newline="")
         shutil.copy(ROOT / "LICENSE", top / "LICENSE.txt")
+        manual = ROOT / "docs" / "Инструкция секретаря.pdf"  # tools/make_manual.py
+        if manual.is_file():
+            shutil.copy(manual, top / manual.name)
 
         out_dir.mkdir(parents=True, exist_ok=True)
         dest = out_dir / f"{NAME}-{ver}-windows.zip"

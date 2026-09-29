@@ -53,9 +53,17 @@
   </form>
 </div>
 
-{% if items %}
-<p class="home-extra"><a class="btn btn-ghost" href="/practice">{{ icon("table", 18) }}Судейская практика — по всем соревнованиям</a></p>
-{% endif %}
+<div class="panel">
+  <h2>Потренироваться</h2>
+  <p class="muted">Учебное соревнование — выдуманные команды и участники, этапы дистанций уже заданы. В нескольких заявках
+    ошибки оставлены специально — найдите и исправьте их, проведите комиссию, жеребьёвку, внесите баллы. Настоящие
+    данные это не затрагивает; учебную папку можно потом просто удалить.</p>
+  <form method="post" action="/training" data-busy="Создаю…">
+    <button class="btn" type="submit">{{ icon("plus") }}Создать учебное соревнование</button></form>
+</div>
+
+<p class="home-extra"><a class="btn btn-ghost" href="/help" target="_blank" rel="noopener">{{ icon("file", 18) }}Инструкция секретаря</a>
+{% if items %}<a class="btn btn-ghost" href="/practice">{{ icon("table", 18) }}Судейская практика — по всем соревнованиям</a>{% endif %}</p>
 
 <div class="data-dir">
   <span>Данные хранятся в папке: <code>{{ data_dir }}</code></span>

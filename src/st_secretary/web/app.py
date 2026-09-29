@@ -38,6 +38,7 @@ from st_secretary import results as res
 from st_secretary import staff as sf
 from st_secretary import start_list as sl
 from st_secretary import time_run as tr
+from st_secretary import training
 from st_secretary import verify as vf
 from st_secretary.exporters import awards as aw
 from st_secretary.exporters import contracts as ct
@@ -146,6 +147,8 @@ def _flash(request: Request) -> dict | None:
         return {"kind": "ok", "text": text} if parts else {"kind": "err", "text": "Файлы не выбраны."}
     texts = {
         "created": ("ok", "Соревнование создано. Заполните судейскую коллегию и зачёты и нажмите «Сохранить»."),
+        "training": ("ok", "Учебное соревнование создано: 14 команд с выдуманными участниками, этапы дистанций заданы. "
+                           "В четырёх заявках ошибки оставлены специально — найдите их в «Предварительных заявках»."),
         "imported": ("ok", "Карточка загружена из Excel. Посмотрите замечания проверки, если они есть."),
         "saved": ("ok", "Карточка сохранена."),
         "removed": ("ok", f"Заявка «{q.get('name', '')}» убрана из обработки — файл перенесён в папку "
@@ -349,6 +352,21 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             return page(request, "new.html", status_code=422, form=form, errors=errors, ch=choices())
         f = store.create(comp)
         return _redirect(f"{_base(f)}/card/edit?done=created")
+
+    @app.get("/help")
+    def help_pdf():
+        """Инструкция секретаря (PDF): рядом с программой (переносная версия) или в docs/ (исходники)."""
+        name = "Инструкция секретаря.pdf"
+        for p in (Path.cwd() / name, Path.cwd() / "docs" / name, HERE.parents[2] / "docs" / name):
+            if p.is_file():
+                return FileResponse(p, media_type="application/pdf", filename=name, content_disposition_type="inline")
+        raise HTTPException(404)
+
+    @app.post("/training")
+    def training_create():
+        """Учебное соревнование на выдуманных данных — потренироваться до настоящих соревнований."""
+        f = training.create(store, app.state.clock().date())
+        return _redirect(f"{_base(f)}?done=training")
 
     @app.post("/import")
     async def import_card(request: Request):

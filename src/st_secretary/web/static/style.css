@@ -522,6 +522,7 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 
 /* ---------- протоколы этапов и результаты ---------- */
 .chip.is-active { background: var(--primary); border-color: var(--primary); color: #fff; }
+a.chip { text-decoration: none; } a.chip::before { display: none; }  /* зачёты — вкладки, не галочки */
 .res-import { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 12px; }
 .res-stages { table-layout: fixed; min-width: 560px; }
 .res-stages .c-tour { width: 130px; } .res-stages .c-max { width: 90px; } .res-stages .c-act { width: 46px; }

@@ -950,6 +950,26 @@ def test_draw_start_protocol_publish_and_board(client, tmp_path, psr_card, opene
     assert client.get(base(f) + "/step/start").status_code == 404
 
 
+def test_help_opens_manual_next_to_program(client, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # переносная версия: инструкция лежит рядом с «СТ-Секретарь.bat»
+    (tmp_path / "Инструкция секретаря.pdf").write_bytes(b"%PDF-1.4 test")
+    r = client.get("/help")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf" and r.content == b"%PDF-1.4 test"
+    assert "inline" in r.headers["content-disposition"]
+    assert 'href="/help"' in client.get("/").text
+
+
+def test_training_competition_from_home_page(client):
+    assert "Создать учебное соревнование" in client.get("/").text
+    r = client.post("/training", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith("?done=training")
+    page = client.get(r.headers["location"]).text
+    assert "Учебное соревнование создано" in page and "Учебный чемпионат г. Энска" in page
+    f = client.app.state.store.all()[0]
+    assert len(f.preapp_files()) == 14
+    assert "Ориентирование" in client.get(base(f) + "/results").text
+
+
 def test_board_shows_only_enabled_competitions_and_only_results(client, tmp_path, psr_card):
     from datetime import datetime
 
