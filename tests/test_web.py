@@ -761,3 +761,32 @@ def test_contracts_tabel_personal_data_and_documents(client, tmp_path, psr_card,
     assert "Свой шаблон <b>Шаблон договора — главный судья.docx</b> — для: главный судья." in page
     client.post(url + "/remove", data={"key": "работяга семен ильич"})
     assert "Работяга" not in client.get(url).text
+
+
+def test_verify_page_program_documents_and_upload(client, psr_card, opened):
+    from docx import Document
+
+    f = client.app.state.store.create(psr_card)
+    url = base(f) + "/verify"
+    assert "Пока нечего сверять" in client.get(url).text
+    client.post(base(f) + "/awards/doc/judging")  # программа сохранила справки и табель
+    client.post(base(f) + "/contracts/doc/tabel")
+    page = client.get(url).text
+    assert "Документы по итогам\Справки о судействе.docx" in page and "Договоры и табель\Табель-наряд.xlsx" in page
+    assert page.count("расхождений нет") == 2
+
+    bad = Document()
+    bad.add_paragraph("Отчёт главного судьи Чемпионата города N по спортивному туризму, «04» октября 2024 г., "
+                      "код ВРВС 0840271811Я")
+    buf = io.BytesIO()
+    bad.save(buf)
+    docx_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    r = client.post(url, files=[("files", ("старый отчёт.docx", buf.getvalue(), docx_type)),
+                                ("files", ("скан.pdf", b"%PDF-1.4 broken", "application/pdf"))])
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    text = re.sub(r"\s+", " ", r.text)
+    assert "старый отчёт.docx" in text and "дата ««04» октября 2024» — не 2025 год" in text
+    assert "код ВРВС 0840271811Я — это «дистанция - спелео - группа»" in text
+    assert "Не прочитаны" in text and "скан.pdf" in text
+    assert "Сейчас добавлены: старый отчёт.docx, скан.pdf" in text
+    assert not any(p.name.startswith("старый") for p in f.path.rglob("*"))  # присланные файлы не сохраняются

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% macro issue_row(i, show_source=False) -%}
+<li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>
+  <span>{% if show_source %}<b>{{ i.source }}:</b> {% endif %}{{ i.text }}
+    {% if i.before %}<span class="vf-quote">«{{ i.before }}»</span>{% endif %}
+    {% if i.why %}<span class="vf-note">{{ i.why }}</span>{% endif %}
+    {% if i.todo %}<span class="vf-note"><b>Что сделать:</b> {{ i.todo }}</span>{% endif %}</span></li>
+{%- endmacro %}
+{% block title %}Сверка документов — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Сверка документов</h1>
+<p class="lead">Программа читает готовые документы — Word, Excel, PDF — и ищет, что расходится с карточкой соревнования и
+  между документами: даты не того года, чужие коды ВРВС, опечатки в названии дисциплины и в ФИО, категории судей,
+  сумму прописью, дни и суммы в табеле, договорах и актах. Исправляете вы — в Word или Excel.</p>
+
+<div class="tiles">
+  <div class="tile"><b>{{ checked }}</b><span>документов проверено</span></div>
+  <div class="tile {% if errors %}tile-error{% else %}tile-fixed{% endif %}"><b>{{ errors }}</b><span>ошибок</span></div>
+  <div class="tile {% if warnings %}tile-warning{% endif %}"><b>{{ warnings }}</b><span>проверить</span></div>
+  <div class="tile"><b>{{ report.contracts }} / {{ report.tabel_rows }}</b><span>договоров / строк табеля найдено</span></div>
+</div>
+
+<form method="post" action="{{ base }}/verify" enctype="multipart/form-data" class="dropzone" data-dropzone>
+  {{ icon("upload", 40) }}
+  <p class="dz-title">Перетащите сюда документы для сверки</p>
+  <p class="muted">Протоколы из СЕКРЕТАРЬ_ST, договоры и акты заказчика, табель, отчёт — Word (.docx), Excel (.xlsx, .xls)
+    или PDF с текстом. Можно сразу несколько. Файлы только проверяются — программа их не сохраняет.</p>
+  <label class="btn btn-primary btn-big">{{ icon("file") }}Выбрать файлы<input type="file" name="files" multiple accept=".docx,.xlsx,.xlsm,.xls,.pdf" class="visually-hidden"></label>
+  <p class="dz-busy">{{ icon("clock") }} Читаю и сверяю…</p>
+  <noscript><button class="btn" type="submit">Проверить</button></noscript>
+</form>
+<p class="hint">Документы, которые сохранила сама программа (папки «Документы по итогам» и «Договоры и табель»),
+  проверяются всегда — их могли поправить в Word или Excel.{% if uploaded %} Сейчас добавлены: {{ uploaded|join(", ") }}.
+  <a href="{{ base }}/verify">Проверить без них</a>{% endif %}</p>
+
+{% if report.cross %}
+<section class="panel">
+  <h2>Между документами</h2>
+  <ul class="issues-simple vf-list">{% for i in report.cross %}{{ issue_row(i, True) }}{% endfor %}</ul>
+</section>
+{% endif %}
+
+{% if unread %}
+<section class="panel panel-warn">
+  <h2>{{ icon("alert") }} Не прочитаны</h2>
+  <ul class="vf-files">{% for d in unread %}<li><b>{{ d.name }}</b> — {{ d.error }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>По документам</h2>
+  {% set readable = report.files|rejectattr("0.error")|list %}
+  {% if not readable %}
+  <p class="muted">Пока нечего сверять: программа ещё не сохранила документов (дипломы, справки, договоры, табель), и файлы
+    не добавлены.</p>
+  {% endif %}
+  {% for d, issues in readable %}
+  <div class="vf-doc">
+    <h3>{{ icon("file", 18) }} {{ d.name }}
+      {% if issues %}<span class="muted">— замечаний: {{ issues|length }}</span>{% else %}<span class="text-ok">{{ icon("check", 16) }} расхождений нет</span>{% endif %}</h3>
+    {% if issues %}<ul class="issues-simple vf-list">{% for i in issues %}{{ issue_row(i) }}{% endfor %}</ul>{% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

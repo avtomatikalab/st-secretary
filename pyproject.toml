@@ -15,6 +15,7 @@ dependencies = [
     "jinja2>=3.1",
     "python-multipart>=0.0.9",
     "python-docx>=1.1",  # документы Word: дипломы, справки, отчёт
+    "pypdf>=4",  # текст из PDF — для сверки документов (договоры заказчика часто приходят в PDF)
 ]
 
 [project.scripts]

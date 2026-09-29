@@ -134,3 +134,28 @@ def test_psr2024_result_protocol_to_diplomas(tmp_path):
     from docx import Document
     texts = [p.text for p in Document(write_diplomas(z, comp, tmp_path / "d.docx")).paragraphs if p.text]
     assert texts.count("Награждаются") == 9 and "за I место" in texts
+
+
+def test_verify_2025_folder():
+    """Сверка папки ЧГК 2025: находятся известные ошибки (без вывода ФИО)."""
+    from st_secretary.importers.card_xlsx import load_card
+    from st_secretary.verify import Known, read_doc, verify
+
+    folder = DATA / "С семинара" / "С семинара" / "секретариат" / "19-21.09.2025 комби"
+    card = DATA / PSR2025 / "Карточка_соревнования.xlsx"
+    if not (folder / "Договора").exists() or not card.exists():
+        pytest.skip("нет папки ЧГК 2025 или карточки в эталонных данных")
+    comp = load_card(card)
+    files = [folder / n for n in ("Награждается.docx", "Наклейки на медали.xlsx", "Result_PSR_2024.xls")]
+    files += sorted((folder / "Договора").iterdir())
+    rep = verify([read_doc(p) for p in files], comp, [Known(o.fio, o.category, "в карточке") for o in comp.officials])
+    t = [i.text for i in rep.all_issues]
+    assert sum("октября 2024» — не 2025 год" in x for x in t) == 3  # дипломы, наклейки, протокол — даты 2024 г.
+    assert any("0840271811Я — это «дистанция - спелео - группа»" in x for x in t)
+    assert sum("«комбинированые» — похоже на опечатку" in x for x in t) == 17  # во всех договорах
+    assert sum("отмечено дней «р» — 3, а к оплате — 4" in x for x in t) == 2
+    assert sum(": срок в договоре «19-21 сентября 2025 года», а в акте" in x for x in t) == 5
+    assert sum("в акте 4 дн., а в периоде «19-21 сентября 2025» столько дней нет" in x for x in t) == 7
+    assert sum("имя и отчество слитно" in x for x in t) == 2
+    assert (rep.contracts, rep.tabel_rows) == (17, 17)
+    assert rep.cross == []  # дни, ставки и суммы договоров сходятся с табелем
