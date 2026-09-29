@@ -617,3 +617,35 @@ def test_team_documents_stored_locally_and_checked_in_one_window(client, tmp_pat
 
     client.post(base(f) + "/docs/remove", data={"file": "Кедр.xlsx", "name": "полис.pdf"})
     assert (docs_dir / "Убранные" / "полис.pdf").is_file() and not (docs_dir / "полис.pdf").exists()
+
+
+# ------------------------------------------------------------------ награждение и документы по итогам
+
+
+def test_awards_manual_results_and_documents(client, tmp_path, psr_card, opened):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    url = base(f) + "/awards"
+    page = client.get(url).text
+    assert "Результатов пока нет" in page and "Ввести или поправить места вручную" in page
+    r = client.post(url + "/import", data={"zachet": "М/Ж_3"},
+                    files={"protocol": ("протокол.xls", b"not an excel file", "application/vnd.ms-excel")},
+                    follow_redirects=False)
+    assert "done=res_bad" in r.headers["location"]  # не протокол — объяснение, а не ошибка
+
+    data = {"zachet": "М/Ж_3", "r-0-team": "Кедр", "r-0-place": "1", "r-0-result": "-283", "r-0-norm": "II",
+            "r-1-team": "Сосна", "r-1-place": "2", "r-1-result": "-213", "r-1-norm": ""}
+    r = client.post(url + "/manual", data=data, follow_redirects=False)
+    assert "done=res_saved" in r.headers["location"]
+    page = client.get(url).text
+    assert "Места введены вручную" in page and "Лебедев Антон Игоревич (I)" in page
+
+    from docx import Document
+    d = client.get(url + "/file/diplomas")
+    assert d.status_code == 200 and d.content[:2] == b"PK"
+    texts = [p.text for p in Document(io.BytesIO(d.content)).paragraphs if p.text]
+    assert texts.count("Награждаются") == 6 and "за II место" in texts
+    r = client.post(url + "/doc/stickers", follow_redirects=False)
+    assert r.status_code == 303 and opened[-1] == f.out_dir / "Наклейки на медали.xlsx" and opened[-1].is_file()
+    assert client.get(url + "/file/nothing").status_code == 404

@@ -473,6 +473,27 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .check-pane .adm-decision select { width: 100%; }
 .check-pane .adm-body { padding: 10px 12px 14px; }
 
+/* ---------- награждение и документы по итогам ---------- */
+.zres { border-top: 1px solid var(--line); padding: 16px 0 8px; }
+.zres:first-of-type { border-top: 0; padding-top: 4px; }
+.zres h3 { margin-bottom: 4px; }
+.zres-tbl td { vertical-align: top; }
+.zres-place { font-weight: 700; font-size: 1.1rem; text-align: center; width: 60px; }
+.zres-medal.zres-1 .zres-place { color: #b8860b; } .zres-medal.zres-2 .zres-place { color: #708090; }
+.zres-medal.zres-3 .zres-place { color: #a0522d; }
+.zres-members { font-size: .88rem; }
+.zres-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.zres-actions form { margin: 0; }
+.zres-n { width: 64px !important; text-align: center; }
+.zres-r { width: 110px !important; }
+.docs-list { list-style: none; padding: 0 !important; margin: 8px 0 0; display: grid; gap: 8px; }
+.docs-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.docs-list .actions { margin: 0; }
+.docs-what { display: grid; gap: 2px; max-width: 640px; }
+.docs-what span { font-size: .88rem; }
+.docs-folder { margin-top: 12px; }
+
 /* ---------- средний экран: поля зачёта по три в ряд ---------- */
 @media (max-width: 1280px) {
   .zachet .span-2, .zachet .span-3 { grid-column: span 4; }

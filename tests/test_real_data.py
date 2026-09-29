@@ -112,3 +112,25 @@ def test_psr2024_reconciliation():
     assert "по составам 170" in report
     fixed = Path(__file__).parent / "fixtures" / "psr2024.json"
     assert json.loads(fixed.read_text(encoding="utf-8")) == fixture, "обезличенный набор устарел — перегенерируйте"
+
+
+def test_psr2024_result_protocol_to_diplomas(tmp_path):
+    """Итоговый протокол ПСР-2024 из СЕКРЕТАРЬ_ST → места и дипломы (без вывода ФИО)."""
+    from st_secretary import results as res
+    from st_secretary.exporters.awards import medal_count, write_diplomas
+    from st_secretary.importers.card_xlsx import load_card
+    from st_secretary.importers.sekretar_xls import read_result_protocol
+
+    proto_path = DATA / "С семинара" / "С семинара" / "секретариат" / "19-21.09.2025 комби" / "Result_PSR_2024.xls"
+    card = DATA / PSR2025 / "Карточка_соревнования.xlsx"
+    if not proto_path.exists() or not card.exists():
+        pytest.skip("нет протокола ПСР-2024 или карточки 2025 в эталонных данных")
+    comp = load_card(card)
+    d = res.from_protocol(read_result_protocol(proto_path))
+    assert len(d["rows"]) == 11 and d["group_text"].endswith("СМЕШАННЫЕ ГРУППЫ")
+    assert [r["place"] for r in d["rows"][:3]] == [1, 2, 3] and all(len(r["members"]) == 3 for r in d["rows"])
+    z = res.load({"zachety": {comp.zachety[0].key: d}}, comp, None)
+    assert medal_count(z) == 9
+    from docx import Document
+    texts = [p.text for p in Document(write_diplomas(z, comp, tmp_path / "d.docx")).paragraphs if p.text]
+    assert texts.count("Награждаются") == 9 and "за I место" in texts

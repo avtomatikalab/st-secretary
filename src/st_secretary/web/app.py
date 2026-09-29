@@ -29,6 +29,8 @@ from starlette.exceptions import HTTPException
 from st_secretary import __version__
 from st_secretary import commission as cm
 from st_secretary import equipment as eq
+from st_secretary import results as res
+from st_secretary.exporters import awards as aw
 from st_secretary.competition import LEVEL_LABELS
 from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.importers.card_xlsx import CardError, load_card
@@ -45,6 +47,7 @@ from st_secretary.web.store import COMMISSION_REPORT, IMAGE_TYPES, SUMMARY, Comp
 log = logging.getLogger("st_secretary.web")
 HERE = Path(__file__).parent
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 def open_in_os(path: Path) -> None:
@@ -140,6 +143,15 @@ def _flash(request: Request) -> dict | None:
                               "кнопку ещё раз."),
         "reentry": ("ok", "Перезаявка записана с временем подачи — она видна у команды ниже."),
         "gear_settings": ("ok", "Перечень снаряжения и баллы сохранены."),
+        "res_imported": ("ok", "Протокол загружен: места, составы и выполненные разряды — ниже."),
+        "res_saved": ("ok", "Результаты зачёта сохранены."),
+        "res_cleared": ("ok", "Результаты зачёта убраны."),
+        "res_none": ("err", "Выберите файл протокола и зачёт."),
+        "res_bad": ("err", "Файл не похож на итоговый протокол СЕКРЕТАРЬ_ST. Нужен протокол результатов (.xls), "
+                           "сохранённый кнопкой «Считать протокол»."),
+        "res_noxlrd": ("err", "Для чтения .xls не установлена библиотека xlrd — выполните в папке программы: uv sync."),
+        "doc_ready": ("ok", "Документ сохранён в папке «Документы по итогам» и открывается."),
+        "doc_locked": ("err", "Этот документ сейчас открыт в Word или Excel. Закройте его и нажмите кнопку ещё раз."),
         "gear_saved": ("ok", "Проверка снаряжения сохранена."),
         "docs_added": ("ok", "Документы добавлены. Они хранятся только на этом компьютере."),
         "docs_skipped": ("err", "Часть файлов не добавлена: подходят фото (JPG, PNG), PDF и документы Word/Excel."),
@@ -923,6 +935,148 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             out.append({"name": p.name, "label": p.stem, "kind": kind,
                         "url": f"{_base(f)}/docs/view?{urlencode({'file': file, 'name': p.name})}"})
         return out
+
+    # ------------------------------------------------------------ награждение и документы по итогам
+
+    def awards_ctx(f: CompFolder, comp):
+        preapps = store.preapps(f, comp) if f.preapp_files() else None
+        data = f.results_data()
+        return data, res.load(data, comp, preapps), preapps
+
+    def zachet_teams(preapps, key: str) -> list[dict]:
+        """Команды зачёта по заявкам (кто в нём заявлен) — для ввода мест вручную."""
+        out = []
+        for t in (preapps.teams if preapps else []):
+            members = [e for e in t.entries if e.zachet and e.zachet.key == key]
+            if members:
+                out.append({"team": t.team, "territory": t.territory,
+                            "members": [{"fio": e.name.full, "qual": e.qual.label if e.qual is not None else ""}
+                                        for e in members]})
+        return out
+
+    @app.get("/c/{cid}/awards")
+    def awards_page(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        data, zres, preapps = awards_ctx(f, comp)
+        by_key = {z.key: z for z in zres}
+        blocks = []
+        for z in comp.zachety:
+            stored = data.get("zachety", {}).get(z.key, {})
+            manual = {r["team"]: r for r in stored.get("rows", [])} if stored.get("source") == res.MANUAL else {}
+            teams = [{**t, **{k: manual.get(t["team"], {}).get(k) for k in ("place", "result", "norm")}}
+                     for t in zachet_teams(preapps, z.key)]
+            blocks.append({"z": z, "res": by_key.get(z.key), "teams": teams})
+        return page(request, "awards.html", active="awards", blocks=blocks, docs=AWARD_DOCS,
+                    has_results=any(b["res"] for b in blocks), medals=aw.medal_count(zres),
+                    norms=["", "3ю", "2ю", "1ю", "III", "II", "I", "КМС"], out_dir=f.out_dir, **comp_ctx(f))
+
+    @app.post("/c/{cid}/awards/import")
+    async def awards_import(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        form = await request.form()
+        key = str(form.get("zachet", ""))
+        up = form.get("protocol")
+        if key not in {z.key for z in comp.zachety} or up is None or not getattr(up, "filename", ""):
+            return _redirect(f"{_base(f)}/awards?done=res_none")
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / Path(up.filename).name
+            p.write_bytes(await up.read())
+            try:
+                from st_secretary.importers.sekretar_xls import read_result_protocol
+                proto = read_result_protocol(p)
+            except ImportError:
+                return _redirect(f"{_base(f)}/awards?done=res_noxlrd")
+            except Exception:  # noqa: BLE001 — не протокол или не .xls: объяснить, а не упасть
+                return _redirect(f"{_base(f)}/awards?done=res_bad")
+        if not proto.rows:
+            return _redirect(f"{_base(f)}/awards?done=res_bad")
+        data = f.results_data()
+        data.setdefault("zachety", {})[key] = res.from_protocol(proto)
+        f.save_results_data(data)
+        return _redirect(f"{_base(f)}/awards?done=res_imported")
+
+    @app.post("/c/{cid}/awards/manual")
+    async def awards_manual(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        form = await request.form()
+        key = str(form.get("zachet", ""))
+        if key not in {z.key for z in comp.zachety}:
+            raise HTTPException(404)
+        _, _, preapps = awards_ctx(f, comp)
+        teams = {t["team"]: t for t in zachet_teams(preapps, key)}
+        rows = []
+        idx = sorted({int(m.group(1)) for k in form.keys() if (m := re.fullmatch(r"r-(\d+)-team", k))})
+        for i in idx:
+            t = teams.get(str(form.get(f"r-{i}-team")))
+            if t is None:
+                continue
+            place = str(form.get(f"r-{i}-place", "")).strip()
+            rows.append({**t, "number": "", "place": int(place) if place.isdigit() and int(place) > 0 else None,
+                         "result": str(form.get(f"r-{i}-result", "")).strip(),
+                         "norm": str(form.get(f"r-{i}-norm", "")).strip()})
+        data = f.results_data()
+        data.setdefault("zachety", {})[key] = {"source": res.MANUAL, "group_text": "", "rank": "", "rows": rows}
+        f.save_results_data(data)
+        return _redirect(f"{_base(f)}/awards?done=res_saved")
+
+    @app.post("/c/{cid}/awards/clear")
+    async def awards_clear(request: Request, cid: str):
+        f = folder(cid)
+        key = str((await request.form()).get("zachet", ""))
+        data = f.results_data()
+        data.get("zachety", {}).pop(key, None)
+        f.save_results_data(data)
+        return _redirect(f"{_base(f)}/awards?done=res_cleared")
+
+    def build_award_doc(f: CompFolder, kind: str, path: Path | None = None) -> Path:
+        comp = need_comp(f)
+        if kind not in AWARD_DOCS:
+            raise HTTPException(404)
+        name, _, builder = AWARD_DOCS[kind]
+        if path is None:
+            f.out_dir.mkdir(exist_ok=True)
+            path = f.out_dir / name
+        return builder(f, comp, path)
+
+    @app.post("/c/{cid}/awards/doc/{kind}")
+    def awards_doc_open(cid: str, kind: str):
+        f = folder(cid)
+        try:
+            path = build_award_doc(f, kind)
+        except PermissionError:
+            return _redirect(f"{_base(f)}/awards?done=doc_locked")
+        app.state.opener(path)
+        return _redirect(f"{_base(f)}/awards?done=doc_ready")
+
+    @app.get("/c/{cid}/awards/file/{kind}")
+    def awards_doc_download(cid: str, kind: str):
+        f = folder(cid)
+        if kind not in AWARD_DOCS:
+            raise HTTPException(404)
+        tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / AWARD_DOCS[kind][0]
+        build_award_doc(f, kind, tmp)
+        media = XLSX if tmp.suffix == ".xlsx" else DOCX
+        return FileResponse(tmp, filename=tmp.name, media_type=media,
+                            background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
+
+    def _results(f: CompFolder, comp):
+        return awards_ctx(f, comp)[1]
+
+    # документы по итогам: вид → (имя файла, что это, как собрать) — у каждого экземпляра программы свои
+    AWARD_DOCS = {
+        "diplomas": ("Дипломы.docx", "Тексты дипломов за I–III места — по странице на диплом, под печать на бланках. "
+                                     "У группы каждому участнику — свой диплом, его имя первое.",
+                     lambda f, comp, p: aw.write_diplomas(_results(f, comp), comp, p)),
+        "stickers": ("Наклейки на медали.xlsx", "По наклейке на каждого призёра и две запасные; две колонки — "
+                                                "напечатать и вырезать.",
+                     lambda f, comp, p: aw.write_stickers(_results(f, comp), comp, p)),
+        "awardees": ("Список награждаемых.docx", "Для ведущего награждения: по зачётам, в порядке вызова "
+                                                 "III → II → I место.",
+                     lambda f, comp, p: aw.write_awardees(_results(f, comp), comp, p)),
+    }
 
     # ------------------------------------------------------------ шаги в разработке
 

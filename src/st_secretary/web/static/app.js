@@ -53,6 +53,11 @@
     if (row && window.confirm(rm.dataset.confirm || "Удалить?")) { row.remove(); markDirty(); }
   });
 
+  // --- Выбрал файл — сразу отправить (загрузка протокола).
+  document.querySelectorAll("input[data-autosubmit]").forEach(function (input) {
+    input.addEventListener("change", function () { if (input.files.length) input.form.submit(); });
+  });
+
   // --- Подтверждение перед действием (например, «Убрать заявку»).
   document.querySelectorAll("form[data-confirm]").forEach(function (form) {
     form.addEventListener("submit", function (e) {

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Награждение и документы по итогам — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Награждение и документы по итогам</h1>
+<p class="lead">Результаты программа пока сама не считает — загрузите итоговый протокол из СЕКРЕТАРЬ_ST (кнопка
+  «Считать протокол» сохраняет его в .xls) или впишите места вручную. Из них — дипломы, наклейки на медали, список
+  награждаемых и другие документы. Название, даты, место и подписи — из карточки соревнования.</p>
+
+<section class="panel">
+  <h2>Результаты по зачётам</h2>
+  {% for b in blocks %}{% set z = b.z %}
+  <div class="zres" id="z-{{ loop.index }}">
+    <h3>Зачёт {{ z.key }} — «{{ z.discipline_name }}», {{ z.distance_class }} класс</h3>
+    {% if b.res %}
+    <p class="muted">{% if b.res.source == "вручную" %}Места введены вручную{% else %}Из протокола «{{ b.res.source }}»{% endif %}{% if b.res.group_text %} · {{ b.res.group_text|lower }}{% endif %}{% if b.res.rank %} · ранг {{ b.res.rank }}{% endif %}</p>
+    <div class="table-wrap">
+    <table class="tbl zres-tbl">
+      <thead><tr><th>Место</th><th>Команда</th><th>Состав</th><th>Результат</th><th>Разряд выполнен</th></tr></thead>
+      <tbody>
+      {% for r in b.res.rows %}
+      <tr{% if r.place in (1, 2, 3) %} class="zres-medal zres-{{ r.place }}"{% endif %}>
+        <td class="zres-place">{{ r.place_text }}</td>
+        <td><b>{{ r.team }}</b>{% if r.territory %}<span class="adm-sub">{{ r.territory }}</span>{% endif %}</td>
+        <td class="zres-members">{% for m in r.members %}{{ m.fio }}{% if m.qual %} ({{ m.qual }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        <td>{{ r.result }}</td>
+        <td>{{ r.norm or "—" }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted">Результатов пока нет.</p>
+    {% endif %}
+
+    <div class="zres-actions">
+      <form method="post" action="{{ base }}/awards/import" enctype="multipart/form-data" data-busy="Загружаю…">
+        <input type="hidden" name="zachet" value="{{ z.key }}">
+        <label class="btn">{{ icon("upload", 18) }}Загрузить протокол СЕКРЕТАРЬ_ST (.xls)
+          <input type="file" name="protocol" accept=".xls,.xlsx" class="visually-hidden" data-autosubmit></label>
+        <noscript><button class="btn" type="submit">Загрузить</button></noscript>
+      </form>
+      {% if b.res %}
+      <form method="post" action="{{ base }}/awards/clear" data-confirm="Убрать результаты зачёта {{ z.key }}? Протокол можно будет загрузить снова.">
+        <input type="hidden" name="zachet" value="{{ z.key }}">
+        <button class="btn btn-ghost" type="submit">Убрать результаты</button>
+      </form>
+      {% endif %}
+    </div>
+
+    {% if b.teams %}
+    <details class="howto zres-manual"{% if b.res and b.res.source == "вручную" %} open{% endif %}>
+      <summary>Ввести или поправить места вручную</summary>
+      <form method="post" action="{{ base }}/awards/manual" data-guard>
+        <input type="hidden" name="zachet" value="{{ z.key }}">
+        <div class="table-wrap">
+        <table class="tbl form-tbl zres-form">
+          <thead><tr><th>Команда</th><th>Состав (из заявки)</th><th>Место</th><th>Результат</th><th>Разряд выполнен</th></tr></thead>
+          <tbody>
+          {% for t in b.teams %}{% set i = loop.index0 %}
+          <tr>
+            <td><b>{{ t.team }}</b><input type="hidden" name="r-{{ i }}-team" value="{{ t.team }}"><span class="adm-sub">{{ t.territory }}</span></td>
+            <td class="zres-members">{% for m in t.members %}{{ m.fio }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+            <td><input type="text" inputmode="numeric" name="r-{{ i }}-place" value="{{ t.place or '' }}" aria-label="Место команды {{ t.team }}" class="zres-n"></td>
+            <td><input type="text" name="r-{{ i }}-result" value="{{ t.result or '' }}" aria-label="Результат" class="zres-r"></td>
+            <td><select name="r-{{ i }}-norm" aria-label="Выполненный разряд">
+              {% for n in norms %}<option value="{{ n }}"{% if n == (t.norm or "") %} selected{% endif %}>{{ n or "—" }}</option>{% endfor %}
+            </select></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <p class="hint">Место пустое — место не присуждено (снятие, не финишировали). Сохранение заменит загруженный протокол этого зачёта.</p>
+        <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить места</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+
+<section class="panel" id="docs">
+  <h2>Документы</h2>
+  <p class="muted">Сохраняются в папку «Документы по итогам» в папке соревнования и сразу открываются в Word или Excel —
+    там их можно поправить перед печатью.{% if has_results %} Призёров для медалей: {{ medals }}.{% else %} Сначала внесите результаты.{% endif %}</p>
+  <ul class="docs-list">
+    {% for kind, d in docs.items() %}
+    <li>
+      <div class="docs-what"><b>{{ d[0] }}</b><span class="muted">{{ d[1] }}</span></div>
+      <div class="actions">
+        <form method="post" action="{{ base }}/awards/doc/{{ kind }}" data-busy="Готовлю…">
+          <button class="btn btn-primary btn-small" type="submit"{% if not has_results and kind in ("diplomas", "stickers", "awardees") %} disabled{% endif %}>{{ icon("file", 16) }}Открыть</button>
+        </form>
+        <a class="btn btn-ghost btn-small" href="{{ base }}/awards/file/{{ kind }}">{{ icon("download", 16) }}Скачать</a>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="{{ base }}/open/folder" class="docs-folder"><button class="btn btn-ghost" type="submit">{{ icon("folder") }}Папка соревнования</button></form>
+</section>
+{% endblock %}
