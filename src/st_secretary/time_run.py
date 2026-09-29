@@ -24,16 +24,7 @@ from st_secretary.disciplines import Status
 from st_secretary.disciplines.speleo import SpeleoRun, standings
 from st_secretary.issues import ERROR, INFO, WARNING, Issue
 from st_secretary.norms import PercentMethod, achieved_norm, percent_of_winner
-from st_secretary.psr_run import (
-    TeamInput,
-    TeamResult,
-    ZachetRun,
-    _status,
-    parse_points,
-    stages_of,
-    tours_of,
-    unit_kind,
-)
+from st_secretary.psr_run import TeamInput, TeamResult, ZachetRun, _status, parse_points, stages_of, tours_of, unit_kind
 from st_secretary.qualification import Qual
 from st_secretary.rank import RankEntry, evsk_participation_ok, qualification_rank
 from st_secretary.reference import discipline_by_code, norm_edition

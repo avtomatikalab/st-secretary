@@ -296,7 +296,7 @@ def main(argv=None) -> int:
         print(f"Файл занят другой программой (скорее всего, открыт в Excel): «{e.filename}».\n"
               "Закройте его и запустите команду ещё раз.")
         return 1
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         if os.environ.get("ST_DEBUG"):
             raise
         print(f"Непредвиденная ошибка: {e}\nДанные не изменены. Сообщите разработчикам текст ошибки и команду, "

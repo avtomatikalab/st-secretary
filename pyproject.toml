@@ -40,6 +40,26 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/st_secretary"]
 
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# Явный набор правил: версия ruff не должна менять, что считается замечанием.
+select = ["E", "W", "F", "I", "B", "BLE", "UP", "SIM", "RUF", "PERF", "FURB", "FLY", "PYI", "PLC", "S102", "S606"]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # кириллица, «кавычки-ёлочки», тире и × в текстах — так и нужно
+    "PLC0415",  # импорт внутри функции — нарочно: быстрый запуск, необязательные библиотеки, без циклов импорта
+    "B905",  # zip без strict: длины равны по построению
+    "RUF005", "PERF401", "SIM105",  # дело вкуса: [*a, b], списки в цикле, try/except/pass
+]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 130  # длинные сообщения по-русски не рвём посередине фразы
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

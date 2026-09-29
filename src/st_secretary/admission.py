@@ -71,7 +71,8 @@ def check_athlete(
         if not any(age >= o["min_age"] and _qual_ok(qual, o.get("min_qualification"), o.get("alt_min_qualification"))
                    for o in options):
             need = " или ".join(
-                f"с {from_years(o['min_age'])}" + (f" и не ниже {Qual[o['min_qualification']].label}" if o.get("min_qualification") else "")
+                f"с {from_years(o['min_age'])}"
+                + (f" и не ниже {Qual[o['min_qualification']].label}" if o.get("min_qualification") else "")
                 for o in options
             )
             issues.append(Issue(

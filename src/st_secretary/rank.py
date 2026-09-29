@@ -48,7 +48,7 @@ def rank_divisor(rank_format: str, team_size: int) -> int:
     if rank_format == "pair":
         return 2
     if rank_format == "group":
-        return 4 if team_size <= 4 else team_size
+        return max(4, team_size)
     if rank_format == "crew":
         if team_size == 2:
             return 2

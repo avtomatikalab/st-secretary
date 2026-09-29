@@ -14,7 +14,14 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from st_secretary.competition import (
-    GSK_ROLES, JUDGE_CATEGORIES, KINDS, LEVEL_LABELS, PERCENT_LABELS, Competition, Official, Zachet,
+    GSK_ROLES,
+    JUDGE_CATEGORIES,
+    KINDS,
+    LEVEL_LABELS,
+    PERCENT_LABELS,
+    Competition,
+    Official,
+    Zachet,
 )
 from st_secretary.issues import ERROR, Issue
 from st_secretary.qualification import parse_qual
@@ -40,7 +47,8 @@ MAIN_FIELDS = [
     ("Проводящие организации", "organizers", "Каждую — с новой строки (Alt+Enter) или через «;»"),
     ("Номер в календарном плане", "calendar_number", "ЕКП или календарь субъекта/МО, если есть"),
     ("Редакция разрядных норм", "norms_edition", "Какие нормы действуют на этих соревнованиях"),
-    ("Методика «% от победителя»", "percent_method", "Для балльных дисциплин (ПСР, горные). «Не задана» — нормативы не считаются"),
+    ("Методика «% от победителя»", "percent_method",
+     "Для балльных дисциплин (ПСР, горные). «Не задана» — нормативы не считаются"),
     ("Приём предзаявок до", "preapp_deadline", "Дата окончания приёма предварительных заявок"),
 ]
 
@@ -247,8 +255,12 @@ def load_card(path: str | Path) -> Competition:
     zs = wb["Зачёты"]
     head = [clean_spaces(c.value) for c in zs[1]]
     col = {name: head.index(name) for name, _ in ZACHET_COLUMNS if name in head}
+    def value(row, name):
+        return row[col[name]] if name in col and col[name] < len(row) else None
+
     for i, row in enumerate(zs.iter_rows(min_row=3, values_only=True), start=3):
-        cell = lambda name: row[col[name]] if name in col and col[name] < len(row) else None  # noqa: E731
+        def cell(name, row=row):
+            return value(row, name)
         group = clean_spaces(cell("Группа"))
         if not group:
             continue

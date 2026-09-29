@@ -245,7 +245,7 @@ def build(z, zdata: dict, teams: list, ranks: dict[str, Fraction | None] | None 
                             source=z.key))
     times = [r.time for r in rows if r.time is not None]
     iv = st["interval"].strip()
-    if iv and iv not in ("0",) and len(times) != len(set(times)):
+    if iv and iv != "0" and len(times) != len(set(times)):
         same = sorted({hm_text(t) for t in times if times.count(t) > 1})
         issues.append(Issue(WARNING, f"одинаковое время старта у нескольких команд: {', '.join(same)}", source=z.key))
     if sl.published and sl.first_start:

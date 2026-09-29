@@ -28,7 +28,7 @@ def guess_sex(fio: str) -> str | None:
         name = parts[1].lower()
         if name.endswith(("а", "я")) and name not in ("никита", "илья", "фома", "лука", "кузьма", "савва", "данила"):
             return "ж"
-        if name.endswith("ь") and name in ("любовь",):
+        if name == "любовь":
             return "ж"
         return "м"
     return None

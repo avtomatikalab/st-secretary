@@ -86,7 +86,7 @@ def test_stickers_and_awardees(tmp_path, psr_card):
     t = text_of(aw.write_awardees(z, psr_card, tmp_path / "l.docx"))
     places = [s.split(" место")[0] for s in t if " место — " in s]
     assert places == ["III", "II", "I"]  # в порядке вызова
-    assert any("I место — команда «Кедр», Красноярск: Антон Лебедев, Мария Зуева, Глеб Носов" == s for s in t)
+    assert any(s == "I место — команда «Кедр», Красноярск: Антон Лебедев, Мария Зуева, Глеб Носов" for s in t)
 
 
 # ------------------------------------------------------------------ документы о судьях
@@ -124,10 +124,7 @@ def test_role_phrase(role, expected):
 
 
 def test_sk_and_subjects_certificates(tmp_path, psr_card):
-    from st_secretary.exporters.judges import (
-        write_sk_certificate,
-        write_subjects_certificate,
-    )
+    from st_secretary.exporters.judges import write_sk_certificate, write_subjects_certificate
 
     doc = Document(write_sk_certificate(psr_card, tmp_path / "sk.docx"))
     t = [p.text for p in doc.paragraphs if p.text]
@@ -164,7 +161,7 @@ def test_extracts_only_norms_with_birth_dates(tmp_path, psr_card):
     assert any("квалификационный ранг соревнований: 71,7" in v for v in flat)
     rows = [r for r in cells if r[1] and r[5] == "II"]
     assert len(rows) == 6 and rows[0][:6] == ["1", "Лебедев Антон Игоревич", "02.02.1990", "III", "-283", "II"]
-    assert [r for r in rows if r[1] == "Орлов Павел Ильич"][0][2] == "нет в заявке"  # без даты — видно сразу
+    assert next(r for r in rows if r[1] == "Орлов Павел Ильич")[2] == "нет в заявке"  # без даты — видно сразу
     assert not any(r[1] == "Ким Олег Борисович" for r in cells)  # 3 место без норматива — не в выписке
     assert any(str(v).startswith("Главный судья") for v in flat)
 

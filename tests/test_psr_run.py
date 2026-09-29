@@ -83,7 +83,8 @@ def test_actual_class(psr_card):
     assert any("«B»: фактически пройден 2 класс (заявлен 3)" in i.text for i in run.issues)
 
 
-@pytest.mark.parametrize("title, tour, name", [("Тур 2 Мера (Вышка 51 м, Река 17,5 м)", "Тур 2", "Мера (Вышка 51 м, Река 17,5 м)"),
+@pytest.mark.parametrize("title, tour, name", [
+    ("Тур 2 Мера (Вышка 51 м, Река 17,5 м)", "Тур 2", "Мера (Вышка 51 м, Река 17,5 м)"),
                                                ("Бонус Ориентирование", "Бонус", "Ориентирование"),
                                                ("Тур3. Переправа", "Тур 3", "Переправа")])
 def test_split_title(title, tour, name):

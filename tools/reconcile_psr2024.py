@@ -22,13 +22,14 @@ import sys
 from fractions import Fraction
 from pathlib import Path
 
+from xlrd import colname
+
 from st_secretary.disciplines.psr import PsrStage, PsrTeamCard, standings, tour_totals
 from st_secretary.importers.sekretar_xls import read_group_protocol, read_result_protocol
 from st_secretary.norms import PercentMethod, achieved_norm, percent_of_winner
 from st_secretary.qualification import parse_members_with_quals
 from st_secretary.rank import RankEntry, qualification_rank
 from st_secretary.reference import Level, check_code_matches_name, discipline_by_code, norm_edition
-from xlrd import colname
 
 WORKBOOK = "С семинара/С семинара/секретариат/19-21.09.2025 комби/SEKRETAR_CT_30_08_2023.xls"
 PROTOCOL = "С семинара/С семинара/секретариат/19-21.09.2025 комби/Result_PSR_2024.xls"
@@ -39,7 +40,7 @@ DISCIPLINE_CODE = "0840161811Я"  # дистанция – комбиниров�
 
 def tour_of(title: str) -> str:
     m = re.match(r"(Тур\s*\d+)", title)
-    return m.group(1).replace("  ", " ") if m else title.split()[0]
+    return m.group(1).replace("  ", " ") if m else title.split(maxsplit=1)[0]
 
 
 def pct(x: Fraction) -> str:
@@ -62,7 +63,6 @@ def reconcile(data: Path) -> tuple[str, dict]:
         for i, t in enumerate(wb.teams, start=1)
     ]
     workbook_sum = {t.team: sum(t.values.values(), Fraction(0)) for t in wb.teams}
-    ours = {p.item.team: p for p in standings(cards)}
     proto_rows = {r.team.lower(): r for r in proto.rows}
 
     lines: list[str] = []
@@ -146,7 +146,8 @@ def reconcile(data: Path) -> tuple[str, dict]:
         d = achieved_norm(norms, proto.distance_class or 3, rank.value, p_, LEVEL)
         mine = d.qual.label if d.qual else "—"
         theirs = r.norm or "—"
-        out(f"| {r.place} | {r.team} | {pct(p_)} | {pct(r.percent * 100) if r.percent is not None else '—'} | {mine} | {theirs} |")
+        theirs_pct = pct(r.percent * 100) if r.percent is not None else "—"
+        out(f"| {r.place} | {r.team} | {pct(p_)} | {theirs_pct} | {mine} | {theirs} |")
         if mine != theirs:
             issues.append(f"Норматив «{r.team}»: пересчёт {mine}, в протоколе {theirs}")
     row = achieved_norm(norms, proto.distance_class or 3, rank.value, Fraction(100), LEVEL).row

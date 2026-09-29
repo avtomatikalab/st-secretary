@@ -194,7 +194,8 @@ def _team_header(app: RawApplication, comp: Competition, known: Counter, issues:
                             source=src, team=team, field="Кол-во участников",
                             why="Возможно, участника забыли вписать в таблицу — или состав изменили, а число в шапке "
                                 "не поправили.",
-                            todo=f"Уточните состав у представителя. {'Добавьте участника' if declared > len(app.rows) else 'Уберите лишнего'} "
+                            todo="Уточните состав у представителя. "
+                                 f"{'Добавьте участника' if declared > len(app.rows) else 'Уберите лишнего'} "
                                  "или исправьте число в шапке заявки."))
     return TeamApplication(src, team, territory, rep.full, phone, email, declared)
 
@@ -381,7 +382,7 @@ def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> 
     def add(sev, text, fld, why, todo):
         issues.append(Issue(sev, text, source=t.source, team=t.team, field=fld, why=why, todo=todo))
 
-    for key, members in by_zachet.items():
+    for members in by_zachet.values():
         z = members[0].zachet
         if discipline_by_code(z.discipline_code).rank_format != "group":
             continue

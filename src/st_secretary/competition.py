@@ -180,7 +180,7 @@ class Competition:
             err(f"зачёт {k} указан дважды", "Зачёты")
         for z in self.zachety:
             try:
-                z.discipline_name
+                _ = z.discipline_name  # KeyError, если такого кода нет в ВРВС
             except KeyError as e:
                 err(str(e), f"Зачёт {z.key}")
                 continue

@@ -94,7 +94,7 @@ def main(folder: str) -> None:
         d = store.team_docs_dir(f, team.source)
         d.mkdir(parents=True, exist_ok=True)
 
-        def save(img: Image.Image, name: str) -> None:
+        def save(img: Image.Image, name: str, d=d) -> None:
             nonlocal made
             p = d / name
             if not p.exists():

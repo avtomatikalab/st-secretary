@@ -49,7 +49,8 @@ def write_extracts(results: list[ZachetResults], comp: Competition, path: str | 
         lines = [
             ("ВЫПИСКА ИЗ ПРОТОКОЛА СОРЕВНОВАНИЙ", True, 13),
             (comp.title, True, 12),
-            (f"Спортивная дисциплина: «{zz.discipline_name}», код ВРВС {zz.discipline_code}; {zz.distance_class} класс", False, 11),
+            (f"Спортивная дисциплина: «{zz.discipline_name}», код ВРВС {zz.discipline_code}; "
+             f"{zz.distance_class} класс", False, 11),
             (f"Дата и место проведения: {comp.dates_text}, {comp.place}", False, 11),
             (f"Пол и возрастная группа: {group_label(z, zz.group)}"
              + (f"; квалификационный ранг соревнований: {z.rank}" if z.rank else ""), False, 11),

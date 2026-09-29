@@ -67,7 +67,7 @@ def _normalize(text: str) -> str:
     return s
 
 
-def parse_qual(text: str | int | float | None) -> Qual:
+def parse_qual(text: str | float | None) -> Qual:
     """Разобрать разряд из заявки или протокола.
 
     Числа 1, 2, 3 трактуются как взрослые разряды I, II, III (так их записывает СЕКРЕТАРЬ_ST).

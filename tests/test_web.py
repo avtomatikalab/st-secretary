@@ -10,13 +10,12 @@ from urllib.parse import quote, urlencode
 import pytest
 
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient  # noqa: E402
+from conftest import make_application
+from fastapi.testclient import TestClient
 
-from st_secretary.importers.card_xlsx import load_card, write_card  # noqa: E402
-from st_secretary.web.app import create_app  # noqa: E402
-from st_secretary.web.review import issue_key  # noqa: E402
-
-from conftest import make_application  # noqa: E402
+from st_secretary.importers.card_xlsx import load_card, write_card
+from st_secretary.web.app import create_app
+from st_secretary.web.review import issue_key
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -687,7 +686,6 @@ def test_report_texts_and_extracts_download(client, tmp_path, psr_card):
 def test_contracts_tabel_personal_data_and_documents(client, tmp_path, psr_card, opened):
     from docx import Document
     from openpyxl import load_workbook
-
     from test_contracts import CUSTOMER, PERSON
 
     f = client.app.state.store.create(psr_card)
@@ -773,7 +771,7 @@ def test_verify_page_program_documents_and_upload(client, psr_card, opened):
     client.post(base(f) + "/awards/doc/judging")  # программа сохранила справки и табель
     client.post(base(f) + "/contracts/doc/tabel")
     page = client.get(url).text
-    assert "Документы по итогам\Справки о судействе.docx" in page and "Договоры и табель\Табель-наряд.xlsx" in page
+    assert r"Документы по итогам\Справки о судействе.docx" in page and r"Договоры и табель\Табель-наряд.xlsx" in page
     assert page.count("расхождений нет") == 2
 
     bad = Document()
@@ -1010,7 +1008,7 @@ def test_individual_discipline_each_athlete_gets_place(client, tmp_path, psr_car
     keys = re.findall(r'name="p-(\d)-file" value="([^"]+)"', page)
     assert all("#" in k for _, k in keys)  # ключ — «файл#спортсмен»
     data = {f"p-{i}-file": k for i, k in keys}
-    for n, (i, k) in enumerate(keys):
+    for n, (i, _) in enumerate(keys):
         data.update({f"p-{i}-start": "10:00:00", f"p-{i}-finish": f"10:5{n}:00", f"p-{i}-status": "finished"})
     data[f"p-{keys[2][0]}-red"] = "к"
     client.post(base(f) + "/results/points?z=" + quote("Ж_2"), data=data)
@@ -1092,7 +1090,7 @@ def test_judge_phone_link_sync_and_conflicts(client, tmp_path, psr_card):
     assert "Ссылка не действует" in phone.get("/j/нетакой").text
     p = phone.get(f"/j/{token}")
     assert p.status_code == 200 and p.headers["cache-control"] == "no-store" and "Тур 1 · Узлы" in p.text
-    data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', p.text, re.S).group(1))
+    data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', p.text, re.DOTALL).group(1))
     assert [t["team"] for t in data["teams"]] == ["Кедр", "Сосна"] and data["stage"]["kv"] == 15
     assert data["sync_url"] == f"/j/{token}/sync" and data["records"] == {}
 
@@ -1121,7 +1119,7 @@ def test_judge_phone_link_sync_and_conflicts(client, tmp_path, psr_card):
     assert 'value="25"' in res and "«Кедр», Тур 1 · Узлы: судья этапа прислал 18" in res and "в таблице 25" in res
 
     again = phone.get(f"/j/{token}").text  # на телефон приходят уже принятые записи (например, с другого телефона)
-    recs = json.loads(re.search(r'id="data">(.*?)</script>', again, re.S).group(1))["records"]
+    recs = json.loads(re.search(r'id="data">(.*?)</script>', again, re.DOTALL).group(1))["records"]
     assert recs["Кедр.xlsx"]["points"] == "18" and recs["Кедр.xlsx"]["file"] == "Кедр.xlsx"
     client.post(base(f) + "/judges/link" + q, data={"stage": "s1", "do": "revoke"})
     r = phone.post(f"/j/{token}/sync", json=body)
@@ -1174,8 +1172,9 @@ def test_speleo_zachet_times_protocol_and_board(client, tmp_path, psr_card):
 def test_si_reader_upload_fills_times(client, tmp_path, psr_card):
     from dataclasses import replace
 
-    from st_secretary.competition import Zachet
     from test_si_reader import csv, line
+
+    from st_secretary.competition import Zachet
 
     comp = replace(psr_card, zachety=[Zachet("М/Ж", 3, "0840271811Я", team_size=3)])
     f = client.app.state.store.create(comp)

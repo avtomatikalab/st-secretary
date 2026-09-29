@@ -2,14 +2,7 @@
 
 import pytest
 
-from st_secretary.names import (
-    dative,
-    genitive,
-    guess_sex,
-    he_she,
-    initials,
-    role_genitive,
-)
+from st_secretary.names import dative, genitive, guess_sex, he_she, initials, role_genitive
 
 
 @pytest.mark.parametrize("fio, expected", [

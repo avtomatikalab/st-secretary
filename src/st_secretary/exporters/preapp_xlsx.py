@@ -122,7 +122,7 @@ def _sekretar_sheet(ws, r: PreappResult):
         ws.cell(ws.max_row, 1).font = Font(bold=True)
         ws.cell(ws.max_row, 1).fill = TEAM_ROW
         for e in t.entries:
-            birth = e.birth if e.birth else e.birth_year
+            birth = e.birth or e.birth_year
             ws.append([
                 e.num_in_team, e.team, e.territory, e.representative, e.name.full, birth,
                 e.qual.label if e.qual is not None else "", e.sex or "", e.group, e.distance_class,

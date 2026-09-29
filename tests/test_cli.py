@@ -17,7 +17,13 @@ def test_loading_animation_runs_in_console_and_is_erased():
     out = Console()
     shown = threading.Event()
     loading = Loading("Загружаю программу", out)
-    loading._draw = (lambda draw: lambda i: (draw(i), shown.set()))(loading._draw)
+    draw = loading._draw
+
+    def draw_and_mark(i):
+        draw(i)
+        shown.set()
+
+    loading._draw = draw_and_mark
     loading.start()
     assert shown.wait(2)
     loading.stop()

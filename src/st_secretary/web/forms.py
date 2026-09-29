@@ -9,7 +9,14 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from st_secretary.competition import (
-    GSK_ROLES, JUDGE_CATEGORIES, KINDS, LEVEL_LABELS, PERCENT_LABELS, Competition, Official, Zachet,
+    GSK_ROLES,
+    JUDGE_CATEGORIES,
+    KINDS,
+    LEVEL_LABELS,
+    PERCENT_LABELS,
+    Competition,
+    Official,
+    Zachet,
 )
 from st_secretary.norms import PercentMethod
 from st_secretary.qualification import Qual, parse_qual
@@ -98,7 +105,7 @@ def form_from_data(data) -> dict:
 
 
 def _rows(data, prefix: str, fields: list[str]) -> list[dict]:
-    idx = sorted({int(parts[1]) for k in data.keys()
+    idx = sorted({int(parts[1]) for k in data
                   if (parts := k.split("-"))[0] == prefix and len(parts) == 3 and parts[1].isdigit()})
     return [{f: _s(data.get(f"{prefix}-{i}-{f}")).strip() for f in fields} for i in idx]
 

@@ -1,0 +1,123 @@
+"""Страница соревнования: обзор шагов, карточка (просмотр и правка), резервная копия, открыть в
+Проводнике и Excel, описания шагов в разработке."""
+
+from __future__ import annotations
+
+from urllib.parse import urlsplit
+
+from fastapi import Request
+from fastapi.responses import FileResponse
+from starlette.exceptions import HTTPException
+
+from st_secretary import backup as bk
+from st_secretary.issues import ERROR, FIXED, WARNING
+from st_secretary.web.common import _base, _redirect, _with_done
+from st_secretary.web.forms import card_to_form, choices, form_from_data, form_to_card
+from st_secretary.web.review import DONE
+from st_secretary.web.steps import BY_SLUG
+
+
+def register(app, cx) -> None:
+    comp_ctx = cx.comp_ctx
+    folder = cx.folder
+    page = cx.page
+    store = cx.store
+    def adm_totals(*a, **k):  # из pages/admission.py
+        return cx.adm_totals(*a, **k)
+    def commission(*a, **k):  # из pages/admission.py
+        return cx.commission(*a, **k)
+
+    # ------------------------------------------------------------ соревнование
+
+    @app.post("/c/{cid}/backup")
+    def backup_now(cid: str):
+        f = folder(cid)
+        path = bk.make(f.path, bk.backups_dir(store.root), app.state.clock())
+        return _redirect(_with_done(f"{_base(f)}#backup", "backup_made", file=path.name))
+
+    @app.get("/c/{cid}/backup.zip")
+    def backup_download(cid: str):
+        """Копия — сразу в браузер (например, сохранить на флешку); она же остаётся в «Резервных копиях»."""
+        f = folder(cid)
+        path = bk.make(f.path, bk.backups_dir(store.root), app.state.clock())
+        return FileResponse(path, filename=path.name, media_type="application/zip")
+
+    @app.get("/c/{cid}")
+    def overview(request: Request, cid: str):
+        f = folder(cid)
+        ctx = comp_ctx(f)
+        comp = ctx["comp"]
+        card_issues = comp.check() if comp else []
+        files = f.preapp_files()
+        pre = None
+        if comp and files and not any(i.severity == ERROR for i in card_issues):
+            r, reviews = store.review(f, comp)
+            pre = {"teams": len(r.teams), "entries": len(r.entries), "errors": r.count(ERROR),
+                   "warnings": r.count(WARNING), "fixed": r.count(FIXED),
+                   "done": sum(v.status == DONE for v in reviews.values()), "files": len(reviews)}
+        adm = adm_totals(commission(f, comp)[1]) if pre else None
+        backups = bk.listing(bk.backups_dir(store.root), f.path.name)
+        return page(request, "overview.html", active="", card_issues=card_issues, files=files, pre=pre, adm=adm,
+                    backups=backups[:5], backups_count=len(backups), backups_dir=bk.backups_dir(store.root), **ctx)
+
+    @app.post("/c/{cid}/open/{what}")
+    def open_thing(request: Request, cid: str, what: str):
+        f = folder(cid)
+        target = {"folder": f.path, "card": f.card_path, "preapps": f.preapp_dir}.get(what)
+        if target is None:
+            raise HTTPException(404)
+        if what == "preapps":
+            f.preapp_dir.mkdir(exist_ok=True)
+        app.state.opener(target)
+        back = urlsplit(request.headers.get("referer", "")).path
+        return _redirect(f"{back if back.startswith('/c/') else _base(f)}?done=opened")
+
+    @app.get("/c/{cid}/card")
+    def card_view(request: Request, cid: str):
+        """Карточка соревнования для просмотра; правка — кнопкой «Редактировать»."""
+        f = folder(cid)
+        ctx = comp_ctx(f)
+        comp = ctx["comp"]
+        ch = choices()
+        return page(request, "card_view.html", active="card", issues=comp.check() if comp else [],
+                    percent_labels=dict(ch["percent"]), **ctx)
+
+    @app.get("/c/{cid}/card/edit")
+    def card_edit(request: Request, cid: str):
+        f = folder(cid)
+        ctx = comp_ctx(f)
+        if ctx["comp"] is None:  # файл не читается — исправлять в Excel, форма пустой не открывается
+            return _redirect(f"{_base(f)}/card")
+        return page(request, "card.html", active="card", form=card_to_form(ctx["comp"]), errors={}, ch=choices(),
+                    issues=ctx["comp"].check(), card_version=f.version(), **ctx)
+
+    @app.post("/c/{cid}/card/edit")
+    async def card_save(request: Request, cid: str):
+        f = folder(cid)
+        data = await request.form()
+        form = form_from_data(data)
+        comp, errors = form_to_card(form)
+        sent_version = str(data.get("version", ""))
+        conflict = comp is not None and sent_version and sent_version != f.version() and not data.get("force")
+        save_error = None
+        if comp is not None and not conflict:
+            try:
+                f.save(comp)
+                return _redirect(f"{_base(f)}/card?done=saved")
+            except PermissionError:
+                save_error = ("Файл карточки сейчас открыт в Excel, поэтому сохранить не получилось. Закройте его "
+                              "в Excel и нажмите «Сохранить» ещё раз — всё, что вы ввели, осталось на странице.")
+        ctx = comp_ctx(f)
+        return page(request, "card.html", status_code=422 if errors else 409, active="card", form=form,
+                    errors=errors, ch=choices(), issues=[], card_version=sent_version, conflict=conflict,
+                    save_error=save_error, **ctx)
+
+    # ------------------------------------------------------------ шаги в разработке
+
+    @app.get("/c/{cid}/step/{slug}")
+    def step_page(request: Request, cid: str, slug: str):
+        f = folder(cid)
+        step = BY_SLUG.get(slug)
+        if step is None or step.ready:
+            raise HTTPException(404)
+        return page(request, "step.html", active=slug, step=step, **comp_ctx(f))

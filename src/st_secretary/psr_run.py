@@ -19,21 +19,11 @@ from fractions import Fraction
 from st_secretary import start_list
 from st_secretary.competition import Competition, Zachet
 from st_secretary.disciplines import Status
-from st_secretary.disciplines.psr import (
-    PsrTeamCard,
-    class_points,
-    distance_class,
-    standings,
-)
+from st_secretary.disciplines.psr import PsrTeamCard, class_points, distance_class, standings
 from st_secretary.issues import ERROR, INFO, WARNING, Issue
 from st_secretary.norms import achieved_norm, percent_of_winner
 from st_secretary.qualification import Qual
-from st_secretary.rank import (
-    RankEntry,
-    RankResult,
-    evsk_participation_ok,
-    qualification_rank,
-)
+from st_secretary.rank import RankEntry, RankResult, evsk_participation_ok, qualification_rank
 from st_secretary.reference import discipline_by_code, norm_edition
 
 STATUS_LABEL = {

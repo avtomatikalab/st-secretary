@@ -43,8 +43,8 @@ def test_vrvs_matches_registry():
             break
         name = " ".join(str(sh.cell_value(r, 9)).split())
         if on and name:
-            k, l, m, n, o, p, q = (_cell(sh, r, c) for c in range(10, 17))
-            registry[name] = f"{int(k):03d}{int(l):03d}{int(m)}{int(n)}{int(o)}{int(p)}{q}"
+            sport, disc, *flags, letter = (_cell(sh, r, c) for c in range(10, 17))
+            registry[name] = f"{int(sport):03d}{int(disc):03d}" + "".join(str(int(x)) for x in flags) + f"{letter}"
     ours = {d.name: d.code for d in disciplines()}
     assert ours == registry
 

@@ -12,18 +12,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
-from typing import Generic, TypeVar
-
-T = TypeVar("T")
 
 
 @dataclass(frozen=True)
-class Placed(Generic[T]):
+class Placed[T]:
     item: T
     place: int | None  # None — место не присуждено
 
 
-def assign_places(
+def assign_places[T](
     items: Sequence[T],
     *,
     eligible: Callable[[T], bool],

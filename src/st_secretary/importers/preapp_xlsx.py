@@ -106,7 +106,7 @@ def read_preapplication(path: str | Path) -> RawApplication:
         app.problems.append(("не найдена таблица участников (строка заголовков «№ п/п … Фамилия, имя»)",
                              f"Похоже, заявка заполнена не по бланку. {BLANK_HOW}"))
         return app
-    for key, (c, expected) in COLUMNS.items():
+    for c, expected in COLUMNS.values():
         if expected and not clean_spaces(cell(head, c)).startswith(expected):
             app.problems.append((f"колонка {chr(65 + c)}: ожидался заголовок «{expected}…», "
                                  f"а в файле «{clean_spaces(cell(head, c))}» — бланк изменён",

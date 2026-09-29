@@ -1,11 +1,11 @@
 """Проверка снаряжения ПСР: перечень, штрафные баллы, порог снятия, связь с допуском."""
 
+from conftest import make_application
+
 from st_secretary import commission as cm
 from st_secretary import equipment as eq
 from st_secretary.importers.preapp_xlsx import read_preapplication
 from st_secretary.preapp import process
-
-from conftest import make_application
 
 
 def result(tmp_path, psr_card):

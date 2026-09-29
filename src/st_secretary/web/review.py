@@ -28,7 +28,7 @@ STATUSES = (CHECK, FIX, DONE)
 
 def issue_key(i: Issue) -> str:
     """Чем замечание отличается от других: поле, человек, текст (в тексте — сами значения)."""
-    return "|".join((i.field, i.person, i.text))
+    return f"{i.field}|{i.person}|{i.text}"
 
 
 HAND, SAVE = "hand", "save"  # кто поставил статус: секретарь кнопкой или программа при сохранении заявки

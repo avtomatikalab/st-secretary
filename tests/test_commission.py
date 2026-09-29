@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from conftest import make_application
 from openpyxl import load_workbook
 
 from st_secretary.commission import (
@@ -17,8 +18,6 @@ from st_secretary.commission import (
 from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.importers.preapp_xlsx import read_preapplication
 from st_secretary.preapp import process
-
-from conftest import make_application
 
 ALL_DOCS = {"id": True, "med": True, "book": True, "oms": True, "ins": True}
 

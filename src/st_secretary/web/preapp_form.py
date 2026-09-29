@@ -95,7 +95,7 @@ def app_to_form(raw: RawApplication | None, team: TeamApplication | None, comp: 
 def form_from_data(data) -> dict:
     """Поля, отправленные браузером: h-<поле> — шапка, p-<i>-<поле> — строки участников."""
     head = {f: clean_spaces(data.get(f"h-{f}", "")) for f in HEAD_FIELDS}
-    idx = sorted({int(m.group(1)) for k in data.keys() if (m := re.fullmatch(r"p-(\d+)-\w+", k))})
+    idx = sorted({int(m.group(1)) for k in data if (m := re.fullmatch(r"p-(\d+)-\w+", k))})
     rows = [{"row": 0, **{f: clean_spaces(data.get(f"p-{i}-{f}", "")) for f in ROW_FIELDS}} for i in idx]
     return {"head": head, "rows": rows}
 
