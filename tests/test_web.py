@@ -5,7 +5,7 @@ import os
 import re
 from dataclasses import replace
 from html.parser import HTMLParser
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import pytest
 
@@ -84,7 +84,7 @@ def opened():
 
 @pytest.fixture
 def client(tmp_path, opened):
-    return TestClient(create_app(tmp_path / "данные", opener=opened.append))
+    return TestClient(create_app(tmp_path / "данные", opener=opened.append, docs_dir=tmp_path / "документы"))
 
 
 def base(folder) -> str:
@@ -553,3 +553,67 @@ def test_admission_settings_and_reentry(client, tmp_path, psr_card):
     assert rec["late"] and "позже, чем за час до старта" in client.get(url).text
     edit = client.get(base(f) + "/preapps/edit?file=" + quote("Кедр.xlsx") + "&reentry=1").text
     assert "повторные не принимаются" in edit
+
+
+# ------------------------------------------------------------------ проверка снаряжения и документы команд
+
+PNG = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
+       b"\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0\x00\x00\x03\x01\x01\x00\xc9\xfe\x92\xef\x00\x00\x00\x00IEND\xaeB`\x82")
+
+
+def test_equipment_page_check_and_report(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    url = base(f) + "/equipment"
+    assert "Перечень снаряжения не задан" in client.get(url).text
+    client.post(url + "/settings", data={"do": "template"})
+    page = client.get(url).text
+    assert "Не проверено" in page and "Начать проверку: всё есть" in page
+    assert "снаряжение не проверено" in client.get(base(f) + "/admission").text  # без проверки не допустить
+
+    j = client.post(url + "/team", data={"file": "Кедр.xlsx", "do": "all"}, headers={"X-Autosave": "1"}).json()
+    assert "0 б. — допущена" in j["team"] and j["by"]["ok"] == 1
+    data = team_form(client.get(url).text, "Кедр.xlsx")
+    lost = next(k for k, v in data.items() if k.startswith("p-0-") and v == "on")  # первая галочка первого участника
+    data = {k: v for k, v in data.items() if k != lost}  # у участника одного предмета нет
+    j = client.post(url + "/team", data=data, headers={"X-Autosave": "1"}).json()
+    assert "1 б. — допущена" in j["team"] and "Нет:" in j["team"]
+
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(client.get(base(f) + "/admission/report.xlsx").content))
+    assert "Проверка снаряжения" in wb.sheetnames
+    text = [str(c.value) for row in wb["Проверка снаряжения"].iter_rows() for c in row if c.value is not None]
+    assert "Акт проверки снаряжения" in text and "допущена" in text
+
+
+def test_team_documents_stored_locally_and_checked_in_one_window(client, tmp_path, psr_card):
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    card = base(f) + "/preapps/team?file=" + quote("Кедр.xlsx")
+    assert "Документы команды (0)" in client.get(card).text
+    r = client.post(base(f) + "/docs/upload", data={"file": "Кедр.xlsx", "back": card},
+                    files=[("files", ("паспорт Лебедев.png", PNG, "image/png")),
+                           ("files", ("полис.pdf", b"%PDF-1.4 test", "application/pdf")),
+                           ("files", ("вирус.exe", b"MZ", "application/octet-stream"))], follow_redirects=False)
+    assert r.status_code == 303 and "done=docs_skipped" in r.headers["location"]
+    docs_dir = tmp_path / "документы" / f.id / "Кедр"
+    assert sorted(p.name for p in docs_dir.iterdir()) == ["паспорт Лебедев.png", "полис.pdf"]
+    assert not any((f.path).rglob("*.png"))  # в папке соревнования (её копируют, держат в облаке) сканов нет
+
+    page = client.get(card).text
+    assert "Документы команды (2)" in page and "Проверить в одном окне" in page
+    view = client.get(base(f) + "/docs/view?" + urlencode({"file": "Кедр.xlsx", "name": "паспорт Лебедев.png"}))
+    assert view.content == PNG and view.headers["cache-control"] == "no-store"
+    assert "inline" in view.headers["content-disposition"]
+    assert client.get(base(f) + "/docs/view?" + urlencode({"file": "Кедр.xlsx", "name": "../../x.png"})).status_code == 404
+
+    check = client.get(base(f) + "/admission/check?file=" + quote("Кедр.xlsx")).text
+    assert 'data-doc-kind="image"' in check and 'data-doc-kind="pdf"' in check
+    assert "Отметить все документы" in check and "Лебедев Антон Игоревич" in check
+    assert "проверить в одном окне" not in check  # уже в нём
+    data = team_form(check, "Кедр.xlsx") | {"do": "all_docs"}
+    j = client.post(base(f) + "/admission/team", data=data, headers={"X-Autosave": "1"}).json()
+    assert j["status"] == "admitted" and "проверить в одном окне" not in j["team"]
+
+    client.post(base(f) + "/docs/remove", data={"file": "Кедр.xlsx", "name": "полис.pdf"})
+    assert (docs_dir / "Убранные" / "полис.pdf").is_file() and not (docs_dir / "полис.pdf").exists()

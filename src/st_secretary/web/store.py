@@ -41,6 +41,17 @@ MARKS = "Отметки_предзаявок.json"
 SUMMARY = "Сводка_предзаявок.xlsx"
 ADMISSION = "Комиссия_по_допуску.json"
 COMMISSION_REPORT = "Комиссия_по_допуску.xlsx"
+EQUIPMENT = "Проверка_снаряжения.json"
+# Сканы и фото документов участников (паспорта, полисы, справки): только на этом компьютере и не в облачной
+# папке — поэтому отдельно от данных соревнования (их часто держат на Google Диске или передают на флешке).
+DOCS_ROOT_NAME = "СТ-Секретарь — документы участников"
+DOC_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
+             ".odt", ".rtf", ".txt"}
+IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}  # браузер показывает сам (HEIC — нет)
+
+
+def default_docs_root() -> Path:
+    return Path.home() / DOCS_ROOT_NAME
 EXCEL = (".xlsx", ".xls")
 
 _BAD_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')  # недопустимы в именах файлов Windows
@@ -230,10 +241,11 @@ class CompFolder:
         if old != new and old in data:
             data[new] = data.pop(old)
             self._save_marks(data)
-        adm = self.admission()
-        if old != new and old in adm.get("teams", {}):
-            adm["teams"][new] = adm["teams"].pop(old)
-            self.save_admission(adm)
+        for read, write in ((self.admission, self.save_admission), (self.equipment, self.save_equipment)):
+            d = read()
+            if old != new and old in d.get("teams", {}):
+                d["teams"][new] = d["teams"].pop(old)
+                write(d)
 
     # ------------------------------------------------------------ комиссия по допуску
 
@@ -254,14 +266,32 @@ class CompFolder:
         return data if isinstance(data, dict) else {}
 
     def save_admission(self, data: dict) -> None:
-        tmp = self.path / f"~{ADMISSION}"
+        self._write_json(ADMISSION, data)
+
+    def _read_json(self, name: str) -> dict:
+        try:
+            data = json.loads((self.path / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _write_json(self, name: str, data: dict) -> None:
+        tmp = self.path / f"~{name}"  # сначала во временный файл: оборвавшаяся запись не портит данные
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.admission_path)
+        os.replace(tmp, self.path / name)
+
+    def equipment(self) -> dict:
+        """Проверка снаряжения: {"settings": {...}, "teams": {файл заявки: {...}}} (см. equipment.py)."""
+        return self._read_json(EQUIPMENT)
+
+    def save_equipment(self, data: dict) -> None:
+        self._write_json(EQUIPMENT, data)
 
 
 class Store:
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, docs_root: str | Path | None = None):
         self.root = Path(root)
+        self.docs_root = Path(docs_root) if docs_root else default_docs_root()
         self._preapp_cache: dict[str, tuple[tuple, PreappResult]] = {}
         self._hash_cache: dict[tuple, str] = {}
 
@@ -303,6 +333,49 @@ class Store:
         result = process([read_preapplication(p) for p in files], comp)
         self._preapp_cache[f.id] = (key, result)
         return result
+
+    # ------------------------------------------------------------ документы команд (сканы, фото)
+
+    def team_docs_dir(self, f: CompFolder, file: str) -> Path:
+        """Папка документов команды: <корень>/<соревнование>/<имя файла заявки без расширения>."""
+        return self.docs_root / f.id / safe_name(Path(file).stem)
+
+    def team_docs(self, f: CompFolder, file: str) -> list[Path]:
+        d = self.team_docs_dir(f, file)
+        if not d.is_dir():
+            return []
+        return sorted((p for p in d.iterdir() if p.is_file() and p.suffix.lower() in DOC_TYPES
+                       and not p.name.startswith("~$")), key=lambda p: (p.stat().st_mtime, p.name))
+
+    def team_doc(self, f: CompFolder, file: str, name: str) -> Path | None:
+        """Файл документа по имени — только из папки этой команды."""
+        p = self.team_docs_dir(f, file) / Path(str(name).replace("\\", "/")).name
+        return p if name and p.suffix.lower() in DOC_TYPES and p.is_file() else None
+
+    def add_team_doc(self, f: CompFolder, file: str, filename: str, data: bytes) -> str:
+        name = safe_name(Path(filename.replace("\\", "/")).name) or "документ"
+        if Path(name).suffix.lower() not in DOC_TYPES:
+            raise ValueError(f"«{name}» — не фото, не PDF и не документ")
+        d = self.team_docs_dir(f, file)
+        d.mkdir(parents=True, exist_ok=True)
+        target, n = d / name, 2
+        while target.exists():  # у команд часто одинаковые имена файлов («скан.pdf») — не затираем
+            target, n = d / f"{Path(name).stem} ({n}){Path(name).suffix}", n + 1
+        target.write_bytes(data)
+        return target.name
+
+    def remove_team_doc(self, f: CompFolder, file: str, name: str) -> Path:
+        """Убрать документ: переносится в «Убранные» внутри папки команды, не удаляется."""
+        src = self.team_doc(f, file, name)
+        if src is None:
+            raise FileNotFoundError(name)
+        dest_dir = src.parent / REMOVED
+        dest_dir.mkdir(exist_ok=True)
+        dest, n = dest_dir / src.name, 2
+        while dest.exists():
+            dest, n = dest_dir / f"{src.stem} ({n}){src.suffix}", n + 1
+        shutil.move(src, dest)
+        return dest
 
     def review(self, f: CompFolder, comp: Competition) -> tuple[PreappResult, dict[str, Review]]:
         """Заявки с отметками секретаря: «проверено» у замечаний и статусы по файлам."""

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_docs.html" import doc_upload %}
+{% block title %}{{ t.title }} — проверка документов — СТ-Секретарь{% endblock %}
+{% block content %}
+{% macro near_link(x, arrow) -%}
+<a class="team-nav-link" href="{{ base }}/admission/check?file={{ x.file|urlencode }}">{% if arrow == "prev" %}← {% endif %}{{ x.title }} <span class="status-badge adm-badge-{{ x.status }}">{{ x.label }}</span>{% if arrow == "next" %} →{% endif %}</a>
+{%- endmacro %}
+<nav class="team-nav" aria-label="Команды по порядку" data-team-anchor="{{ t.file|team_anchor }}" data-list-path="{{ base }}/admission">
+  <a class="back" href="{{ base }}/admission#{{ t.file|team_anchor }}">← Комиссия по допуску</a>
+  <span class="team-nav-pos muted">команда {{ position[0] }} из {{ position[1] }}</span>
+  <span class="team-nav-side">
+    {% if prev_team %}<span class="muted">Предыдущая:</span> {{ near_link(prev_team, "prev") }}{% endif %}
+    {% if next_team %}<span class="muted">Следующая:</span> {{ near_link(next_team, "next") }}{% endif %}
+  </span>
+</nav>
+
+<div class="check-layout">
+  <section class="panel doc-pane" data-doc-viewer aria-label="Документы команды">
+    <h2>{{ icon("file") }} Документы команды ({{ docs|length }})</h2>
+    {% if docs %}
+    <div class="doc-tabs" role="tablist" aria-label="Документы">
+      {% for d in docs %}
+      <button type="button" class="doc-tab doc-tab-{{ d.kind }}" data-doc-url="{{ d.url }}" data-doc-kind="{{ d.kind }}" data-doc-name="{{ d.name }}" title="{{ d.name }}">{{ d.label }}</button>
+      {% endfor %}
+    </div>
+    <div class="doc-view" data-doc-view>
+      {# без скриптов — первый документ сразу; со скриптами — переключение вкладками #}
+      {% set d = docs[0] %}
+      {% if d.kind == "image" %}<img class="doc-img" src="{{ d.url }}" alt="{{ d.name }}">
+      {% elif d.kind == "pdf" %}<iframe class="doc-pdf" src="{{ d.url }}" title="{{ d.name }}"></iframe>
+      {% else %}<p class="muted">Этот файл браузер не показывает — нажмите «Открыть на компьютере».</p>{% endif %}
+    </div>
+    <div class="doc-tools">
+      <button type="button" class="btn btn-small" data-doc-step="-1" title="Предыдущий документ">← Предыдущий</button>
+      <button type="button" class="btn btn-small" data-doc-step="1" title="Следующий документ">Следующий →</button>
+      <button type="button" class="btn btn-ghost btn-small" data-doc-rotate title="Повернуть фото на 90°">↻ Повернуть</button>
+      <form method="post" action="{{ base }}/docs/open">
+        <input type="hidden" name="file" value="{{ t.file }}"><input type="hidden" name="name" value="{{ docs[0].name }}" data-doc-current>
+        <input type="hidden" name="back" value="{{ here }}">
+        <button class="btn btn-ghost btn-small" type="submit">{{ icon("folder", 16) }}Открыть на компьютере</button>
+      </form>
+      <form method="post" action="{{ base }}/docs/remove" data-confirm="Убрать этот документ? Файл не удаляется — он переносится в папку «Убранные» в документах команды.">
+        <input type="hidden" name="file" value="{{ t.file }}"><input type="hidden" name="name" value="{{ docs[0].name }}" data-doc-current>
+        <input type="hidden" name="back" value="{{ here }}">
+        <button class="btn btn-ghost btn-small" type="submit">{{ icon("archive", 16) }}Убрать</button>
+      </form>
+    </div>
+    {% else %}
+    <p class="muted">Документов пока нет. Добавьте сканы или фото — паспорта, полисы, справки, заявку с допуском врача.</p>
+    {% endif %}
+    {{ doc_upload(base, t.file, here, docs_dir) }}
+  </section>
+
+  <section class="check-pane" aria-label="Отметки комиссии">
+    {% set in_check = True %}{% include "_admission_team.html" %}
+    {% if next_team %}<a class="btn btn-primary btn-big" href="{{ base }}/admission/check?file={{ next_team.file|urlencode }}">Следующая команда: {{ next_team.title }} →</a>{% endif %}
+  </section>
+</div>
+{% endblock %}

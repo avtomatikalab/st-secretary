@@ -28,6 +28,7 @@ from starlette.exceptions import HTTPException
 
 from st_secretary import __version__
 from st_secretary import commission as cm
+from st_secretary import equipment as eq
 from st_secretary.competition import LEVEL_LABELS
 from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.importers.card_xlsx import CardError, load_card
@@ -39,7 +40,7 @@ from st_secretary.web import preapp_form as pf
 from st_secretary.web.review import CHECK, DONE, FIX, SAVE, STATUS_LABEL, is_clean, issue_key
 from st_secretary.web.forms import card_to_form, choices, empty_zachet, form_from_data, form_to_card
 from st_secretary.web.steps import BY_SLUG, STEPS
-from st_secretary.web.store import COMMISSION_REPORT, SUMMARY, CompFolder, Store
+from st_secretary.web.store import COMMISSION_REPORT, IMAGE_TYPES, SUMMARY, CompFolder, Store
 
 log = logging.getLogger("st_secretary.web")
 HERE = Path(__file__).parent
@@ -70,6 +71,11 @@ def _step_url(base: str, step) -> str:
 
 def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
+
+
+def key_of(e) -> str:
+    """Ключ участника в отметках комиссии и проверки снаряжения — ФИО без регистра и «ё»."""
+    return cm.person_key(e.name.full)
 
 
 def _parse_dt(s: str) -> datetime | None:
@@ -133,6 +139,12 @@ def _flash(request: Request) -> dict | None:
         "adm_locked": ("err", "Файл «Комиссия_по_допуску.xlsx» сейчас открыт в Excel. Закройте его и нажмите "
                               "кнопку ещё раз."),
         "reentry": ("ok", "Перезаявка записана с временем подачи — она видна у команды ниже."),
+        "gear_settings": ("ok", "Перечень снаряжения и баллы сохранены."),
+        "gear_saved": ("ok", "Проверка снаряжения сохранена."),
+        "docs_added": ("ok", "Документы добавлены. Они хранятся только на этом компьютере."),
+        "docs_skipped": ("err", "Часть файлов не добавлена: подходят фото (JPG, PNG), PDF и документы Word/Excel."),
+        "docs_none": ("err", "Файлы не выбраны."),
+        "docs_removed": ("ok", "Документ убран — он перенесён в папку «Убранные» в документах команды, его можно вернуть."),
         "reentry_late": ("err", "Перезаявка записана, но подана позже, чем за час до старта: по Правилам (п. 8.5) "
                                 "такая перезаявка не принимается. Решение — за ГСК."),
         "reentry_repeat": ("err", "Перезаявка записана, но она повторная: по Правилам (п. 8.5) повторные "
@@ -150,9 +162,10 @@ def _flash(request: Request) -> dict | None:
     return None
 
 
-def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
-    """shutdown — как остановить сервер (кнопка «Выключить»); None — кнопки нет (тесты, запуск не из окна)."""
-    store = Store(data_dir)
+def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str | Path | None = None) -> FastAPI:
+    """shutdown — как остановить сервер (кнопка «Выключить»); None — кнопки нет (тесты, запуск не из окна).
+    docs_dir — где хранить сканы документов участников (по умолчанию — папка в профиле, не в облаке)."""
+    store = Store(data_dir, docs_dir)
     app = FastAPI(title="СТ-Секретарь", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.shutdown = shutdown
     app.state.store = store
@@ -444,7 +457,9 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
                     prev_team=near.get("prev"), next_team=near.get("next"), position=(at + 1, len(order)),
                     review=reviews[path.name], counts=Counter(i.severity for i in issues), worst=worst,
                     show=pf.columns(comp, [vars(e) for e in team.entries] if team else []),
-                    here=team_url(f, path.name), **comp_ctx(f))
+                    here=team_url(f, path.name), docs=doc_list(f, path.name),
+                    docs_dir=store.team_docs_dir(f, path.name),
+                    check_url=f"{_base(f)}/admission/check?{urlencode({'file': path.name})}", **comp_ctx(f))
 
     @app.post("/c/{cid}/preapps/status")
     async def preapp_status(request: Request, cid: str):
@@ -585,7 +600,9 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         """Отметки комиссии и состояние допуска по каждой заявке (в порядке списка заявок)."""
         result, _ = store.review(f, comp)
         data = f.admission()
-        return data, cm.evaluate(result, [p.name for p in f.preapp_files()], comp, data)
+        files = [p.name for p in f.preapp_files()]
+        gear = eq.admission_problems(eq.evaluate(result, files, f.equipment(), key_of), f.equipment())
+        return data, cm.evaluate(result, files, comp, data, gear)
 
     def adm_totals(teams: list) -> dict:
         people = [p for t in teams for p in t.persons]
@@ -599,7 +616,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
     def adm_parts(f: CompFolder, data: dict) -> dict:
         pdocs, tdocs = cm.required_docs(data)
         return {"pdocs": pdocs, "tdocs": tdocs, "adm_settings": cm.settings(data), "fee_methods": cm.FEE_METHODS,
-                "base": _base(f)}
+                "base": _base(f), "docs_n": {p.name: len(store.team_docs(f, p.name)) for p in f.preapp_files()},
+                "gear_on": bool(eq.settings(f.equipment())["items"])}
 
     @app.get("/c/{cid}/admission")
     def admission_page(request: Request, cid: str):
@@ -649,13 +667,15 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         t = next(x for x in teams if x.file == path.name)
         clash = [x.title for x in teams if x.number is not None and x.number == t.number and x.file != t.file]
         if request.headers.get("x-autosave"):
-            parts = {**adm_parts(f, data), "clash": clash}
+            parts = {**adm_parts(f, data), "clash": clash, "in_check": bool(form.get("in_check"))}
             return JSONResponse({"team": templates.get_template("_admission_team.html").render(t=t, **parts),
                                  "tiles": templates.get_template("_admission_tiles.html").render(
                                      totals=adm_totals(teams), **parts),
                                  "saved": datetime.now().strftime("%H:%M:%S"), "status": t.status,
                                  "by": {"all": len(teams), **{s: sum(x.status == s for x in teams)
                                                              for s in (cm.PENDING, cm.ADMITTED, cm.REJECTED)}}})
+        if form.get("in_check"):
+            return _redirect(f"{_base(f)}/admission/check?{urlencode({'file': path.name, 'done': 'adm_saved'})}")
         return _redirect(f"{_base(f)}/admission?done=adm_saved#{team_anchor(path.name)}")
 
     @app.post("/c/{cid}/admission/settings")
@@ -693,7 +713,9 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         if not f.preapp_files():
             raise HTTPException(409, "Пока нет ни одной заявки — добавьте их на странице «Предварительные заявки».")
         data, teams = commission(f, comp)
-        return write_commission_report(teams, comp, data, path or f.commission_report_path)
+        gdata, gear = gear_ctx(f, comp)
+        return write_commission_report(teams, comp, data, path or f.commission_report_path,
+                                       gear if eq.settings(gdata)["items"] else None, gdata)
 
     @app.post("/c/{cid}/admission/report")
     def admission_report_open(cid: str):
@@ -712,6 +734,195 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None) -> FastAPI:
         commission_report(f, tmp)
         return FileResponse(tmp, filename=COMMISSION_REPORT, media_type=XLSX,
                             background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
+
+    # ------------------------------------------------------------ проверка снаряжения
+
+    def gear_ctx(f: CompFolder, comp) -> tuple[dict, list]:
+        result, _ = store.review(f, comp)
+        data = f.equipment()
+        return data, eq.evaluate(result, [p.name for p in f.preapp_files()], data, key_of)
+
+    def gear_totals(gear: list, data: dict) -> dict:
+        limit = eq.settings(data)["limit"]
+        by = Counter("new" if not g.checked else "out" if g.total > limit else "ok" for g in gear)
+        return {"teams": len(gear), "checked": sum(g.checked for g in gear), "by": by}
+
+    def gear_parts(f: CompFolder, data: dict) -> dict:
+        s = eq.settings(data)
+        return {"s": s, "items_person": [i for i in s["items"] if i.kind != eq.GROUP],
+                "items_group": [i for i in s["items"] if i.kind == eq.GROUP], "kind_label": eq.KIND_LABEL,
+                "short_name": eq.short_name, "key_of": key_of, "verdict": eq.verdict, "missing_text": eq.missing_text,
+                "base": _base(f)}
+
+    @app.get("/c/{cid}/equipment")
+    def equipment_page(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        data, gear = gear_ctx(f, comp)
+        return page(request, "equipment.html", active="admission", gear=gear, totals=gear_totals(gear, data),
+                    kinds=list(eq.KIND_LABEL.items()), **{**comp_ctx(f), **gear_parts(f, data)})
+
+    @app.post("/c/{cid}/equipment/settings")
+    async def equipment_settings(request: Request, cid: str):
+        f = folder(cid)
+        form = await request.form()
+        data = f.equipment()
+        if form.get("do") == "template":
+            data["settings"] = eq.template_settings(eq.PSR_KRSK_2025)
+        else:
+            idx = sorted({int(m.group(1)) for k in form.keys() if (m := re.fullmatch(r"it-(\d+)-name", k))})
+            items, used = [], set()
+            for i in idx:
+                name = str(form.get(f"it-{i}-name", "")).strip()
+                if not name:
+                    continue
+                qty = str(form.get(f"it-{i}-qty", "1")).strip()
+                iid = str(form.get(f"it-{i}-id", "")).strip() or f"n{i}"
+                while iid in used:
+                    iid += "x"
+                used.add(iid)
+                kind = str(form.get(f"it-{i}-kind", eq.PERSONAL))
+                items.append({"id": iid, "kind": kind if kind in eq.KIND_LABEL else eq.PERSONAL, "name": name,
+                              "unit": str(form.get(f"it-{i}-unit", "")).strip() or "шт.",
+                              "qty": int(qty) if qty.isdigit() and int(qty) > 0 else 1})
+            pen = {k: str(form.get(f"pen-{k}", "")).strip() for k in eq.KIND_LABEL}
+            limit = str(form.get("limit", "")).strip()
+            data["settings"] = {"items": items, "penalty": {k: int(v) for k, v in pen.items() if v.isdigit()},
+                                "limit": int(limit) if limit.isdigit() else eq.RULES["limit"]}
+        f.save_equipment(data)
+        return _redirect(f"{_base(f)}/equipment?done=gear_settings")
+
+    @app.post("/c/{cid}/equipment/team")
+    async def equipment_team(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        form = await request.form()
+        path = need_file(f, str(form.get("file", "")))
+        data = f.equipment()
+        s = eq.settings(data)
+        tm = data.setdefault("teams", {}).setdefault(path.name, {})
+        everything = form.get("do") == "all"  # «Начать проверку: всё есть» — дальше снимать отметки с того, чего нет
+
+        def value(name: str, it) -> object:
+            if everything:
+                return "all"
+            if it.qty == 1:
+                return "all" if form.get(name) else 0
+            v = str(form.get(name, "")).strip()
+            return int(v) if v.isdigit() else 0
+
+        tm["group"] = {it.id: value(f"g-{it.id}", it) for it in s["items"] if it.kind == eq.GROUP} or {"_": 0}
+        people = tm.setdefault("people", {})
+        idx = sorted({int(k.split("-")[1]) for k in form.keys() if re.fullmatch(r"p-\d+-key", k)})
+        if everything and not idx:  # у заявки ещё не отрисованы строки участников — отметить по заявке
+            result, _ = store.review(f, comp)
+            team = next((t for t in result.teams if t.source == path.name), None)
+            for e in (team.entries if team else []):
+                people[key_of(e)] = {it.id: "all" for it in s["items"] if it.kind != eq.GROUP}
+        for i in idx:
+            people[str(form.get(f"p-{i}-key"))] = {it.id: value(f"p-{i}-{it.id}", it)
+                                                   for it in s["items"] if it.kind != eq.GROUP}
+        tm["note"] = str(form.get("note", "")).strip()
+        f.save_equipment(data)
+        data, gear = gear_ctx(f, comp)
+        g = next(x for x in gear if x.file == path.name)
+        if request.headers.get("x-autosave"):
+            parts = gear_parts(f, data)
+            totals = gear_totals(gear, data)
+            return JSONResponse({"team": templates.get_template("_equipment_team.html").render(g=g, **parts),
+                                 "tiles": templates.get_template("_equipment_tiles.html").render(totals=totals,
+                                                                                                 **parts),
+                                 "saved": datetime.now().strftime("%H:%M:%S"),
+                                 "by": {"all": totals["teams"], **{k: totals["by"][k] for k in ("new", "ok", "out")}}})
+        return _redirect(f"{_base(f)}/equipment?done=gear_saved#{team_anchor(path.name)}")
+
+    # ------------------------------------------------------------ документы команд
+
+    def docs_back(f: CompFolder, sent: str, file: str) -> str:
+        return back_to(None, f, sent, team_url(f, file) + "#docs")
+
+    @app.post("/c/{cid}/docs/upload")
+    async def docs_upload(request: Request, cid: str):
+        f = folder(cid)
+        form = await request.form()
+        path = need_file(f, str(form.get("file", "")))
+        added = skipped = 0
+        for up in form.getlist("files"):
+            name = getattr(up, "filename", "") or ""
+            if not name:
+                continue
+            try:
+                store.add_team_doc(f, path.name, name, await up.read())
+                added += 1
+            except ValueError:
+                skipped += 1
+        back = docs_back(f, str(form.get("back", "")), path.name)
+        return _redirect(_with_done(back, "docs_added" if added and not skipped else "docs_skipped" if skipped
+                                    else "docs_none"))
+
+    @app.get("/c/{cid}/docs/view")
+    def docs_view(cid: str, file: str = "", name: str = ""):
+        """Файл документа — чтобы показать его прямо на странице (фото, PDF)."""
+        f = folder(cid)
+        path = need_file(f, file)
+        doc = store.team_doc(f, path.name, name)
+        if doc is None:
+            raise HTTPException(404)
+        return FileResponse(doc, content_disposition_type="inline", filename=doc.name,
+                            headers={"Cache-Control": "no-store"})  # персональные данные — не оставлять в кэше
+
+    @app.post("/c/{cid}/docs/remove")
+    async def docs_remove(request: Request, cid: str):
+        f = folder(cid)
+        form = await request.form()
+        path = need_file(f, str(form.get("file", "")))
+        try:
+            store.remove_team_doc(f, path.name, str(form.get("name", "")))
+        except FileNotFoundError:
+            raise HTTPException(404) from None
+        return _redirect(_with_done(docs_back(f, str(form.get("back", "")), path.name), "docs_removed"))
+
+    @app.post("/c/{cid}/docs/open")
+    async def docs_open(request: Request, cid: str):
+        """Открыть документ или папку документов команды программой компьютера."""
+        f = folder(cid)
+        form = await request.form()
+        path = need_file(f, str(form.get("file", "")))
+        name = str(form.get("name", ""))
+        if name:
+            target = store.team_doc(f, path.name, name)
+            if target is None:
+                raise HTTPException(404)
+        else:
+            target = store.team_docs_dir(f, path.name)
+            target.mkdir(parents=True, exist_ok=True)
+        app.state.opener(target)
+        return _redirect(_with_done(docs_back(f, str(form.get("back", "")), path.name), "opened"))
+
+    @app.get("/c/{cid}/admission/check")
+    def admission_check(request: Request, cid: str, file: str = ""):
+        """Проверка в одном окне: документы команды слева, отметки комиссии справа."""
+        f = folder(cid)
+        comp = need_comp(f)
+        path = need_file(f, file)
+        data, teams = commission(f, comp)
+        order = [t.file for t in teams]
+        at = order.index(path.name)
+        near = {k: teams[j] for k, j in (("prev", at - 1), ("next", at + 1)) if 0 <= j < len(order)}
+        return page(request, "admission_check.html", active="admission", focus=True, t=teams[at],
+                    docs=doc_list(f, path.name),
+                    position=(at + 1, len(order)), prev_team=near.get("prev"), next_team=near.get("next"),
+                    docs_dir=store.team_docs_dir(f, path.name), here=f"{_base(f)}/admission/check?file={quote(path.name)}",
+                    **{**comp_ctx(f), **adm_parts(f, data)})
+
+    def doc_list(f: CompFolder, file: str) -> list[dict]:
+        out = []
+        for p in store.team_docs(f, file):
+            ext = p.suffix.lower()
+            kind = "image" if ext in IMAGE_TYPES else "pdf" if ext == ".pdf" else "other"
+            out.append({"name": p.name, "label": p.stem, "kind": kind,
+                        "url": f"{_base(f)}/docs/view?{urlencode({'file': file, 'name': p.name})}"})
+        return out
 
     # ------------------------------------------------------------ шаги в разработке
 

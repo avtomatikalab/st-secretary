@@ -4,6 +4,7 @@
 <article class="team adm-team" id="{{ anchor }}" data-status="{{ t.status }}">
 <form method="post" action="{{ base }}/admission/team" data-autosave>
   <input type="hidden" name="file" value="{{ t.file }}">
+  {% if in_check %}<input type="hidden" name="in_check" value="1">{% endif %}
   <header class="team-head">
     <div class="team-title">
       <label class="adm-number" title="Номер команды (стартовый)">№ <input type="text" inputmode="numeric" name="number" value="{{ t.number if t.number is not none else '' }}" aria-label="Номер команды {{ t.title }}"></label>
@@ -88,6 +89,9 @@
       </div>
       <div class="adm-actions">
         <button class="btn btn-small btn-check" type="submit" name="do" value="all_docs">{{ icon("check", 16) }}Отметить все документы</button>
+        {% set n_docs = docs_n.get(t.file, 0) if docs_n else 0 %}
+        {% if not in_check %}<a class="btn btn-ghost btn-small" href="{{ base }}/admission/check?file={{ t.file|urlencode }}">{{ icon("file", 16) }}Документы{% if n_docs %} ({{ n_docs }}){% endif %} — проверить в одном окне</a>{% endif %}
+        {% if gear_on %}<a class="btn btn-ghost btn-small" href="{{ base }}/equipment#{{ t.file|team_anchor }}">Снаряжение</a>{% endif %}
         <a class="btn btn-ghost btn-small" href="{{ base }}/preapps/edit?file={{ t.file|urlencode }}&amp;reentry=1">{{ icon("edit", 16) }}Перезаявка</a>
         <button class="btn btn-ghost btn-small adm-save" type="submit">Сохранить</button>
         <span class="adm-saved muted" aria-live="polite"></span>

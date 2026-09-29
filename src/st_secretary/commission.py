@@ -130,6 +130,7 @@ class TeamCheck:
     fee_paid: int = 0
     fee_method: str = ""
     reentries: list[dict] = field(default_factory=list)
+    extra: list[str] = field(default_factory=list)  # что ещё мешает допуску (проверка снаряжения)
 
     @property
     def label(self) -> str:
@@ -162,10 +163,12 @@ def _int(v) -> int | None:
         return None
 
 
-def evaluate(result: PreappResult, files: list[str], comp: Competition, data: dict) -> list[TeamCheck]:
+def evaluate(result: PreappResult, files: list[str], comp: Competition, data: dict,
+             extra: dict[str, list[str]] | None = None) -> list[TeamCheck]:
     """Состояние допуска по каждому файлу заявки (в порядке списка заявок).
 
-    result — заявки с отметками «проверено» (замечания, отмеченные проверенными, уже не WARNING)."""
+    result — заявки с отметками «проверено» (замечания, отмеченные проверенными, уже не WARNING);
+    extra — что ещё мешает допуску команды (например, итоги проверки снаряжения), по файлам."""
     pdocs, tdocs = required_docs(data)
     teams = {t.source: t for t in result.teams}
     by_source: dict[str, list[Issue]] = {}
@@ -204,7 +207,8 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
                       fee_due=0, fee_paid=_int(m.get("fee_paid")) or 0, fee_method=m.get("fee_method", ""),
                       reentries=list(m.get("reentries", [])))
         t.fee_due = fee_due(t, comp)
-        t.problems = _team_problems(t, comp)
+        t.extra = list((extra or {}).get(file, []))
+        t.problems = _team_problems(t, comp) + (t.extra if team else [])
         if t.decision == REJECTED or (persons and all(p.status == REJECTED for p in persons)):
             t.status = REJECTED
         elif not t.problems:
@@ -273,7 +277,7 @@ def protocol_row(t: TeamCheck, comp: Competition) -> dict:
     ages = [age_on_start(e, comp) for e in people]
     remarks = [f"{p.entry.name.full} — {p.why}" for p in t.persons if p.why]
     remarks += [f"нет: {', '.join(d.short.lower() for d in t.missing_team_docs)}"] if t.missing_team_docs else []
-    remarks += [i.text for i in t.errors]
+    remarks += [i.text for i in t.errors] + t.extra
     decision = {ADMITTED: "допущена", REJECTED: "не допущена", PENDING: "ожидает решения"}[t.status]
     if t.note:
         decision += f"; {t.note}"

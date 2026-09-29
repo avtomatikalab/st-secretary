@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% from "_issues.html" import issue_item, status_badge %}
+{% from "_docs.html" import doc_upload, doc_grid %}
 {% block title %}{{ team.team if team else file }} — карточка команды — СТ-Секретарь{% endblock %}
 {% macro team_link(t, arrow) -%}
 <a class="team-nav-link" href="{{ base }}/preapps/team?file={{ t.file|urlencode }}">{% if arrow == "prev" %}← {% endif %}{{ t.title }} {{ status_badge(t.review) }}{% if arrow == "next" %} →{% endif %}</a>
@@ -119,6 +120,22 @@
   <p>Файл не удалось прочитать как заявку — причина в замечаниях выше. Нажмите «Редактировать заявку», чтобы заполнить её
     в программе (прежний файл сохранится в «Предзаявки\Прежние версии»), или попросите команду прислать заявку по бланку.</p>
   {% endif %}
+</section>
+
+<section class="panel" id="docs">
+  <h2>{{ icon("file") }} Документы команды ({{ docs|length }})</h2>
+  <p class="muted">Сканы и фото документов для комиссии по допуску: паспорта, полисы, справки, заявка с допуском врача.
+    На комиссии их удобно смотреть рядом с галочками — кнопка «Проверить в одном окне».</p>
+  {% if docs %}
+  {{ doc_grid(docs, check_url) }}
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ check_url }}">{{ icon("check") }}Проверить в одном окне</a>
+    <form method="post" action="{{ base }}/docs/open"><input type="hidden" name="file" value="{{ file }}">
+      <input type="hidden" name="back" value="{{ here }}#docs">
+      <button class="btn btn-ghost" type="submit">{{ icon("folder") }}Папка с документами</button></form>
+  </div>
+  {% endif %}
+  {{ doc_upload(base, file, here ~ "#docs", docs_dir) }}
 </section>
 
 <div class="team-next">

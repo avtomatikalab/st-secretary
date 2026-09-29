@@ -423,10 +423,62 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .adm-reentries ul { margin: 4px 0 0; padding-left: 1.2rem !important; }
 .reentry-banner { border-left: 5px solid var(--info); }
 
+/* ---------- проверка снаряжения ---------- */
+.gear-new { background: #b7791f; } .gear-ok { background: var(--ok); } .gear-out { background: var(--err); }
+.gear-start { padding: 14px 18px 18px; display: grid; gap: 10px; justify-items: start; }
+.gear-tbl { font-size: .9rem; }
+.gear-tbl td { padding: 5px 8px; }
+.gear-tbl th.cb, .gear-tbl td.cb { text-align: center; width: 1%; white-space: nowrap; }
+.gear-tbl tr.gear-lack td, .gear-tbl td.gear-lack { background: var(--err-bg); }
+.gear-tbl input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer; }
+.gear-n { width: 52px !important; min-height: 32px !important; padding: 2px 6px !important; text-align: center; }
+.gear-kind { font-size: .75rem; color: var(--info); border: 1px solid var(--info-line); border-radius: 4px; padding: 0 4px; }
+.gear-matrix th.cb { font-size: .78rem; max-width: 110px; white-space: normal; }
+.gear-sum { font-size: .95rem; }
+.gear-total { font-size: 1.15rem; }
+.gear-settings summary { font-size: 1.05rem; }
+.gear-pen { margin: 12px 0; }
+.gear-items { table-layout: fixed; min-width: 640px; }
+.gear-items .c-kind { width: 190px; } .gear-items .c-unit { width: 90px; } .gear-items .c-qty { width: 80px; } .gear-items .c-act { width: 46px; }
+
+/* ---------- документы команды ---------- */
+.dropzone-mini { padding: 14px; gap: 6px; border-width: 2px; margin-top: 12px; }
+.dropzone-mini .dz-title { font-size: 1rem; display: flex; align-items: center; gap: 6px; margin: 0; }
+.doc-where { display: flex; align-items: center; gap: 6px; word-break: break-all; }
+.doc-grid { list-style: none; padding: 0 !important; margin: 8px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.doc-grid a { display: grid; gap: 4px; color: inherit; text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--surface-2); }
+.doc-grid a:hover { border-color: var(--primary); }
+.doc-grid img { width: 100%; height: 110px; object-fit: cover; border-radius: 4px; background: #fff; }
+.doc-icon { height: 110px; display: grid; place-items: center; font-weight: 700; color: var(--muted); background: #fff; border-radius: 4px; }
+.doc-name { font-size: .78rem; word-break: break-all; line-height: 1.25; }
+.layout.focus .content { max-width: none; }
+.check-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; align-items: start; }
+.doc-pane { position: sticky; top: calc(var(--top) + 12px); max-height: calc(100vh - var(--top) - 24px); overflow: auto; margin: 0; }
+.doc-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.doc-tab-pdf::before { content: "PDF "; font-weight: 700; color: var(--err); }
+.doc-tab-pdf[aria-selected=true]::before { color: #fff; }
+.doc-tab { border: 1px solid var(--line-strong); background: #fff; border-radius: 6px; padding: 4px 10px; font: inherit; font-size: .82rem; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-tab[aria-selected=true] { background: var(--primary); border-color: var(--primary); color: #fff; }
+.doc-view { background: #e9edf1; border-radius: 8px; min-height: 360px; display: grid; place-items: center; overflow: auto; }
+.doc-img { max-width: 100%; max-height: 62vh; cursor: zoom-in; transition: transform .2s; }
+.doc-img.is-zoom { max-width: none; max-height: none; cursor: zoom-out; }
+.doc-pdf { width: 100%; height: 62vh; border: 0; background: #fff; }
+.doc-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.doc-tools form { margin: 0; }
+.check-pane { display: grid; gap: 14px; justify-items: stretch; }
+.check-pane .team { margin: 0; }
+.check-pane .adm-people .adm-fio { min-width: 130px; }
+.check-pane .adm-people th.cb, .check-pane .adm-people td.cb { white-space: normal; font-size: .72rem; line-height: 1.2; width: 44px; padding-left: 4px; padding-right: 4px; }
+.check-pane .adm-decision { min-width: 150px; }
+.check-pane .adm-decision select { width: 100%; }
+.check-pane .adm-body { padding: 10px 12px 14px; }
+
 /* ---------- средний экран: поля зачёта по три в ряд ---------- */
 @media (max-width: 1280px) {
   .zachet .span-2, .zachet .span-3 { grid-column: span 4; }
   .zachet .span-7 { grid-column: span 12; }
+  .check-layout { grid-template-columns: minmax(0, 1fr); }
+  .doc-pane { position: static; max-height: none; }
 }
 
 /* ---------- узкий экран ---------- */

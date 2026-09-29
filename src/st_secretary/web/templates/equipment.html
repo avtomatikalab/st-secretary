@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+
+{% macro item_row(i, it, kinds) -%}
+<tr data-row>
+  <td><select name="it-{{ i }}-kind" aria-label="Вид снаряжения">
+    {% for k, label in kinds %}<option value="{{ k }}"{% if it.kind == k %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select><input type="hidden" name="it-{{ i }}-id" value="{{ it.id }}"></td>
+  <td><input type="text" name="it-{{ i }}-name" value="{{ it.name }}" placeholder="Наименование" aria-label="Наименование"></td>
+  <td><input type="text" name="it-{{ i }}-unit" value="{{ it.unit }}" placeholder="шт." aria-label="Единица"></td>
+  <td><input type="text" inputmode="numeric" name="it-{{ i }}-qty" value="{{ it.qty }}" aria-label="Количество"></td>
+  <td class="cell-action"><button type="button" class="icon-btn" data-remove-row data-confirm="Убрать предмет из перечня?" title="Убрать" aria-label="Убрать">×</button></td>
+</tr>
+{%- endmacro %}
+
+{% block title %}Проверка снаряжения — СТ-Секретарь{% endblock %}
+{% block content %}
+<a class="back" href="{{ base }}/admission">← Комиссия по допуску</a>
+<h1>Проверка снаряжения</h1>
+<p class="lead">По перечню обязательного снаряжения из Положения: личное — у каждого участника, групповое — на команду,
+  специальное — у каждого (проверяет техническая комиссия). За каждый отсутствующий предмет — штрафные баллы;
+  больше порога — снятие с соревнований (Правила, часть 4, табл. 4). Итог сразу виден на странице комиссии по допуску.</p>
+
+{% if not s["items"] %}
+<div class="panel panel-warn">
+  <h2>{{ icon("alert") }} Перечень снаряжения не задан</h2>
+  <p>Заполните его по образцу и поправьте под своё Положение — или задайте вручную ниже.</p>
+  <form method="post" action="{{ base }}/equipment/settings">
+    <button class="btn btn-primary" type="submit" name="do" value="template">Заполнить по перечню «ПСР КРСК 2025»</button>
+  </form>
+  <p class="hint">Образец: 13 личных, 14 групповых и 8 специальных предметов; 1 балл за личный, 3 — за групповой, снятие при
+    более 10 баллах (так в перечне 2025 г.). По Правилам — 1 и 5 баллов и порог 30; поправьте под своё Положение.</p>
+</div>
+{% else %}
+{% include "_equipment_tiles.html" %}
+{% endif %}
+
+<details class="panel howto gear-settings"{% if not s["items"] %} open{% endif %}>
+  <summary>Перечень снаряжения и штрафные баллы</summary>
+  <form method="post" action="{{ base }}/equipment/settings" data-guard>
+    <div class="grid gear-pen">
+      {% for k, label in kinds %}
+      <div class="field span-3"><label for="f-pen-{{ k }}">{{ label }}: баллов за предмет</label>
+        <input id="f-pen-{{ k }}" type="text" inputmode="numeric" name="pen-{{ k }}" value="{{ s.penalty[k] }}"></div>
+      {% endfor %}
+      <div class="field span-3"><label for="f-limit">Снятие, если баллов больше</label>
+        <input id="f-limit" type="text" inputmode="numeric" name="limit" value="{{ s.limit }}"></div>
+    </div>
+    <div class="table-wrap">
+    <table class="tbl form-tbl gear-items">
+      <colgroup><col class="c-kind"><col class="c-name"><col class="c-unit"><col class="c-qty"><col class="c-act"></colgroup>
+      <thead><tr><th>Вид</th><th>Наименование</th><th>Ед.</th><th>Кол-во</th><th></th></tr></thead>
+      <tbody id="gear-items" data-next="{{ s['items']|length }}">
+        {% for it in s["items"] %}{{ item_row(loop.index0, it, kinds) }}{% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" data-add-row="gear-items" data-template="tpl-item">{{ icon("plus") }}Добавить предмет</button>
+      <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить перечень</button>
+      {% if s["items"] %}<button class="btn btn-ghost" type="submit" name="do" value="template" formnovalidate
+        onclick="return confirm('Заменить перечень образцом «ПСР КРСК 2025»? Текущий перечень пропадёт.')">Заменить образцом ПСР КРСК 2025</button>{% endif %}
+    </div>
+    <p class="hint">Отметки у команд привязаны к предметам: если убрать предмет из перечня, отметки по нему не учитываются.</p>
+  </form>
+  <template id="tpl-item">{{ item_row("__i__", {"kind": "personal", "name": "", "unit": "шт.", "qty": 1, "id": ""}, kinds) }}</template>
+</details>
+
+{% if s["items"] %}
+<div class="filter-bar" role="group" aria-label="Какие команды показывать">
+  <span class="filter-label">Показать:</span>
+  <button type="button" class="filter" data-team-filter="all" aria-pressed="true">Все <b>{{ totals.teams }}</b></button>
+  <button type="button" class="filter filter-check" data-team-filter="new" aria-pressed="false">Не проверены <b>{{ totals.by.new }}</b></button>
+  <button type="button" class="filter filter-done" data-team-filter="ok" aria-pressed="false">Допущены <b>{{ totals.by.ok }}</b></button>
+  <button type="button" class="filter filter-fix" data-team-filter="out" aria-pressed="false">Снятие <b>{{ totals.by.out }}</b></button>
+</div>
+<p class="filter-empty muted" hidden>Таких команд сейчас нет.</p>
+<section data-team-list aria-label="Команды">
+{% for g in gear %}{% include "_equipment_team.html" %}{% endfor %}
+</section>
+{% endif %}
+{% endblock %}

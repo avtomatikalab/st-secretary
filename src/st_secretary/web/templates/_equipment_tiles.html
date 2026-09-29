@@ -1,0 +1,8 @@
+{# Итоги проверки снаряжения — обновляются после каждого изменения. #}
+<div class="tiles" data-live-tiles>
+  <div class="tile"><b>{{ totals.checked }} из {{ totals.teams }}</b><span>команд проверено</span></div>
+  <div class="tile tile-fixed"><b>{{ totals.by.ok }}</b><span>допущено по снаряжению</span></div>
+  <div class="tile tile-error"><b>{{ totals.by.out }}</b><span>снятие — больше {{ s.limit }} баллов</span></div>
+  <div class="tile tile-warning"><b>{{ totals.by.new }}</b><span>ещё не проверено</span></div>
+  <div class="tile"><b>{{ s.penalty.personal }} / {{ s.penalty.group }} / {{ s.penalty.special }}</b><span>баллов: личное / групповое / спец.</span></div>
+</div>

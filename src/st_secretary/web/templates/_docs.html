@@ -1,0 +1,23 @@
+{% from "_icons.html" import icon %}
+{# Добавить документы команды: перетащить или выбрать. Хранятся только на этом компьютере. #}
+{% macro doc_upload(base, file, back, docs_dir) -%}
+<form method="post" action="{{ base }}/docs/upload" enctype="multipart/form-data" class="dropzone dropzone-mini" data-dropzone>
+  <input type="hidden" name="file" value="{{ file }}"><input type="hidden" name="back" value="{{ back }}">
+  <p class="dz-title">{{ icon("upload", 20) }} Перетащите сюда сканы или фото</p>
+  <label class="btn btn-small">{{ icon("file", 16) }}Выбрать файлы<input type="file" name="files" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.odt,.rtf,.heic" class="visually-hidden"></label>
+  <p class="dz-busy">{{ icon("clock") }} Добавляю…</p>
+  <noscript><button class="btn btn-small" type="submit">Добавить</button></noscript>
+</form>
+<p class="hint doc-where">{{ icon("laptop", 14) }} Хранятся только на этом компьютере, не в облаке: {{ docs_dir }}</p>
+{%- endmacro %}
+
+{# Документы команды плиткой — на карточке команды. #}
+{% macro doc_grid(docs, check_url) -%}
+<ul class="doc-grid">
+  {% for d in docs %}
+  <li><a href="{{ check_url }}" title="Открыть рядом с отметками комиссии">
+    {% if d.kind == "image" %}<img src="{{ d.url }}" alt="" loading="lazy">{% else %}<span class="doc-icon">{{ "PDF" if d.kind == "pdf" else "DOC" }}</span>{% endif %}
+    <span class="doc-name">{{ d.name }}</span></a></li>
+  {% endfor %}
+</ul>
+{%- endmacro %}

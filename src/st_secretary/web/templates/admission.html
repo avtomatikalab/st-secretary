@@ -46,6 +46,12 @@
         <input type="hidden" name="mode" value="all"><button class="btn btn-ghost" type="submit">Перенумеровать все</button></form>
     </div>
   </div>
+  <div class="adm-tool">
+    <h2>Проверка снаряжения</h2>
+    <p class="muted">По перечню из Положения: что отсутствует — штрафные баллы; больше порога — снятие (для ПСР —
+      Правила, часть 4). {% if gear_on %}Итог проверки учитывается в допуске команды.{% else %}Перечень ещё не задан.{% endif %}</p>
+    <div class="actions"><a class="btn" href="{{ base }}/equipment">{% if gear_on %}Открыть проверку снаряжения{% else %}Задать перечень и проверить{% endif %}</a></div>
+  </div>
   <details class="howto adm-settings">
     <summary>Какие документы проверять и время старта</summary>
     <form method="post" action="{{ base }}/admission/settings">

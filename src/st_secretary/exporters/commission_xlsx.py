@@ -190,10 +190,48 @@ def _people(ws, teams: list[TeamCheck], data: dict) -> None:
     ws.auto_filter.ref = f"A1:{get_column_letter(len(head))}{max(r - 1, 1)}"
 
 
-def write_commission_report(teams: list[TeamCheck], comp: Competition, data: dict, path: str | Path) -> Path:
+def _gear(ws, gear: list, gear_data: dict, comp: Competition) -> None:
+    """Акт проверки снаряжения: по каждой команде — баллы, чего нет, итог."""
+    from st_secretary.equipment import GROUP, PERSONAL, SPECIAL, missing_text, settings, verdict
+
+    s = settings(gear_data)
+    head = ["№ п/п", "Команда", "Личное", "Групповое", "Специальное", "Всего баллов", "Отсутствует", "Итог",
+            "Замечание"]
+    r = _title_block(ws, comp, "Акт проверки снаряжения", len(head))
+    ws.cell(r - 1, 1, f"Баллы за отсутствующий предмет: личный — {s['penalty'][PERSONAL]}, групповой — "
+                      f"{s['penalty'][GROUP]}, специальный — {s['penalty'][SPECIAL]}; снятие при сумме более {s['limit']}.")
+    for c, text in enumerate(head, start=1):
+        ws.cell(r, c, text).font = Font(bold=True, size=9)
+        ws.cell(r, c).fill = HEAD
+    _box(ws, r, 1, len(head))
+    r += 1
+    for n, g in enumerate(gear, start=1):
+        v = verdict(g, s["limit"])
+        values = [n, g.title, g.points.get(PERSONAL, 0), g.points.get(GROUP, 0), g.points.get(SPECIAL, 0),
+                  g.total if g.checked else None, missing_text(g) if g.checked else "", v, g.note]
+        for c, val in enumerate(values, start=1):
+            ws.cell(r, c, val)
+        _box(ws, r, 1, len(head), WRAP)
+        ws.cell(r, 8).fill = FILL[REJECTED] if v.startswith("снятие") else FILL[ADMITTED] if v == "допущена" \
+            else PENDING_FILL
+        r += 1
+    ws.cell(r + 2, 1, "Заместитель главного судьи по безопасности ________________ / "
+                      f"{_signature(comp, 'Заместитель главного судьи по безопасности')} /")
+    for c, w in enumerate([5, 24, 9, 11, 12, 10, 60, 22, 30], start=1):
+        ws.column_dimensions[get_column_letter(c)].width = w
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+
+def write_commission_report(teams: list[TeamCheck], comp: Competition, data: dict, path: str | Path,
+                            gear: list | None = None, gear_data: dict | None = None) -> Path:
+    """gear — итоги проверки снаряжения (если перечень задан): добавляется лист «Проверка снаряжения»."""
     wb = Workbook()
     _protocol(wb.active, teams, comp)
     _fees(wb.create_sheet("Ведомость взносов"), teams, comp)
+    if gear:
+        _gear(wb.create_sheet("Проверка снаряжения"), gear, gear_data or {}, comp)
     _people(wb.create_sheet("Документы участников"), teams, data)
     path = Path(path)
     wb.save(path)

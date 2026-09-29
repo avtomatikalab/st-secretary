@@ -217,7 +217,7 @@ def cmd_web(a) -> int:
         port = _free_port(a.port)
         url = f"http://{HOST}:{port}/"
         servers: list = []  # сервер создаётся после приложения, а кнопке «Выключить» нужен именно он
-        app = create_app(data, shutdown=lambda: setattr(servers[0], "should_exit", True))
+        app = create_app(data, shutdown=lambda: setattr(servers[0], "should_exit", True), docs_dir=a.docs)
         server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="warning"))
         servers.append(server)
         loading.text = "Запускаю сервер"
@@ -232,6 +232,7 @@ def cmd_web(a) -> int:
             print("СТ-Секретарь работает.")
             print(f"  Адрес в браузере: {url}")
             print(f"  Папка с данными:  {data}")
+            print(f"  Документы участников (только на этом компьютере): {app.state.store.docs_root}")
             print()
             print("Это окно — сама программа: пока оно открыто, страница в браузере работает.")
             print("Выключить программу: кнопка «Выключить» вверху страницы или просто закройте это окно.")
@@ -253,6 +254,8 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("web", help="открыть программу в браузере")
     p.add_argument("--data", default="данные", help="папка с соревнованиями (по умолчанию «данные» рядом с программой)")
+    p.add_argument("--docs", default=None, help="где хранить сканы документов участников (по умолчанию — папка "
+                                               "«СТ-Секретарь — документы участников» в профиле пользователя, не в облаке)")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--no-browser", action="store_true", help="не открывать браузер автоматически")
     p.set_defaults(func=cmd_web)

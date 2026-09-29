@@ -1,0 +1,83 @@
+{# Одна команда на странице проверки снаряжения. Этот же блок сервер присылает после каждого изменения. #}
+{% from "_icons.html" import icon %}
+{% set st = "new" if not g.checked else ("out" if g.total > s.limit else "ok") %}
+<article class="team gear-team" id="{{ g.file|team_anchor }}" data-status="{{ st }}">
+<form method="post" action="{{ base }}/equipment/team" data-autosave>
+  <input type="hidden" name="file" value="{{ g.file }}">
+  <header class="team-head">
+    <div class="team-title">
+      <h3><a class="team-link" href="{{ base }}/preapps/team?file={{ g.file|urlencode }}">{{ g.title }}</a></h3>
+      {% if g.team %}<span class="muted">{{ g.team.territory }} · {{ g.team.entries|length }} чел.</span>{% endif %}
+    </div>
+    <div class="team-counts">
+      <span class="status-badge gear-{{ st }}">{% if st == "new" %}Не проверено{% elif st == "ok" %}{{ icon("check", 14) }} {{ g.total }} б. — допущена{% else %}{{ g.total }} б. — снятие{% endif %}</span>
+    </div>
+  </header>
+
+  {% if not g.team %}
+  <p class="team-todo">{{ icon("alert", 18) }} <span>Заявку не удалось прочитать — исправьте её в разделе «Предварительные заявки».</span></p>
+  {% elif not g.checked %}
+  <div class="gear-start">
+    <p>Нажмите «Начать проверку» — всё снаряжение будет отмечено как «есть». Затем снимите отметки с того, чего нет
+      (для предметов по нескольку штук — впишите, сколько есть).</p>
+    <button class="btn btn-primary" type="submit" name="do" value="all">{{ icon("check", 18) }}Начать проверку: всё есть</button>
+  </div>
+  {% else %}
+  <div class="adm-body">
+    {% if items_group %}
+    <div class="table-wrap">
+    <table class="tbl gear-tbl">
+      <thead><tr><th>Групповое снаряжение</th><th>Нужно</th><th class="cb">Есть</th></tr></thead>
+      <tbody>
+      {% for it in items_group %}{% set lack = g.lacks.get(("", it.id), 0) %}
+      <tr{% if lack %} class="gear-lack"{% endif %}>
+        <td>{{ it.name }}</td><td class="muted">{{ it.qty }} {{ it.unit }}</td>
+        <td class="cb">{% if it.qty == 1 %}<input type="checkbox" name="g-{{ it.id }}"{% if not lack %} checked{% endif %} aria-label="{{ it.name }}">
+          {% else %}<input type="text" inputmode="numeric" class="gear-n" name="g-{{ it.id }}" value="{{ it.qty - lack }}" aria-label="{{ it.name }}: сколько есть">{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    {% if items_person %}
+    <div class="table-wrap">
+    <table class="tbl gear-tbl gear-matrix">
+      <thead><tr><th>Личное и специальное (у каждого)</th><th>Нужно</th>
+        {% for e in g.team.entries %}<th class="cb" title="{{ e.name.full }}">{{ short_name(e) }}<input type="hidden" name="p-{{ loop.index0 }}-key" value="{{ key_of(e) }}"></th>{% endfor %}
+      </tr></thead>
+      <tbody>
+      {% for it in items_person %}
+      <tr>
+        <td>{{ it.name }}{% if it.kind == "special" %} <span class="gear-kind">спец.</span>{% endif %}</td>
+        <td class="muted">{{ it.qty }} {{ it.unit }}</td>
+        {% for e in g.team.entries %}{% set lack = g.lacks.get((e.name.full, it.id), 0) %}
+        <td class="cb{% if lack %} gear-lack{% endif %}">{% if it.qty == 1 %}<input type="checkbox" name="p-{{ loop.index0 }}-{{ it.id }}"{% if not lack %} checked{% endif %} aria-label="{{ it.name }}: {{ e.name.full }}">
+          {% else %}<input type="text" inputmode="numeric" class="gear-n" name="p-{{ loop.index0 }}-{{ it.id }}" value="{{ it.qty - lack }}" aria-label="{{ it.name }}: {{ e.name.full }}, сколько есть">{% endif %}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    <div class="adm-foot">
+      <div class="gear-sum">
+        Штраф: личное <b>{{ g.points.personal }}</b> · групповое <b>{{ g.points.group }}</b> · специальное <b>{{ g.points.special }}</b>
+        = <b class="gear-total">{{ g.total }}</b> {% if g.total > s.limit %}<span class="text-err">— больше {{ s.limit }}: по Правилам снятие с соревнований</span>{% else %}<span class="text-ok">— допустимо не более {{ s.limit }}</span>{% endif %}
+      </div>
+      {% if g.missing %}<p class="adm-why">Нет: {{ missing_text(g) }}</p>{% endif %}
+      <div class="adm-team-decision">
+        <input type="text" name="note" value="{{ g.note }}" placeholder="замечание по снаряжению — попадёт в акт" aria-label="Замечание по снаряжению">
+      </div>
+      <div class="adm-actions">
+        <button class="btn btn-ghost btn-small adm-save" type="submit">Сохранить</button>
+        <span class="adm-saved muted" aria-live="polite"></span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</form>
+</article>

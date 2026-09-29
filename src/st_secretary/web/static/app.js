@@ -135,11 +135,11 @@
         box.innerHTML = j.team;
         var fresh = box.querySelector("article");
         article.replaceWith(fresh);
-        var tiles = document.getElementById("adm-tiles");
+        var tiles = document.querySelector("[data-live-tiles]");
         if (tiles && j.tiles) {
           var tb = document.createElement("div");
           tb.innerHTML = j.tiles;
-          tiles.replaceWith(tb.querySelector("#adm-tiles"));
+          tiles.replaceWith(tb.querySelector("[data-live-tiles]"));
         }
         var saved = fresh.querySelector(".adm-saved");
         if (saved) saved.textContent = "Сохранено в " + j.saved;
@@ -166,6 +166,54 @@
     if (!form.matches || !form.matches("form[data-autosave]") || form.classList.contains("adm-failed")) return;
     e.preventDefault();  // Enter в поле или кнопка «Отметить все документы» — тоже без перезагрузки
     autosave(form, e.submitter ? { name: e.submitter.name, value: e.submitter.value } : null);
+  });
+
+  // --- Документы команды: переключение, поворот фото (с телефона они часто лёжа), увеличение по щелчку.
+  document.querySelectorAll("[data-doc-viewer]").forEach(function (pane) {
+    var view = pane.querySelector("[data-doc-view]");
+    var rot = 0;
+    function show(btn) {
+      pane.querySelectorAll(".doc-tab").forEach(function (b) { b.setAttribute("aria-selected", b === btn ? "true" : "false"); });
+      rot = 0;
+      view.innerHTML = "";
+      var url = btn.dataset.docUrl, kind = btn.dataset.docKind;
+      if (kind === "image") {
+        var img = new Image();
+        img.src = url;
+        img.alt = btn.dataset.docName;
+        img.className = "doc-img";
+        img.title = "Щёлкните, чтобы увеличить";
+        img.addEventListener("click", function () { img.classList.toggle("is-zoom"); });
+        view.appendChild(img);
+      } else if (kind === "pdf") {
+        var fr = document.createElement("iframe");
+        fr.src = url;
+        fr.title = btn.dataset.docName;
+        fr.className = "doc-pdf";
+        view.appendChild(fr);
+      } else {
+        view.innerHTML = '<p class="muted">Этот файл браузер не показывает — нажмите «Открыть на компьютере».</p>';
+      }
+      pane.querySelectorAll("[data-doc-current]").forEach(function (i) { i.value = btn.dataset.docName; });
+    }
+    var tabs = Array.prototype.slice.call(pane.querySelectorAll(".doc-tab"));
+    tabs.forEach(function (b) { b.addEventListener("click", function () { show(b); }); });
+    pane.querySelectorAll("[data-doc-step]").forEach(function (btn) {  // листать документы подряд
+      btn.addEventListener("click", function () {
+        var cur = tabs.findIndex(function (b) { return b.getAttribute("aria-selected") === "true"; });
+        var next = tabs[(cur + Number(btn.dataset.docStep) + tabs.length) % tabs.length];
+        if (next) show(next);
+      });
+    });
+    var r = pane.querySelector("[data-doc-rotate]");
+    if (r) r.addEventListener("click", function () {
+      var img = view.querySelector("img");
+      if (!img) return;
+      rot = (rot + 90) % 360;
+      img.style.transform = "rotate(" + rot + "deg)";
+    });
+    var first = pane.querySelector(".doc-tab");
+    if (first) show(first);
   });
 
   // --- Карточка и форма заявки: запомнить команду — список заявок потом откроется сразу на ней.

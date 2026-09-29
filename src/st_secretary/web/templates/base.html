@@ -24,8 +24,9 @@
   {% endif %}
 </header>
 
-{% set with_nav = folder is defined and folder %}
-<div class="layout{% if not with_nav %} wide{% endif %}">
+{# focus — страница во всю ширину без меню (проверка документов: два окна рядом) #}
+{% set with_nav = folder is defined and folder and not focus %}
+<div class="layout{% if not with_nav %} wide{% endif %}{% if focus %} focus{% endif %}">
   {% if with_nav %}
   <nav class="sidebar" aria-label="Шаги работы">
     <a class="side-comp{% if active == '' %} is-active{% endif %}" href="{{ base }}">
