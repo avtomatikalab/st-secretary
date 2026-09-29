@@ -6,6 +6,10 @@ rem The window never closes by itself: it is the program; the user stops it with
 cd /d "%~dp0"
 title СТ-Секретарь
 
+rem Libraries live in the local profile, not next to the program: the program folder may be inside a cloud
+rem folder (Google Drive), which locks files while syncing and breaks the update of libraries.
+set "UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\st-secretary\venv"
+
 set "UV=uv"
 where uv >nul 2>nul
 if errorlevel 1 (
