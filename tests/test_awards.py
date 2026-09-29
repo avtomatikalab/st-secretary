@@ -87,3 +87,34 @@ def test_stickers_and_awardees(tmp_path, psr_card):
     places = [s.split(" место")[0] for s in t if " место — " in s]
     assert places == ["III", "II", "I"]  # в порядке вызова
     assert any("I место — команда «Кедр», Красноярск: Антон Лебедев, Мария Зуева, Глеб Носов" == s for s in t)
+
+
+# ------------------------------------------------------------------ документы о судьях
+
+
+def test_judging_certificates(tmp_path, psr_card):
+    from st_secretary.exporters.judges import write_judging_certificates
+
+    grades = {res.person_key("Судьин Иван Петрович"): "отлично"}
+    t = text_of(write_judging_certificates(psr_card, grades, tmp_path / "j.docx"))
+    assert t.count("СПРАВКА") == 2 and "ФЕДЕРАЦИЯ СПОРТИВНОГО ТУРИЗМА" in t
+    assert ("Дана Судьину Ивану Петровичу в том, что он участвовал в судействе Чемпионата города N по "
+            "спортивному туризму — дисциплина «дистанция - комбинированная», 20–21 сентября 2025 г., "
+            "окрестности г. N, в должности главный судья.") in t
+    assert any(s.startswith("Дана Секретарёвой Анне Ивановне в том, что она участвовала") for s in t)
+    assert "Оценка судейства: «отлично»." in t and "Оценка судейства: «________________»." in t
+    assert any("И.П. Судьин, СС1К, г. Красноярск" in s for s in t)
+
+
+def test_sk_and_subjects_certificates(tmp_path, psr_card):
+    from st_secretary.exporters.judges import write_sk_certificate, write_subjects_certificate
+
+    doc = Document(write_sk_certificate(psr_card, tmp_path / "sk.docx"))
+    t = [p.text for p in doc.paragraphs if p.text]
+    assert "о составе и квалификации судейской коллегии" in t
+    assert "Всего судей 2 человека, в том числе из других регионов 0 человек." in t
+    assert "Первая категория — 1 человек" in t and "Вторая категория — 1 человек" in t
+    table = [[c.text for c in r.cells] for r in doc.tables[0].rows]
+    assert table[1] == ["1", "Главный судья", "Судьин Иван Петрович", "СС1К", "г. Красноярск"]
+    t = text_of(write_subjects_certificate(psr_card, ["Красноярск", "Томск", "Красноярск"], tmp_path / "s.docx"))
+    assert "Количество субъектов РФ, принявших участие в соревнованиях: 2" in t and "2. Томск" in t

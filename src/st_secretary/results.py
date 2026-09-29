@@ -132,22 +132,36 @@ _PREPOSITIONAL = {"Чемпионат": "Чемпионате", "Первенс�
                   "Открытые": "Открытых"}
 
 
-def _prep(word: str) -> str:
-    """Слово в предложном падеже, если оно из списка; регистр первой буквы сохраняется."""
-    found = next((v for k, v in _PREPOSITIONAL.items() if k.lower() == word.lower()), None)
+_GENITIVE = {"Чемпионат": "Чемпионата", "Первенство": "Первенства", "Кубок": "Кубка",
+             "Соревнования": "Соревнований", "Фестиваль": "Фестиваля", "Турнир": "Турнира",
+             "Спартакиада": "Спартакиады", "Этап": "Этапа", "Открытый": "Открытого", "Открытое": "Открытого",
+             "Открытые": "Открытых"}
+
+
+def _inflect(word: str, table: dict[str, str]) -> str:
+    """Слово в нужном падеже, если оно из списка; регистр первой буквы сохраняется."""
+    found = next((v for k, v in table.items() if k.lower() == word.lower()), None)
     if found is None:
         return word
     return found if word[:1].isupper() else found[:1].lower() + found[1:]
 
 
-def title_in(comp: Competition) -> str:
-    """«на Чемпионате г. Красноярска…» — название соревнований в предложном падеже (первое слово;
-    после «Открытый/Открытое» — и второе)."""
+def _title(comp: Competition, table: dict[str, str]) -> str:
     first, _, rest = comp.title.partition(" ")
     if first.lower() in ("открытый", "открытое", "открытые") and rest:
         second, _, tail = rest.partition(" ")
-        rest = f"{_prep(second)} {tail}".strip()
-    return f"{_prep(first)} {rest}".strip()
+        rest = f"{_inflect(second, table)} {tail}".strip()
+    return f"{_inflect(first, table)} {rest}".strip()
+
+
+def title_in(comp: Competition) -> str:
+    """«на Чемпионате г. Красноярска…» — название в предложном падеже (первое слово; после «Открытый» — и второе)."""
+    return _title(comp, _PREPOSITIONAL)
+
+
+def title_of(comp: Competition) -> str:
+    """«в судействе Чемпионата г. Красноярска…» — название в родительном падеже."""
+    return _title(comp, _GENITIVE)
 
 
 def date_text(d: date) -> str:

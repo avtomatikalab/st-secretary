@@ -81,6 +81,33 @@
   {% endfor %}
 </section>
 
+<section class="panel" id="judges">
+  <h2>Судейская коллегия: оценки судейства</h2>
+  <p class="muted">Судьи — из карточки соревнования (лист «ГСК»; судей этапов добавьте туда же строками с должностью).
+    Оценка попадёт в справки о судействе и отчёт главного судьи.</p>
+  {% if judges %}
+  <form method="post" action="{{ base }}/awards/grades" data-guard>
+    <div class="table-wrap">
+    <table class="tbl">
+      <thead><tr><th>Должность</th><th>ФИО</th><th>Категория</th><th>Территория</th><th>Оценка</th></tr></thead>
+      <tbody>
+      {% for j in judges %}
+      <tr><td>{{ j.o.role }}</td><td>{{ j.o.fio }}</td><td>{{ j.o.category or "—" }}</td><td>{{ j.o.territory or "—" }}</td>
+        <td><select name="g-{{ loop.index0 }}" aria-label="Оценка судейства: {{ j.o.fio }}">
+          {% for g in grades %}<option value="{{ g }}"{% if g == j.grade %} selected{% endif %}>{{ g or "—" }}</option>{% endfor %}
+        </select></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="actions"><button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить оценки</button>
+      <a class="btn btn-ghost" href="{{ base }}/card/edit#gsk">Изменить состав в карточке</a></div>
+  </form>
+  {% else %}
+  <p>В карточке пока нет судей. <a href="{{ base }}/card/edit#gsk">Заполнить судейскую коллегию</a></p>
+  {% endif %}
+</section>
+
 <section class="panel" id="docs">
   <h2>Документы</h2>
   <p class="muted">Сохраняются в папку «Документы по итогам» в папке соревнования и сразу открываются в Word или Excel —

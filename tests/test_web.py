@@ -649,3 +649,17 @@ def test_awards_manual_results_and_documents(client, tmp_path, psr_card, opened)
     r = client.post(url + "/doc/stickers", follow_redirects=False)
     assert r.status_code == 303 and opened[-1] == f.out_dir / "Наклейки на медали.xlsx" and opened[-1].is_file()
     assert client.get(url + "/file/nothing").status_code == 404
+
+
+def test_judge_grades_go_to_certificates(client, psr_card):
+    f = client.app.state.store.create(psr_card)
+    url = base(f) + "/awards"
+    page = client.get(url).text
+    assert "Судьин Иван Петрович" in page and "Сохранить оценки" in page
+    r = client.post(url + "/grades", data={"g-0": "отлично", "g-1": "хорошо"}, follow_redirects=False)
+    assert "done=grades_saved" in r.headers["location"]
+    from docx import Document
+    texts = [p.text for p in Document(io.BytesIO(client.get(url + "/file/judging").content)).paragraphs]
+    assert "Оценка судейства: «отлично»." in texts and "Оценка судейства: «хорошо»." in texts
+    sk = client.get(url + "/file/sk")
+    assert sk.status_code == 200 and sk.content[:2] == b"PK"
