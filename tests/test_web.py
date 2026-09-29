@@ -828,3 +828,62 @@ def test_results_stages_points_and_live_table(client, tmp_path, psr_card):
     page = client.get(url).text
     assert 'value="абв"' in page and 'class="is-invalid"' in page  # введённое не пропадает, ошибка подсвечена
     assert client.get(url + "?z=нет").status_code == 404
+
+
+def test_preliminary_protests_official_to_awards(client, tmp_path, psr_card, opened):
+    from datetime import datetime
+
+    from openpyxl import load_workbook
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    url = base(f) + "/results"
+    q = "?z=М/Ж_3"
+    client.post(url + "/stages" + q, data={"st-0-tour": "Тур 1", "st-0-name": "Узлы", "tie": "same"})
+    page = client.get(url).text
+    by = {name: i for i, name in re.findall(r'name="p-(\d)-file" value="([^"]+)"', page)}
+    pts = {f"p-{i}-file": n for n, i in by.items()}
+    pts.update({f"p-{by['Кедр.xlsx']}-s1": "20", f"p-{by['Сосна.xlsx']}-s1": "35"})
+    client.post(url + "/points" + q, data=pts)
+
+    clock = {"now": datetime(2025, 9, 21, 15, 0)}
+    client.app.state.clock = lambda: clock["now"]
+    assert "done=run_not_published" in client.post(url + "/approve" + q, follow_redirects=False).headers["location"]
+    r = client.post(url + "/publish" + q, follow_redirects=False)
+    assert "done=run_published" in r.headers["location"] and "until=16%3A00" in r.headers["location"]
+    prelim = opened[-1]
+    assert prelim.parent == f.protocols_dir and prelim.name == "Предварительный протокол М-Ж_3 21.09 15-00.xlsx"
+    cells = [c for row in load_workbook(prelim)["Протокол"].iter_rows(values_only=True) for c in row if c]
+    assert "ПРЕДВАРИТЕЛЬНЫЙ ПРОТОКОЛ РЕЗУЛЬТАТОВ" in cells and "Кедр" in cells and "20" in cells
+    assert any(str(c).startswith("Опубликован 21.09.2025 в 15:00. Протесты по результатам принимаются в течение 1 часа — "
+                                 "до 16:00") for c in cells)
+
+    clock["now"] = datetime(2025, 9, 21, 15, 30)
+    r = client.post(url + "/protest" + q, data={"at": "2025-09-21T15:25", "team": "Сосна", "text": "Узлы: 35 → 25"},
+                    follow_redirects=False)
+    assert "done=run_protest" in r.headers["location"]
+    assert "done=run_open_protests" in client.post(url + "/approve" + q, follow_redirects=False).headers["location"]
+    client.post(url + "/protest/decide" + q, data={"id": "p1", "decision": "удовлетворён", "note": "видеозапись"})
+    assert f.run_data()["zachety"]["М/Ж_3"]["protests"][0]["decision"] == "удовлетворён"
+
+    pts[f"p-{by['Сосна.xlsx']}-s1"] = "25"  # по протесту
+    client.post(url + "/points" + q, data=pts)
+    assert "done=run_changed" in client.post(url + "/approve" + q, follow_redirects=False).headers["location"]
+    clock["now"] = datetime(2025, 9, 21, 15, 40)
+    client.post(url + "/publish" + q)
+    page = client.get(url).text
+    assert "принимаются до <b>16:40</b>" in page and "Опубликовать заново" in page
+
+    clock["now"] = datetime(2025, 9, 21, 16, 45)
+    r = client.post(url + "/approve" + q, follow_redirects=False)
+    assert "done=run_official" in r.headers["location"] and opened[-1].name == "Протокол результатов М-Ж_3.xlsx"
+    assert client.get(url + "/file/official" + q).status_code == 200
+    awards = f.results_data()["zachety"]["М/Ж_3"]
+    assert awards["source"] == "СТ-Секретарь, утверждён 21.09.2025 16:45"
+    assert [(row["team"], row["place"], row["result"]) for row in awards["rows"]] == [("Кедр", 1, "20"), ("Сосна", 2, "25")]
+    assert "Лебедев Антон Игоревич (I)" in client.get(base(f) + "/awards").text
+
+    r = client.post(url + "/protest" + q, data={"at": "2025-09-21T16:50", "team": "Кедр", "text": "поздно"},
+                    follow_redirects=False)
+    assert "done=run_protest_late" in r.headers["location"]

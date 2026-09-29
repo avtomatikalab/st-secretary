@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter, defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
@@ -37,6 +37,7 @@ from st_secretary.exporters import awards as aw
 from st_secretary.exporters import contracts as ct
 from st_secretary.exporters import final as fin
 from st_secretary.exporters import judges as jd
+from st_secretary.exporters import results_protocol as rp
 from st_secretary.competition import LEVEL_LABELS
 from st_secretary.disciplines import Status
 from st_secretary.exporters.commission_xlsx import write_commission_report
@@ -86,6 +87,7 @@ def _redirect(url: str) -> RedirectResponse:
 
 
 GRADES = ("", "отлично", "хорошо", "удовлетворительно", "неудовлетворительно")  # оценка судейства
+PROTEST_DECISIONS = ("удовлетворён", "удовлетворён частично", "отклонён", "не рассматривается")
 
 
 def key_of(e) -> str:
@@ -184,6 +186,20 @@ def _flash(request: Request) -> dict | None:
                                "рабочая книга, в которой вносились баллы по этапам."),
         "run_imported": ("ok", f"Из рабочей книги перенесено этапов: {q.get('n', '0')}, команд с баллами: "
                                f"{q.get('t', '0')}. {q.get('notes', '')}".strip()),
+        "run_empty": ("err", "Пока нечего публиковать: ни одна команда не получила место — внесите баллы."),
+        "run_published": ("ok", f"Предварительный протокол сохранён в папку «Протоколы» и открывается — распечатайте "
+                                f"и вывесите. Протесты по результатам принимаются до {q.get('until', '')} (п. 8.17)."),
+        "run_protest": ("ok", "Протест записан с временем подачи."),
+        "run_protest_late": ("err", "Протест записан, но подан позже часа после публикации предварительного протокола: "
+                                    "по Правилам (п. 8.17) такой протест не принимается. Решение — за ГСК."),
+        "run_protest_empty": ("err", "Впишите, с чем не согласна команда."),
+        "run_decided": ("ok", "Решение по протесту записано."),
+        "run_not_published": ("err", "Сначала опубликуйте предварительный протокол — с него начинается час на протесты."),
+        "run_changed": ("err", "После публикации предварительного протокола баллы или статусы менялись. Опубликуйте "
+                               "предварительный протокол заново — с новым часом на протесты."),
+        "run_open_protests": ("err", "Есть протесты без решения — сначала запишите решения по ним."),
+        "run_official": ("ok", "Результаты утверждены: официальный протокол сохранён в папку «Протоколы» и открывается. "
+                               "Места и разряды переданы в «Награждение и документы по итогам»."),
         "ct_saved": ("ok", "Табель сохранён."),
         "ct_settings": ("ok", "Период работы, ставки и начисления сохранены."),
         "ct_customer": ("ok", "Сведения о заказчике сохранены — они попадут в договоры, акты и табель."),
@@ -219,6 +235,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     app.state.shutdown = shutdown
     app.state.store = store
     app.state.opener = opener or open_in_os
+    app.state.clock = datetime.now  # часы — отдельно, чтобы в тестах проверять «час на протесты»
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.filters["d"] = _fmt_date
@@ -1487,6 +1504,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         zz = need_zachet(comp, z)
         _, zdata, run = run_ctx(f, comp, zz)
         return page(request, "results.html", active="results", zachet=zz, zachety=comp.zachety,
+                    state=protocol_state(zdata, run, app.state.clock()), decisions=PROTEST_DECISIONS,
                     **{**comp_ctx(f), **results_parts(f, zz, zdata, run)})
 
     def _save_zachet(f: CompFolder, key: str, update) -> None:
@@ -1585,6 +1603,138 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             return JSONResponse({"cells": cells, "saved": datetime.now().strftime("%H:%M:%S"),
                                  "results": templates.get_template("_results_table.html").render(**parts)})
         return _redirect(f"{_base(f)}/results?{urlencode({'z': zz.key, 'done': 'run_saved'})}#points")
+
+    # ------------------------------------------------------------ предварительный протокол → протесты → официальный
+
+    PROTEST_HOUR = timedelta(hours=1)  # Правила, раздел 3, п. 8.17 и 8.18
+
+    def fingerprint(run) -> str:
+        """Отпечаток результатов: по нему видно, что после публикации баллы или статусы меняли."""
+        s = ";".join(f"{r.inp.file}|{r.place}|{r.total}|{r.status.value}" for r in run.rows)
+        return hashlib.sha1(s.encode("utf-8")).hexdigest()[:16]
+
+    def protocol_state(zdata: dict, run, now: datetime) -> dict:
+        pub, off = zdata.get("published"), zdata.get("official")
+        at = _parse_dt(pub["at"]) if pub else None
+        until = at + PROTEST_HOUR if at else None
+        protests = zdata.get("protests", [])
+        return {"published": pub, "published_at": at, "until": until, "official": off,
+                "official_at": _parse_dt(off["at"]) if off else None,
+                "hour_passed": bool(until and now >= until),
+                "changed": bool(pub and pub.get("fp") != fingerprint(run)),
+                "changed_after_official": bool(off and off.get("fp") != fingerprint(run)),
+                "open_protests": [p for p in protests if not p.get("decision")], "protests": protests,
+                "now": now}
+
+    def protocol_name(z, kind: str, at: datetime) -> str:
+        key = safe_name(z.key.replace("/", "-"))
+        return (f"Предварительный протокол {key} {at:%d.%m %H-%M}.xlsx" if kind == "preliminary"
+                else f"Протокол результатов {key}.xlsx")
+
+    @app.post("/c/{cid}/results/publish")
+    def results_publish(cid: str, z: str = ""):
+        """Предварительный протокол: время публикации — начало часа на протесты."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        _, zdata, run = run_ctx(f, comp, zz)
+        now = app.state.clock()
+        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}"
+        if not any(r.place for r in run.rows):
+            return _redirect(_with_done(back, "run_empty"))
+        f.protocols_dir.mkdir(exist_ok=True)
+        path = f.protocols_dir / protocol_name(zz, "preliminary", now)
+        rp.write_protocol(comp, run, rp.PRELIMINARY, now, path, now + PROTEST_HOUR)
+
+        def update(d):
+            d["published"] = {"at": now.isoformat(timespec="minutes"), "fp": fingerprint(run), "file": path.name}
+            d.pop("official", None)  # новые предварительные результаты — новый час на протесты
+
+        _save_zachet(f, zz.key, update)
+        app.state.opener(path)
+        return _redirect(_with_done(back + "#protocol", "run_published", until=f"{now + PROTEST_HOUR:%H:%M}"))
+
+    @app.post("/c/{cid}/results/protest")
+    async def results_protest(request: Request, cid: str, z: str = ""):
+        """Протест: главный секретарь проставляет время подачи (п. 8.17)."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        form = await request.form()
+        at = _parse_dt(str(form.get("at", ""))) or app.state.clock()
+        text = " ".join(str(form.get("text", "")).split())
+        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}"
+        if not text:
+            return _redirect(_with_done(back + "#protocol", "run_protest_empty"))
+        _, zdata, run = run_ctx(f, comp, zz)
+        state = protocol_state(zdata, run, app.state.clock())
+        late = bool(state["until"] and at > state["until"])
+
+        def update(d):
+            d.setdefault("protests", []).append({"id": f"p{len(d.get('protests', [])) + 1}",
+                                                 "at": at.isoformat(timespec="minutes"),
+                                                 "team": str(form.get("team", "")), "text": text, "late": late,
+                                                 "decision": "", "note": ""})
+
+        _save_zachet(f, zz.key, update)
+        return _redirect(_with_done(back + "#protocol", "run_protest_late" if late else "run_protest"))
+
+    @app.post("/c/{cid}/results/protest/decide")
+    async def results_protest_decide(request: Request, cid: str, z: str = ""):
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        form = await request.form()
+        pid, decision = str(form.get("id", "")), str(form.get("decision", ""))
+
+        def update(d):
+            for p in d.get("protests", []):
+                if p.get("id") == pid:
+                    p["decision"] = decision if decision in PROTEST_DECISIONS else ""
+                    p["note"] = " ".join(str(form.get("note", "")).split())
+                    p["decided_at"] = app.state.clock().isoformat(timespec="minutes") if p["decision"] else ""
+
+        _save_zachet(f, zz.key, update)
+        return _redirect(f"{_base(f)}/results?{urlencode({'z': zz.key, 'done': 'run_decided'})}#protocol")
+
+    @app.post("/c/{cid}/results/approve")
+    async def results_approve(request: Request, cid: str, z: str = ""):
+        """Официальный протокол (п. 8.18): после часа на протесты и решений по ним. Результаты уходят в награждение."""
+        f = folder(cid)
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        _, zdata, run = run_ctx(f, comp, zz)
+        now = app.state.clock()
+        st = protocol_state(zdata, run, now)
+        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}#protocol"
+        if not st["published"]:
+            return _redirect(_with_done(back, "run_not_published"))
+        if st["changed"]:
+            return _redirect(_with_done(back, "run_changed"))
+        if st["open_protests"]:
+            return _redirect(_with_done(back, "run_open_protests"))
+        f.protocols_dir.mkdir(exist_ok=True)
+        path = f.protocols_dir / protocol_name(zz, "official", now)
+        try:
+            rp.write_protocol(comp, run, rp.OFFICIAL, now, path)
+        except PermissionError:
+            return _redirect(_with_done(back, "doc_locked"))
+        _save_zachet(f, zz.key, lambda d: d.update(official={"at": now.isoformat(timespec="minutes"),
+                                                             "fp": fingerprint(run), "file": path.name}))
+        awards = f.results_data()
+        awards.setdefault("zachety", {})[zz.key] = rp.awards_rows(run, f"СТ-Секретарь, утверждён {now:%d.%m.%Y %H:%M}")
+        f.save_results_data(awards)
+        app.state.opener(path)
+        return _redirect(_with_done(back, "run_official"))
+
+    @app.get("/c/{cid}/results/file/{kind}")
+    def results_file(cid: str, kind: str, z: str = ""):
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        info = f.run_data().get("zachety", {}).get(zz.key, {}).get("published" if kind == "preliminary" else "official")
+        p = f.protocols_dir / Path(info["file"]).name if info else None
+        if p is None or not p.is_file():
+            raise HTTPException(404)
+        return FileResponse(p, filename=p.name, media_type=XLSX)
 
     # ------------------------------------------------------------ сверка документов
 

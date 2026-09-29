@@ -112,5 +112,67 @@
 {% endif %}
 
 {% include "_results_table.html" %}
+
+{% if run.stages and run.rows %}
+<section class="panel" id="protocol">
+  <h2>Протокол и протесты</h2>
+  <ol class="res-steps">
+    <li class="{% if state.published %}is-done{% endif %}"><b>Предварительный протокол.</b>
+      {% if state.published %}Опубликован {{ state.published_at.strftime("%d.%m в %H:%M") }}
+        (<a href="{{ base }}/results/file/preliminary?{{ zq }}">скачать</a>).
+        {% if state.changed %}<span class="text-err">{{ icon("error", 16) }} После публикации баллы или статусы менялись —
+          опубликуйте заново.</span>{% endif %}
+      {% else %}Распечатайте и вывесите — с этого момента идёт час на протесты по результатам.{% endif %}
+      <form method="post" action="{{ base }}/results/publish?{{ zq }}" class="res-inline"{% if state.official %} data-confirm="Результаты уже утверждены. Опубликовать новый предварительный протокол? Официальный придётся утвердить заново."{% endif %}>
+        <button class="btn{% if not state.published or state.changed %} btn-primary{% endif %}" type="submit">{{ icon("file", 18) }}{% if state.published %}Опубликовать заново{% else %}Опубликовать предварительный протокол{% endif %}</button></form></li>
+    <li class="{% if state.hour_passed %}is-done{% endif %}"><b>Час на протесты</b> (п. 8.17).
+      {% if state.until %}Протесты по результатам принимаются до <b>{{ state.until.strftime("%H:%M") }}</b>{% if state.hour_passed %} — время вышло{% endif %}.
+      {% else %}Начнётся после публикации.{% endif %}</li>
+    <li class="{% if state.official %}is-done{% endif %}"><b>Официальный протокол.</b>
+      {% if state.official %}Утверждён {{ state.official_at.strftime("%d.%m в %H:%M") }}
+        (<a href="{{ base }}/results/file/official?{{ zq }}">скачать</a>); места и разряды — в
+        <a href="{{ base }}/awards">награждении</a>.
+        {% if state.changed_after_official %}<span class="text-err">{{ icon("error", 16) }} После утверждения баллы менялись.</span>{% endif %}
+      {% else %}Утвердите после часа на протесты и решений по ним — места и разряды уйдут в награждение.{% endif %}
+      {% if state.published and not state.official %}
+      <form method="post" action="{{ base }}/results/approve?{{ zq }}" class="res-inline"{% if not state.hour_passed %} data-confirm="Час на протесты ещё не прошёл (до {{ state.until.strftime('%H:%M') }}). Утвердить результаты сейчас? Это решение главного судьи."{% endif %}>
+        <button class="btn btn-primary" type="submit"{% if state.open_protests or state.changed %} disabled{% endif %}>{{ icon("check", 18) }}Утвердить — официальный протокол</button></form>
+      {% if state.open_protests %}<span class="hint">Сначала — решения по протестам ниже.</span>{% endif %}
+      {% endif %}</li>
+  </ol>
+
+  <h3>Протесты</h3>
+  {% if state.protests %}
+  <div class="table-wrap">
+  <table class="tbl res-protests">
+    <thead><tr><th>Подан</th><th>Команда</th><th>Суть</th><th>Решение</th></tr></thead>
+    <tbody>
+    {% for p in state.protests %}
+    <tr{% if p.late %} class="sev-warning"{% endif %}>
+      <td>{{ p.at[8:10] }}.{{ p.at[5:7] }} {{ p.at[11:16] }}{% if p.late %}<span class="adm-sub text-warn">позже часа</span>{% endif %}</td>
+      <td>{{ p.team or "—" }}</td><td>{{ p.text }}</td>
+      <td><form method="post" action="{{ base }}/results/protest/decide?{{ zq }}" class="res-decide">
+        <input type="hidden" name="id" value="{{ p.id }}">
+        <select name="decision" aria-label="Решение по протесту"><option value="">— без решения —</option>
+          {% for d in decisions %}<option value="{{ d }}"{% if d == p.decision %} selected{% endif %}>{{ d }}</option>{% endfor %}</select>
+        <input type="text" name="note" value="{{ p.note }}" placeholder="основание решения" aria-label="Основание решения">
+        <button class="btn btn-small" type="submit">Записать</button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="muted">Протестов нет.</p>{% endif %}
+  <form method="post" action="{{ base }}/results/protest?{{ zq }}" class="grid res-protest-form">
+    <div class="field span-3"><label for="f-p-at">Время подачи</label>
+      <input id="f-p-at" type="datetime-local" name="at" value="{{ state.now.strftime('%Y-%m-%dT%H:%M') }}"></div>
+    <div class="field span-3"><label for="f-p-team">Команда</label>
+      <select id="f-p-team" name="team"><option value="">—</option>{% for r in grid %}<option>{{ r.inp.team }}</option>{% endfor %}</select></div>
+    <div class="field span-6"><label for="f-p-text">С чем не согласна команда</label>
+      <input id="f-p-text" type="text" name="text" placeholder="этап, баллы, основание"></div>
+    <div class="span-12"><button class="btn" type="submit">{{ icon("plus") }}Записать протест</button></div>
+  </form>
+</section>
+{% endif %}
 {% endif %}
 {% endblock %}

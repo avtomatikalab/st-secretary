@@ -543,6 +543,12 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .pts-actions { padding: 8px 0 0; }
 .res-tbl .res-num { text-align: right; white-space: nowrap; }
 .res-tbl tr.res-out td { color: var(--muted); }
+.res-steps { margin: 0 0 16px; padding-left: 22px; display: grid; gap: 12px; }
+.res-steps li.is-done::marker { color: var(--ok); font-weight: 700; }
+.res-inline { margin: 6px 0 0; }
+.res-decide { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
+.res-decide select { width: auto; } .res-decide input[type=text] { min-width: 180px; flex: 1; }
+.res-protest-form { margin-top: 12px; }
 
 /* ---------- сверка документов ---------- */
 .vf-doc { border-top: 1px solid var(--line); padding: 12px 0 6px; }
