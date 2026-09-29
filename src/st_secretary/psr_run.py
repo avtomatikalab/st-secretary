@@ -97,6 +97,7 @@ class Member:
     fio: str
     qual: Qual | None
     qual_label: str
+    chip: str = ""  # номер чипа SPORTident из заявки (если свой)
 
 
 @dataclass
@@ -125,6 +126,14 @@ class TeamResult:
     percent: Fraction | None = None
     norm: str = ""
     actual_class: int | None = None
+    # дисциплины «по времени» (спелео, пешеходные в штрафной системе) — см. time_run.py
+    start: Fraction | None = None  # время старта, с от начала суток
+    finish: Fraction | None = None
+    cutoffs: Fraction = Fraction(0)  # сумма отсечек, с
+    distance_time: Fraction | None = None  # время на дистанции (финиш − старт − отсечки), с
+    removals: int = 0  # снятий с этапов
+    chip: str = ""
+    auto_status: bool = False  # статус поставлен программой (превышено КВ)
 
     @property
     def filled(self) -> int:
@@ -140,6 +149,8 @@ class ZachetRun:
     issues: list[Issue]
     winner: Fraction | None = None
     norms_ok: bool = False  # условие ЕВСК о числе участников выполнено
+    kind: str = "points"  # "points" — ПСР (баллы), "time" — спелео и пешеходные (время + баллы × 15/30 с)
+    seconds_per_point: int | None = None  # для «time»
 
     @property
     def tours(self) -> list[str]:
