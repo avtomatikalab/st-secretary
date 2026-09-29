@@ -41,7 +41,7 @@ def test_read_cards_last_read_wins_and_cutoffs():
     assert cutoffs_from(cards["2005555"], parse_pairs("31-32")) is None
     assert parse_pairs("31-32, 41 - 42; x-1") == [("31", "32"), ("41", "42")]
     with pytest.raises(ValueError, match="это не файл SI Reader"):
-        read_si_reader("Номер;Время\n1;2\n".encode("utf-8"))
+        read_si_reader("Номер;Время\n1;2\n".encode())
 
 
 def test_apply_to_teams_by_chip():

@@ -538,6 +538,7 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
   max-width: 78px; white-space: normal; }
 .pts-grid .pts-stage span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .pts-cell input { width: 56px !important; min-height: 30px !important; padding: 2px 4px !important; text-align: right; }
+.pts-cell input.pts-time { width: 84px !important; } .pts-cell input.pts-chip { width: 76px !important; }
 .pts-grid .pts-total, .pts-grid .pts-place { text-align: right; font-weight: 700; white-space: nowrap; }
 .pts-grid select { width: auto; min-height: 30px; font-size: .82rem; }
 .pts-actions { padding: 8px 0 0; }
