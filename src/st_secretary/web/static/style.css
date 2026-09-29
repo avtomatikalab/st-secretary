@@ -558,6 +558,12 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .board-qr svg { display: block; width: 200px; height: 200px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .board-url code { font-size: 1.15rem; padding: 4px 10px; }
 
+/* ---------- судейская практика ---------- */
+.home-extra { margin: 16px 0 0; }
+.pr-tbl summary { cursor: pointer; }
+.pr-list { margin: 6px 0 4px; padding-left: 18px; font-size: .88rem; }
+.pr-gsk { font-size: .72rem; color: var(--info); border: 1px solid var(--info-line); border-radius: 4px; padding: 0 4px; }
+
 /* ---------- сверка документов ---------- */
 .vf-doc { border-top: 1px solid var(--line); padding: 12px 0 6px; }
 .vf-doc:first-of-type { border-top: 0; }

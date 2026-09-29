@@ -53,6 +53,10 @@
   </form>
 </div>
 
+{% if items %}
+<p class="home-extra"><a class="btn btn-ghost" href="/practice">{{ icon("table", 18) }}Судейская практика — по всем соревнованиям</a></p>
+{% endif %}
+
 <div class="data-dir">
   <span>Данные хранятся в папке: <code>{{ data_dir }}</code></span>
   <form method="post" action="/open-data"><button class="btn btn-ghost" type="submit">{{ icon("folder") }}Открыть папку</button></form>

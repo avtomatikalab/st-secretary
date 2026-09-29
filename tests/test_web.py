@@ -1060,3 +1060,15 @@ def test_si_reader_upload_fills_times(client, tmp_path, psr_card):
     assert "27:00" in page  # 30 мин − 3 мин отсечки
     bad = client.post(url + "/si" + q, files={"csv": ("x.csv", b"a;b\n1;2\n", "text/csv")}, follow_redirects=False)
     assert "done=si_bad" in bad.headers["location"]
+
+
+def test_practice_page_and_excel(client, psr_card, opened):
+    f = client.app.state.store.create(psr_card)
+    client.post(base(f) + "/awards/grades", data={"g-0": "отлично"})
+    client.post(base(f) + "/contracts/add", data={"fio": "Этапов Семён Игоревич", "role": "Судья этапа", "category": "СС3К"})
+    assert "Судейская практика" in client.get("/").text
+    page = client.get("/practice").text
+    assert "Судьин Иван Петрович" in page and "Этапов Семён Игоревич" in page and "оценка «отлично»" in page
+    assert client.get("/practice.xlsx").content[:2] == b"PK"
+    r = client.post("/practice/open", follow_redirects=False)
+    assert r.status_code == 303 and opened[-1].name == "Судейская практика.xlsx"

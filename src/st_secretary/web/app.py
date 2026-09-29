@@ -31,6 +31,7 @@ from st_secretary import __version__
 from st_secretary import commission as cm
 from st_secretary import equipment as eq
 from st_secretary import judge_sync as js
+from st_secretary import practice as pt_
 from st_secretary import psr_run as pr
 from st_secretary import results as res
 from st_secretary import staff as sf
@@ -2016,6 +2017,41 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         data = board_data(folder(cid).id, preview=True)
         return templates.TemplateResponse(request, "board.html", {"refresh": 30, "prefix": "", "data": data,
                                                                   "items": []})
+
+    # ------------------------------------------------------------ судейская практика (по всем соревнованиям)
+
+    def practice_all() -> list:
+        recs = []
+        for f in store.all():
+            try:
+                comp = f.load()
+            except Exception:  # noqa: BLE001 — карточка не читается: соревнование пропускается
+                continue
+            recs += pt_.records_of(comp, f.id, f.results_data().get("judges", {}), f.contracts().get("extra", []))
+        return pt_.judges(recs)
+
+    @app.get("/practice")
+    def practice_page(request: Request):
+        people = practice_all()
+        return page(request, "practice.html", people=people, competitions=len(store.all()))
+
+    @app.get("/practice.xlsx")
+    def practice_download():
+        tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / "Судейская практика.xlsx"
+        pt_.write_practice(practice_all(), tmp)
+        return FileResponse(tmp, filename=tmp.name, media_type=XLSX,
+                            background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
+
+    @app.post("/practice/open")
+    def practice_open():
+        path = store.root / "Судейская практика.xlsx"
+        store.root.mkdir(parents=True, exist_ok=True)
+        try:
+            pt_.write_practice(practice_all(), path)
+        except PermissionError:
+            return _redirect("/practice?done=doc_locked")
+        app.state.opener(path)
+        return _redirect("/practice?done=opened")
 
     # ------------------------------------------------------------ сверка документов
 

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Судейская практика — СТ-Секретарь{% endblock %}
+{% block content %}
+<a class="back" href="/">← Все соревнования</a>
+<h1>Судейская практика</h1>
+<p class="lead">Кто, где и в какой должности судил — по всем соревнованиям в программе ({{ competitions }}): из карточек
+  (лист «ГСК»), оценок судейства на странице итогов и судей, добавленных на странице договоров. Для присвоения и
+  подтверждения категорий (Квалификационные требования, приказ № 1101) — сводка и выгрузка для квалификационной
+  комиссии; баллы по таблицам приказа программа пока не считает.</p>
+
+<div class="actions">
+  <form method="post" action="/practice/open"><button class="btn btn-primary" type="submit">{{ icon("file", 18) }}Открыть в Excel</button></form>
+  <a class="btn btn-ghost" href="/practice.xlsx">{{ icon("download", 18) }}Скачать</a>
+</div>
+
+{% if not people %}
+<section class="panel"><p class="muted">Пока нет судей: заполните лист «ГСК» в карточках соревнований.</p></section>
+{% else %}
+<section class="panel">
+  <div class="table-wrap">
+  <table class="tbl pr-tbl">
+    <thead><tr><th>Судья</th><th>Категория</th><th class="res-num">Соревнований</th><th class="res-num">В ГСК</th>
+      <th>Последнее</th><th>Оценки</th></tr></thead>
+    <tbody>
+    {% for j in people %}
+    <tr>
+      <td><details><summary><b>{{ j.fio }}</b></summary>
+        <ul class="pr-list">
+          {% for r in j.records %}
+          <li>{{ r.date_from.strftime("%d.%m.%Y") }} — {{ r.title }} <span class="muted">({{ r.level }})</span>:
+            {{ r.role }}{% if r.in_gsk %} <span class="pr-gsk">ГСК</span>{% endif %}{% if r.category %}, {{ r.category }}{% endif %}{% if r.grade %}, оценка «{{ r.grade }}»{% endif %}</li>
+          {% endfor %}
+        </ul></details></td>
+      <td>{{ j.category or "—" }}</td>
+      <td class="res-num">{{ j.records|length }}</td>
+      <td class="res-num">{{ j.gsk or "" }}</td>
+      <td>{{ j.last.strftime("%d.%m.%Y") if j.last else "" }}</td>
+      <td>{% for g, n in j.grades.items() %}{{ g }}{% if n > 1 %} ×{{ n }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
