@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Табло — СТ-Секретарь{% endblock %}
+{% block content %}
+<h1>Табло</h1>
+<p class="lead">Результаты на телефонах участников и зрителей и на экране у секретариата — через Wi-Fi ноутбука, без
+  интернета. Табло показывает только места и баллы; заявки, документы и договоры остаются только на этом компьютере.
+  Страница табло обновляется сама раз в 30 секунд.</p>
+
+<section class="panel">
+  <h2>1. Показывать это соревнование на табло</h2>
+  <form method="post" action="{{ base }}/board/toggle" class="actions">
+    {% if on %}
+    <span class="status-badge gear-ok">{{ icon("check", 14) }} включено</span>
+    <input type="hidden" name="on" value="0"><button class="btn btn-ghost" type="submit">Выключить</button>
+    {% else %}
+    <input type="hidden" name="on" value="1"><button class="btn btn-primary" type="submit">{{ icon("check") }}Включить</button>
+    {% endif %}
+    <a class="btn btn-ghost" href="{{ base }}/board/preview" target="_blank" rel="noopener">{{ icon("laptop", 18) }}Посмотреть табло</a>
+  </form>
+  <p class="hint">На табло — результаты зачётов, для которых внесены этапы: пока протокол не опубликован — с пометкой
+    «текущие, не окончательные», после публикации — «предварительные» со временем окончания протестов, после
+    утверждения — «официальные».</p>
+</section>
+
+<section class="panel">
+  <h2>2. Раздать табло по Wi-Fi</h2>
+  {% if running %}
+  <p><span class="status-badge gear-ok">{{ icon("check", 14) }} табло раздаётся</span></p>
+  {% if urls %}
+  <div class="board-share">
+    {% if qr %}<div class="board-qr" aria-label="QR-код адреса табло">{{ qr|safe }}</div>{% endif %}
+    <div>
+      <p>Телефоны должны быть подключены к той же сети Wi-Fi, что и ноутбук. Наведите камеру на QR-код или наберите адрес:</p>
+      {% for u in urls %}<p class="board-url"><code>{{ u }}</code></p>{% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="text-warn">{{ icon("alert", 16) }} Ноутбук не подключён ни к какой сети. Включите на ноутбуке или телефоне точку
+    доступа Wi-Fi и подключите к ней ноутбук, затем обновите страницу.</p>
+  {% endif %}
+  <form method="post" action="{{ base }}/board/server" class="actions"><input type="hidden" name="do" value="stop">
+    <button class="btn btn-ghost" type="submit">Остановить раздачу</button></form>
+  {% else %}
+  <form method="post" action="{{ base }}/board/server" class="actions" data-busy="Запускаю…"><input type="hidden" name="do" value="start">
+    <button class="btn btn-primary" type="submit">{{ icon("wifi-off", 18) }}Раздать табло по Wi-Fi</button></form>
+  {% if error %}<p class="text-err">{{ icon("error", 16) }} {{ error }}</p>{% endif %}
+  {% endif %}
+  <details class="howto">
+    <summary>Как это устроено и что делать, если не открывается</summary>
+    <ul>
+      <li>Ноутбук и телефоны — в одной сети: общий Wi-Fi базы, точка доступа на телефоне или на самом ноутбуке
+        («Параметры → Сеть и Интернет → Мобильный хот-спот»). Интернет для табло не нужен.</li>
+      <li>При первом включении Windows спросит разрешение в брандмауэре — разрешите для <b>частной</b> сети.
+        Если окно закрыли, табло с телефонов не откроется: «Брандмауэр Защитника Windows → Разрешить взаимодействие
+        с приложением» → отметить СТ-Секретарь (python).</li>
+      <li>Табло — отдельная часть программы только для чтения: с телефона нельзя ничего изменить и нельзя открыть
+        заявки, документы, договоры.</li>
+      <li>Раздача выключается кнопкой выше или вместе с программой.</li>
+    </ul>
+  </details>
+</section>
+{% endblock %}

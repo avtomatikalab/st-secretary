@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="{{ refresh }}">
+<title>{% if data %}{{ data.title }} — табло{% else %}Табло{% endif %}</title>
+<style>
+  :root { --bg: #f2f4f6; --surface: #fff; --text: #1a2027; --muted: #5b6671; --line: #d9dfe4; --accent: #1b6b57;
+          --gold: #b8860b; --silver: #708090; --bronze: #a0522d; --warn: #8a5300; --warn-bg: #fff4d4; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11161b; --surface: #1a2027; --text: #e8edf2; --muted: #9aa6b2; --line: #2c343d; --accent: #5cc6a4;
+            --gold: #e3b341; --silver: #b8c4cf; --bronze: #d08a5c; --warn: #f0c060; --warn-bg: #3a2f10; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.4 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
+  header { background: var(--surface); border-bottom: 1px solid var(--line); padding: 14px 16px; }
+  h1 { font-size: 1.25rem; margin: 0; } .sub { color: var(--muted); font-size: .9rem; }
+  main { padding: 12px 16px 40px; max-width: 1100px; margin: 0 auto; }
+  section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; margin: 0 0 16px; overflow: hidden; }
+  h2 { font-size: 1.1rem; margin: 0; padding: 12px 14px 4px; }
+  .label { margin: 0 14px 10px; font-size: .9rem; color: var(--muted); }
+  .label.warn { color: var(--warn); background: var(--warn-bg); padding: 4px 8px; border-radius: 6px; display: inline-block; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 8px 10px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { font-size: .8rem; color: var(--muted); font-weight: 600; }
+  .place { width: 2.6em; text-align: center; } td.place { font-weight: 700; font-size: 1.15rem; }
+  .p1 .place { color: var(--gold); } .p2 .place { color: var(--silver); } .p3 .place { color: var(--bronze); }
+  .num { text-align: right; white-space: nowrap; } .res { font-weight: 700; font-size: 1.1rem; }
+  .terr { display: block; color: var(--muted); font-size: .82rem; }
+  .out td { color: var(--muted); }
+  .wide { display: none; }
+  @media (min-width: 760px) { .wide { display: table-cell; } body { font-size: 18px; } }
+  .list a { display: block; padding: 12px 14px; border-top: 1px solid var(--line); color: var(--accent); text-decoration: none; font-weight: 600; }
+  footer { color: var(--muted); font-size: .8rem; text-align: center; padding: 8px; }
+</style>
+</head>
+<body>
+{% if data %}
+<header><h1>{{ data.title }}</h1><div class="sub">{{ data.dates }}{% if data.place %}, {{ data.place }}{% endif %}</div></header>
+<main>
+  {% for b in data.zachety %}{% set run = b.run %}
+  <section>
+    <h2>{{ b.z.key }} — «{{ b.z.discipline_name }}», {{ b.z.distance_class }} класс</h2>
+    <p class="label{% if not b.final %} warn{% endif %}">{{ b.label }}</p>
+    {% if run.rows %}
+    <table>
+      <thead><tr><th class="place">Место</th><th>Команда</th>
+        {% for t in run.tours %}<th class="num wide">{{ t }}</th>{% endfor %}
+        <th class="num">Результат</th><th class="num wide">%</th><th class="wide">Разряд</th></tr></thead>
+      <tbody>
+      {% for r in run.rows %}
+      <tr class="{% if r.place in (1, 2, 3) %}p{{ r.place }}{% endif %}{% if r.status != b.FINISHED %} out{% endif %}">
+        <td class="place">{{ r.place or "—" }}</td>
+        <td>{{ r.inp.team }}<span class="terr">{{ r.inp.territory }}</span></td>
+        {% for t in run.tours %}<td class="num wide">{{ b.pt(r.tours.get(t)) }}</td>{% endfor %}
+        <td class="num res">{% if r.status != b.FINISHED %}{{ b.status_label[r.status] }}{% elif r.points %}{{ b.pt(r.total) }}{% else %}—{% endif %}</td>
+        <td class="num wide">{{ b.pct(r.percent) }}</td><td class="wide">{{ r.norm }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="label">Команд пока нет.</p>{% endif %}
+  </section>
+  {% endfor %}
+</main>
+{% else %}
+<header><h1>Табло соревнований</h1><div class="sub">СТ-Секретарь</div></header>
+<main>
+  {% if items %}
+  <section class="list">{% for i in items %}<a href="{{ prefix }}/c/{{ i.id|urlencode }}">{{ i.title }} · {{ i.dates }}</a>{% endfor %}</section>
+  {% else %}<section><p class="label">Табло пока не включено ни для одного соревнования.</p></section>{% endif %}
+</main>
+{% endif %}
+<footer>Обновляется само каждые {{ refresh }} с · СТ-Секретарь</footer>
+</body>
+</html>

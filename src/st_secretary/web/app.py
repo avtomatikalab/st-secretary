@@ -49,6 +49,7 @@ from st_secretary.names import initials
 from st_secretary.qualification import Qual
 from st_secretary.textclean import from_years
 from st_secretary.web import preapp_form as pf
+from st_secretary.web.board import BoardServer, create_board_app, qr_svg
 from st_secretary.web.review import CHECK, DONE, FIX, SAVE, STATUS_LABEL, is_clean, issue_key
 from st_secretary.web.forms import card_to_form, choices, empty_zachet, form_from_data, form_to_card
 from st_secretary.web.steps import BY_SLUG, STEPS
@@ -200,6 +201,12 @@ def _flash(request: Request) -> dict | None:
         "run_open_protests": ("err", "Есть протесты без решения — сначала запишите решения по ним."),
         "run_official": ("ok", "Результаты утверждены: официальный протокол сохранён в папку «Протоколы» и открывается. "
                                "Места и разряды переданы в «Награждение и документы по итогам»."),
+        "board_on": ("ok", "Табло включено для этого соревнования."),
+        "board_off": ("ok", "Табло для этого соревнования выключено — его результатов на табло не видно."),
+        "board_started": ("ok", "Табло раздаётся по Wi-Fi — адрес и QR-код ниже. Если Windows спросит разрешение "
+                                "в брандмауэре — разрешите для частной сети."),
+        "board_stopped": ("ok", "Раздача табло остановлена."),
+        "board_failed": ("err", "Табло не запустилось — подробности ниже."),
         "ct_saved": ("ok", "Табель сохранён."),
         "ct_settings": ("ok", "Период работы, ставки и начисления сохранены."),
         "ct_customer": ("ok", "Сведения о заказчике сохранены — они попадут в договоры, акты и табель."),
@@ -227,9 +234,11 @@ def _flash(request: Request) -> dict | None:
     return None
 
 
-def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str | Path | None = None) -> FastAPI:
+def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str | Path | None = None,
+               board_host: str = "0.0.0.0") -> FastAPI:  # табло раздаётся в сеть ноутбука
     """shutdown — как остановить сервер (кнопка «Выключить»); None — кнопки нет (тесты, запуск не из окна).
-    docs_dir — где хранить сканы документов участников (по умолчанию — папка в профиле, не в облаке)."""
+    docs_dir — где хранить сканы документов участников (по умолчанию — папка в профиле, не в облаке).
+    board_host — где слушает табло (все адреса ноутбука; в тестах — только 127.0.0.1)."""
     store = Store(data_dir, docs_dir)
     app = FastAPI(title="СТ-Секретарь", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.shutdown = shutdown
@@ -1735,6 +1744,89 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         if p is None or not p.is_file():
             raise HTTPException(404)
         return FileResponse(p, filename=p.name, media_type=XLSX)
+
+    # ------------------------------------------------------------ табло (Wi-Fi ноутбука)
+
+    board_helpers = {"pt": pr.points_text, "status_label": pr.STATUS_LABEL, "FINISHED": Status.FINISHED,
+                     "pct": lambda x: f"{float(x):.2f}".replace(".", ",") if x is not None else ""}
+
+    def board_on(f: CompFolder) -> bool:
+        return bool(f.run_data().get("board", {}).get("on"))
+
+    def board_list() -> list[dict]:
+        out = []
+        for f in store.all():
+            if board_on(f):
+                try:
+                    comp = f.load()
+                except Exception:  # noqa: BLE001 — повреждённая карточка: на табло её нет
+                    continue
+                out.append({"id": f.id, "title": comp.title, "dates": comp.dates_text})
+        return out
+
+    def board_data(cid: str, preview: bool = False) -> dict | None:
+        """Что видно на табло: результаты зачётов с подписью — текущие, предварительные или официальные."""
+        f = store.get(cid)
+        if f is None or not (preview or board_on(f)):
+            return None
+        try:
+            comp = f.load()
+        except Exception:  # noqa: BLE001 — повреждённая карточка: табло без неё
+            return None
+        now = app.state.clock()
+        blocks = []
+        for z in comp.zachety:
+            _, zdata, run = run_ctx(f, comp, z)
+            if not run.stages:
+                continue
+            st = protocol_state(zdata, run, now)
+            if st["official"] and not st["changed_after_official"]:
+                label, final = f"Официальные результаты — утверждены {st['official_at']:%d.%m в %H:%M}", True
+            elif st["published"] and not st["changed"]:
+                label, final = f"Предварительные результаты — опубликованы в {st['published_at']:%H:%M}", False
+                if not st["hour_passed"]:
+                    label += f", протесты принимаются до {st['until']:%H:%M}"
+            else:
+                label, final = f"Текущие результаты на {now:%H:%M} — не окончательные", False
+            blocks.append({"z": z, "run": run, "label": label, "final": final, **board_helpers})
+        return {"title": comp.title, "dates": comp.dates_text, "place": comp.place, "zachety": blocks}
+
+    app.state.board = BoardServer(create_board_app(board_list, board_data), host=board_host)
+
+    @app.get("/c/{cid}/board")
+    def board_page(request: Request, cid: str):
+        f = folder(cid)
+        need_comp(f)
+        srv = app.state.board
+        urls = srv.urls() if srv.running else []
+        return page(request, "board_admin.html", active="board", on=board_on(f), running=srv.running, urls=urls,
+                    qr=qr_svg(urls[0]) if urls else "", error=srv.error, **comp_ctx(f))
+
+    @app.post("/c/{cid}/board/toggle")
+    async def board_toggle(request: Request, cid: str):
+        f = folder(cid)
+        on = (await request.form()).get("on") == "1"
+        data = f.run_data()
+        data["board"] = {"on": on}
+        f.save_run_data(data)
+        return _redirect(f"{_base(f)}/board?done={'board_on' if on else 'board_off'}")
+
+    @app.post("/c/{cid}/board/server")
+    async def board_server(request: Request, cid: str):
+        f = folder(cid)
+        do = (await request.form()).get("do")
+        if do == "stop":
+            app.state.board.stop()
+            return _redirect(f"{_base(f)}/board?done=board_stopped")
+        ok = app.state.board.start()
+        return _redirect(f"{_base(f)}/board?done={'board_started' if ok else 'board_failed'}")
+
+    @app.get("/c/{cid}/board/preview")
+    def board_preview(request: Request, cid: str):
+        """Как выглядит табло — на этом компьютере, даже если раздача по Wi-Fi не включена."""
+        data = board_data(folder(cid).id, preview=True)
+        return templates.TemplateResponse(request, "board.html", {"refresh": 30, "prefix": "", "data": data,
+                                                                  "items": []})
 
     # ------------------------------------------------------------ сверка документов
 

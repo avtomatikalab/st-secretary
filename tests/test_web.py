@@ -84,7 +84,8 @@ def opened():
 
 @pytest.fixture
 def client(tmp_path, opened):
-    return TestClient(create_app(tmp_path / "данные", opener=opened.append, docs_dir=tmp_path / "документы"))
+    return TestClient(create_app(tmp_path / "данные", opener=opened.append, docs_dir=tmp_path / "документы",
+                                 board_host="127.0.0.1"))  # табло в тестах — не в сеть (без окна брандмауэра)
 
 
 def base(folder) -> str:
@@ -887,3 +888,52 @@ def test_preliminary_protests_official_to_awards(client, tmp_path, psr_card, ope
     r = client.post(url + "/protest" + q, data={"at": "2025-09-21T16:50", "team": "Кедр", "text": "поздно"},
                     follow_redirects=False)
     assert "done=run_protest_late" in r.headers["location"]
+
+
+def test_board_shows_only_enabled_competitions_and_only_results(client, tmp_path, psr_card):
+    from datetime import datetime
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    url = base(f) + "/results"
+    client.post(url + "/stages?z=М/Ж_3", data={"st-0-tour": "Тур 1", "st-0-name": "Узлы"})
+    client.post(url + "/points?z=М/Ж_3", data={"p-0-file": "Кедр.xlsx", "p-0-s1": "20"})
+    board = TestClient(client.app.state.board.app)
+    assert "Табло пока не включено ни для одного соревнования" in board.get("/").text
+    assert board.get("/c/" + quote(f.id, safe="")).status_code == 404  # табло не включено — результатов не видно
+    assert "Кедр" in client.get(base(f) + "/board/preview").text  # секретарю — предпросмотр
+
+    assert "done=board_on" in client.post(base(f) + "/board/toggle", data={"on": "1"},
+                                          follow_redirects=False).headers["location"]
+    page = board.get("/").text  # одно соревнование — сразу его результаты
+    assert "Кедр" in page and "Текущие результаты на" in page and 'http-equiv="refresh" content="30"' in page
+    assert "Лебедев" not in page  # составы на табло не нужны — только команды, баллы и места
+    for private in ("/c/" + quote(f.id, safe="") + "/preapps", "/c/" + quote(f.id, safe="") + "/contracts", "/shutdown"):
+        assert board.get(private).status_code in (404, 405)  # табло — только чтение результатов
+
+    client.app.state.clock = lambda: datetime(2025, 9, 21, 15, 0)
+    client.post(url + "/publish?z=М/Ж_3")
+    assert "Предварительные результаты — опубликованы в 15:00, протесты принимаются до 16:00" in board.get("/").text
+    admin = client.get(base(f) + "/board").text
+    assert "Раздать табло по Wi-Fi" in admin and "включено" in admin
+
+
+def test_board_server_starts_and_stops(tmp_path):
+    import json
+    import urllib.request
+
+    app = create_app(tmp_path / "данные", opener=lambda p: None, board_host="127.0.0.1")
+    srv = app.state.board
+    assert srv.start() and srv.running
+    with urllib.request.urlopen(f"http://127.0.0.1:{srv.port}/health", timeout=5) as r:
+        assert json.load(r) == {"app": "st-secretary-board"}
+    srv.stop()
+    assert not srv.running
+
+
+def test_board_qr_and_addresses():
+    from st_secretary.web.board import lan_addresses, qr_svg
+
+    svg = qr_svg("http://192.168.0.2:8780/")
+    assert svg.startswith("<svg") and "</svg>" in svg
+    assert all(not ip.startswith("127.") for ip in lan_addresses())

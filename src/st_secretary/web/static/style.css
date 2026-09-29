@@ -549,6 +549,9 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .res-decide { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
 .res-decide select { width: auto; } .res-decide input[type=text] { min-width: 180px; flex: 1; }
 .res-protest-form { margin-top: 12px; }
+.board-share { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; margin: 10px 0; }
+.board-qr svg { display: block; width: 200px; height: 200px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.board-url code { font-size: 1.15rem; padding: 4px 10px; }
 
 /* ---------- сверка документов ---------- */
 .vf-doc { border-top: 1px solid var(--line); padding: 12px 0 6px; }
