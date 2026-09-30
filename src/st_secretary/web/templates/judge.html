@@ -49,6 +49,9 @@
   .cutsum { font-size: .95rem; min-width: 7em; text-align: right; background: none; border: 0; color: var(--accent);
             text-decoration: underline; font: inherit; padding: 8px 0; }
   .queue { margin: -2px 0 10px; } .queue .btn { background: var(--warn-bg); border-color: #b7791f; }
+  .queue .btn.go, .cut .btn.go { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .qhint { background: var(--warn-bg); color: var(--warn); padding: 10px 14px; font-weight: 600; font-size: .95rem;
+           border-bottom: 1px solid var(--line); }
   .how { font-size: .9rem; color: var(--muted); margin: 2px 0 6px; } .how b { color: var(--text); }
 </style>
 </head>
@@ -63,6 +66,7 @@
   <div class="sub">{{ info.title }} · зачёт {{ info.zachet }}{% if info.stage.nv %} · НВ {{ info.stage.nv }} мин{% endif %}{% if info.stage.kv %} · КВ этапа {{ info.stage.kv }} мин{% endif %}</div>
 </header>
 <div id="status" class="ok" role="status" aria-live="polite">Загружаю…</div>
+<div id="qhint" class="qhint" role="status" aria-live="polite" hidden></div>
 <main>
   <p class="note">Всё записанное хранится в телефоне и уходит на ноутбук секретаря само, когда телефон в Wi-Fi.
     <b>Не закрывайте эту вкладку на дистанции</b>: без связи страница заново не откроется (записи при этом не пропадут).
@@ -113,8 +117,24 @@
   function nowSecs() { var n = new Date(); return n.getHours() * 3600 + n.getMinutes() * 60 + n.getSeconds(); }
   function since(t) { var d = nowSecs() - secs(t); return d < 0 ? d + 86400 : d; }
   function onStage(r) { return r.arrive && !r.leave && !r.removed && !r.cut_on; }  // проходит этап сейчас
-  function busyFor(f) {  // этап занят другой командой — подошедшей предложить «ждёт очереди»
-    return Object.keys(st.records).some(function (g) { return g !== f && onStage(st.records[g]); });
+  function isWaiting(r) { return r.arrive && !r.leave && !r.removed && r.cut_on; }  // ждёт очереди
+  function stageTaken(except) {
+    return Object.keys(st.records).some(function (g) { return g !== except && onStage(st.records[g]); });
+  }
+  function queue(except) {  // ждущие — в порядке прихода
+    return Object.keys(st.records).filter(function (g) { return g !== except && isWaiting(st.records[g]); })
+      .sort(function (x, y) { return (secs(st.records[x].cut_on) || 0) - (secs(st.records[y].cut_on) || 0); });
+  }
+  function busyFor(f) {  // этап занят или есть очередь — подошедшей по умолчанию «ждёт очереди»
+    return stageTaken(f) || queue(f).length > 0;
+  }
+  function nextInLine(f) { return !stageTaken(null) && queue(null)[0] === f; }  // этап свободен — её очередь
+  function updateHint() {
+    var el = document.getElementById("qhint"), q = queue(null);
+    if (!q.length || stageTaken(null)) { el.hidden = true; return; }
+    el.hidden = false;
+    el.textContent = "Этап свободен — ждёт «" + teamName(q[0]) + "» с " + st.records[q[0]].cut_on.slice(0, 5) +
+      ": нажмите у неё «Начала этап»" + (q.length > 1 ? " (в очереди ещё " + (q.length - 1) + ")" : "") + ".";
   }
   function stageSecs(r) {  // время на этапе: убытие (или сейчас) − прибытие − отсечки (ожидание очереди)
     var a = secs(r.arrive); if (a === null) return null;
@@ -184,7 +204,7 @@
     var r = rec(f);
     Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     r.updated = Date.now();
-    save(); info.teams.forEach(function (t) { paint(t.file); }); sync();  // «этап занят» зависит от других команд
+    save(); info.teams.forEach(function (t) { paint(t.file); }); updateHint(); sync();  // «этап занят» — от других команд
   }
   function editTime(f, field, label) {
     var v = window.prompt(label + " (чч:мм:сс, пусто — стереть)", rec(f)[field]);
@@ -282,7 +302,8 @@
       : busy ? "Прибыла — начинает этап" : "Прибыла — сейчас";
     c.querySelector(".queue").hidden = !busy;
     c.querySelector('[data-act=leave]').innerHTML = r.leave ? "Убыла<small>" + r.leave + " — изменить</small>" : "Убыла — сейчас";
-    c.querySelector('[data-act=arrive]').classList.toggle("go", !r.arrive);
+    c.querySelector('[data-act=arrive]').classList.toggle("go", !r.arrive && !busy);
+    c.querySelector('[data-act=queue]').classList.toggle("go", busy);
     c.querySelector('[data-act=leave]').classList.toggle("go", !!r.arrive && !r.leave);
     var pts = c.querySelector(".pts");
     if (document.activeElement !== pts) { pts.value = r.points || ""; pts.classList.toggle("bad", !isNum(pts.value)); }
@@ -290,7 +311,8 @@
     if (info.stage.cutoffs) {
       var cb = c.querySelector('[data-act=cut]');
       cb.textContent = r.cut_on ? (r.leave ? "Отсечка — стоп" : "Начала этап — стоп ожидания") : "Отсечка — пуск";
-      cb.classList.toggle("on", !!r.cut_on);
+      cb.classList.toggle("on", !!r.cut_on && !nextInLine(f));
+      cb.classList.toggle("go", !!r.cut_on && !r.leave && nextInLine(f));
       c.querySelector('[data-act=cutsum]').textContent = "отсечки: " + (r.cutoff || "0:00");
     }
     c.querySelector(".rm").checked = !!r.removed;
@@ -328,7 +350,7 @@
   setInterval(sync, 15000);
   window.addEventListener("online", sync);
   window.addEventListener("beforeunload", function (e) { if (pending().length) { e.preventDefault(); e.returnValue = ""; } });
-  save(); sync();
+  updateHint(); save(); sync();
 })();
 </script>
 {% endif %}
