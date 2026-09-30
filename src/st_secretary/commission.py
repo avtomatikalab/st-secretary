@@ -121,6 +121,8 @@ class PersonCheck:
         miss = ", ".join(d.short.lower() for d in self.missing)
         if self.status == REJECTED:
             return "не допущен" + (f": {self.reason}" if self.reason else "")
+        if self.decision == ADMITTED and self.missing and not self.reason and not self.errors:
+            return f"допуск решением комиссии — укажите основание (нет: {miss})"
         if self.status == ADMITTED:
             if self.decision == ADMITTED and (self.missing or self.warnings):
                 return ("допущен решением комиссии" + (f": {self.reason}" if self.reason else "")
@@ -156,6 +158,12 @@ class TeamCheck:
     reentries: list[dict] = field(default_factory=list)
     extra: list[str] = field(default_factory=list)  # что ещё мешает допуску (проверка снаряжения)
     problem_targets: list[str] = field(default_factory=list)  # где исправить каждую из problems (Issue.target)
+    unreviewed: bool = False  # секретарь не отметил заявку «Проверено» (п. 24 правок)
+
+    @property
+    def by_decision(self) -> bool:
+        """Допущена решением комиссии без проверки секретаря: заявка не проверена или нет документов команды."""
+        return self.decision == ADMITTED and bool(self.unreviewed or self.missing_team_docs)
 
     @property
     def label(self) -> str:
@@ -189,11 +197,12 @@ def _int(v) -> int | None:
 
 
 def evaluate(result: PreappResult, files: list[str], comp: Competition, data: dict,
-             extra: dict[str, list[str]] | None = None) -> list[TeamCheck]:
+             extra: dict[str, list[str]] | None = None, reviewed: dict[str, bool] | None = None) -> list[TeamCheck]:
     """Состояние допуска по каждому файлу заявки (в порядке списка заявок).
 
     result — заявки с отметками «проверено» (замечания, отмеченные проверенными, уже не WARNING);
-    extra — что ещё мешает допуску команды (например, итоги проверки снаряжения), по файлам."""
+    extra — что ещё мешает допуску команды (например, итоги проверки снаряжения), по файлам;
+    reviewed — отметил ли секретарь заявку «Проверено» (None — не учитывать): без этого команда сама не допускается."""
     pdocs, tdocs = required_docs(data)
     teams = {t.source: t for t in result.teams}
     by_source: dict[str, list[Issue]] = {}
@@ -222,8 +231,8 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
                 p.status = REJECTED
             elif p.errors:
                 p.status = PENDING
-            elif p.decision == ADMITTED or (not p.missing and not p.warnings):
-                p.status = ADMITTED
+            elif (p.decision == ADMITTED and (p.reason or not p.missing)) or (not p.missing and not p.warnings):
+                p.status = ADMITTED  # решением комиссии без документов — только с основанием
             persons.append(p)
 
         tdoc = {d.key: bool(m.get("team_docs", {}).get(d.key)) for d in tdocs}
@@ -234,6 +243,7 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
                       fee_due=0, fee_paid=_int(m.get("fee_paid")) or 0, fee_method=m.get("fee_method", ""),
                       reentries=list(m.get("reentries", [])))
         t.fee_due = fee_due(t, comp)
+        t.unreviewed = team is not None and reviewed is not None and not reviewed.get(file, False)
         t.extra = list((extra or {}).get(file, []))
         found = _team_problems(t, comp)
         t.problems = [x for x, _ in found] + (t.extra if team else [])
@@ -250,6 +260,10 @@ def _team_problems(t: TeamCheck, comp: Competition) -> list[tuple[str, str]]:
     if t.team is None:
         return ["заявку не удалось прочитать — исправьте её или заполните в программе"]
     problems = []  # (текст, где исправить)
+    if t.unreviewed and t.decision != ADMITTED:
+        problems.append(("заявку секретарь не проверил — откройте её и отметьте «Проверено»", f"preapp:{t.file}"))
+    if t.by_decision and not t.note:
+        problems.append(("допуск решением комиссии — укажите основание в поле замечания", f"adm:{t.file}/note"))
     if t.errors:
         problems.append(("ошибки в заявке команды: " + "; ".join(i.text for i in t.errors), f"preapp:{t.file}"))
     if t.missing_team_docs and t.decision != ADMITTED:
@@ -268,6 +282,20 @@ def _team_problems(t: TeamCheck, comp: Competition) -> list[tuple[str, str]]:
             problems.append((f"в зачёте {key} осталось {len(members)} чел., нужно {z.team_size} — нужна перезаявка",
                              f"reentry:{t.file}"))
     return problems
+
+
+def without_check(teams: list[TeamCheck]) -> list[str]:
+    """Допущены без проверки секретаря — решением комиссии: заявка не проверена, нет документов команды или
+    участника. Для счётчика на странице комиссии."""
+    out = []
+    for t in teams:
+        if t.status == ADMITTED and t.by_decision:
+            what = (["заявку секретарь не проверил"] if t.unreviewed else []) + (
+                [f"нет: {', '.join(d.short.lower() for d in t.missing_team_docs)}"] if t.missing_team_docs else [])
+            out.append(f"«{t.title}» — {'; '.join(what)} (основание: {t.note})")
+        out += [f"{p.entry.name.full} («{t.title}») — {p.why}" for p in t.persons
+                if p.status == ADMITTED and p.decision == ADMITTED and p.missing]
+    return out
 
 
 def _by_zachet(entries: list[Entry]) -> dict[str, list[Entry]]:
@@ -310,8 +338,11 @@ def protocol_row(t: TeamCheck, comp: Competition) -> dict:
     remarks = [f"{p.entry.name.full} — {p.why}" for p in t.persons if p.why]
     remarks += [f"нет: {', '.join(d.short.lower() for d in t.missing_team_docs)}"] if t.missing_team_docs else []
     remarks += [i.text for i in t.errors] + t.extra
+    remarks += ["заявку секретарь не проверил"] if t.unreviewed else []
     decision = {ADMITTED: "допущена", REJECTED: "не допущена", PENDING: "ожидает решения"}[t.status]
-    if t.note:
+    if t.status == ADMITTED and t.by_decision:
+        decision = "допущена решением комиссии" + (f": {t.note}" if t.note else "")
+    elif t.note:
         decision += f"; {t.note}"
     return {
         "number": t.number, "team": t.title, "territory": t.team.territory if t.team else "",

@@ -497,6 +497,10 @@ def test_admission_documents_decisions_fees_numbers(client, tmp_path, psr_card):
 
     # «Отметить все документы» — со страницы приходит без перезагрузки (X-Autosave), ответ — блок команды и итоги
     data = team_form(page, "Кедр.xlsx") | {"do": "all_docs", "fee_paid": "3000", "fee_method": "наличные"}
+    j = client.post(url + "/team", data=data, headers={"X-Autosave": "1"}).json()
+    assert j["status"] == "pending" and "заявку секретарь не проверил" in j["team"]  # п. 24 правок: сама — нет
+    for name in ("Кедр.xlsx", "Сосна.xlsx"):
+        client.post(base(f) + "/preapps/status", data={"file": name, "status": "done"})
     r = client.post(url + "/team", data=data, headers={"X-Autosave": "1"})
     j = r.json()
     assert j["status"] == "admitted" and "Допущена" in j["team"] and "оплачено" in j["team"]
@@ -616,6 +620,7 @@ def test_team_documents_stored_locally_and_checked_in_one_window(client, tmp_pat
     assert "Отметить все документы" in check and "Лебедев Антон Игоревич" in check
     assert "проверить в одном окне" not in check  # уже в нём
     data = team_form(check, "Кедр.xlsx") | {"do": "all_docs"}
+    client.post(base(f) + "/preapps/status", data={"file": "Кедр.xlsx", "status": "done"})
     j = client.post(base(f) + "/admission/team", data=data, headers={"X-Autosave": "1"}).json()
     assert j["status"] == "admitted" and "проверить в одном окне" not in j["team"]
 

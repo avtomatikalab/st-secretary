@@ -21,6 +21,7 @@ from st_secretary import equipment as eq
 from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.issues import ERROR
 from st_secretary.web.common import XLSX, _base, _redirect, _with_done, key_of, team_anchor
+from st_secretary.web.review import DONE
 from st_secretary.web.store import COMMISSION_REPORT, IMAGE_TYPES, CompFolder
 
 
@@ -43,11 +44,11 @@ def register(app, cx) -> None:
 
     def commission(f: CompFolder, comp):
         """Отметки комиссии и состояние допуска по каждой заявке (в порядке списка заявок)."""
-        result, _ = store.review(f, comp)
+        result, reviews = store.review(f, comp)
         data = f.admission()
         files = [p.name for p in f.preapp_files()]
         gear = eq.admission_problems(eq.evaluate(result, files, f.equipment(), key_of), f.equipment())
-        return data, cm.evaluate(result, files, comp, data, gear)
+        return data, cm.evaluate(result, files, comp, data, gear, {k: r.status == DONE for k, r in reviews.items()})
 
     def adm_totals(teams: list) -> dict:
         people = [p for t in teams for p in t.persons]
@@ -56,7 +57,8 @@ def register(app, cx) -> None:
                 "people": len(people), "people_ok": sum(p.status == cm.ADMITTED for p in people),
                 "people_wait": sum(p.status == cm.PENDING for p in people),
                 "people_no": sum(p.status == cm.REJECTED for p in people),
-                "fee_due": sum(t.fee_due for t in teams), "fee_paid": sum(t.fee_paid for t in teams)}
+                "fee_due": sum(t.fee_due for t in teams), "fee_paid": sum(t.fee_paid for t in teams),
+                "no_check": cm.without_check(teams)}
 
     def adm_parts(f: CompFolder, data: dict) -> dict:
         pdocs, tdocs = cm.required_docs(data)

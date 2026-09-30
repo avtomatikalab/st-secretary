@@ -678,3 +678,8 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 /* Комиссия: мед. допуск, отмеченный сам по допуску врача в заявке */
 .adm-people td.adm-auto { background: var(--ok-bg); }
 
+/* Комиссия: допущены без проверки секретаря — решением комиссии */
+.adm-nocheck { margin: -8px 0 20px; padding: 10px 14px; }
+.adm-nocheck summary { cursor: pointer; }
+.adm-nocheck ul { margin: 6px 0 0; padding-left: 1.2rem; font-size: .9rem; }
+

@@ -179,3 +179,45 @@ def test_doctor_admission_sets_med_except_reentered_and_unticked(tmp_path, psr_c
     les = check(tmp_path, psr_card, data)["Лесовики.xlsx"]
     assert [p.docs["med"] for p in les.persons] == [True, False, False]
     assert not any(p.auto_docs for p in les.persons)
+
+
+def test_unreviewed_application_needs_commission_decision_with_basis(tmp_path, psr_card):
+    """Правки.md, п. 24: заявку секретарь не отметил «Проверено» — сама команда не допускается; допустить можно
+    решением комиссии с обязательным основанием, в протоколе — «допущена решением комиссии: …»; участника без
+    документов — тоже только с основанием. Всё это — в списке «допущены без проверки секретаря»."""
+    from st_secretary.commission import without_check
+
+    result = process(apps(tmp_path), psr_card)
+    files = ["Лесовики.xlsx", "Сосна.xlsx"]
+    data = {"teams": {"Лесовики.xlsx": all_docs(LES)}}
+
+    def run(reviewed):
+        return {t.file: t for t in evaluate(result, files, psr_card, data, None, reviewed)}["Лесовики.xlsx"]
+
+    les = run({"Лесовики.xlsx": False})
+    assert les.status == PENDING and les.unreviewed
+    assert les.problems[0].startswith("заявку секретарь не проверил") and les.problem_targets[0] == "preapp:Лесовики.xlsx"
+    assert run({"Лесовики.xlsx": True}).status == ADMITTED
+    assert run(None).status == ADMITTED  # без сведений о проверке (как раньше)
+
+    data["teams"]["Лесовики.xlsx"]["decision"] = ADMITTED
+    les = run({"Лесовики.xlsx": False})
+    assert les.status == PENDING and any("укажите основание" in x for x in les.problems)
+    data["teams"]["Лесовики.xlsx"]["note"] = "заявка проверена на комиссии, решение ГСК"
+    les = run({"Лесовики.xlsx": False})
+    assert les.status == ADMITTED and les.by_decision
+    row = protocol_row(les, psr_card)
+    assert row["decision"] == "допущена решением комиссии: заявка проверена на комиссии, решение ГСК"
+    assert "заявку секретарь не проверил" in row["remarks"]
+    assert without_check([les]) == ["«Лесовики» — заявку секретарь не проверил (основание: заявка проверена на "
+                                    "комиссии, решение ГСК)"]
+
+    pm = data["teams"]["Лесовики.xlsx"]["people"][person_key(LES[0])]
+    pm["docs"]["ins"] = False
+    pm["decision"] = ADMITTED  # без страховки, основания нет
+    p = run({"Лесовики.xlsx": True}).persons[0]
+    assert p.status == PENDING and "укажите основание" in p.why
+    pm["reason"] = "справка будет до старта"
+    les = run({"Лесовики.xlsx": True})
+    assert les.persons[0].status == ADMITTED
+    assert without_check([les])[-1].startswith("Иванов Пётр Сергеевич («Лесовики») — допущен решением комиссии")

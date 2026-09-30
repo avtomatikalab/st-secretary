@@ -52,12 +52,12 @@
         {% endfor %}
         <td class="adm-decision">
           <span class="adm-status adm-status-{{ p.status }}">{{ p.label }}</span>
-          <select name="p-{{ i }}-decision" aria-label="Решение по участнику {{ e.name.full }}">
+          <select name="p-{{ i }}-decision" aria-label="Решение по участнику {{ e.name.full }}"{% if p.missing %} data-confirm-admit="Документы участника не отмечены (нет: {{ p.missing|map(attribute='short')|join(', ')|lower }}). Допустить решением комиссии? Нужно будет указать основание."{% endif %}>
             <option value="">по документам</option>
             <option value="admitted"{% if p.decision == "admitted" %} selected{% endif %}>допустить решением комиссии</option>
             <option value="rejected"{% if p.decision == "rejected" %} selected{% endif %}>не допускать</option>
           </select>
-          {% if p.decision %}<input type="text" name="p-{{ i }}-reason" value="{{ p.reason }}" placeholder="{{ 'причина недопуска' if p.decision == 'rejected' else 'основание (например, решение ГСК)' }}" aria-label="Причина или основание решения">{% endif %}
+          {% if p.decision %}{% set need = p.decision == 'admitted' and p.missing and not p.reason %}<input type="text" name="p-{{ i }}-reason" value="{{ p.reason }}" placeholder="{{ 'причина недопуска' if p.decision == 'rejected' else ('основание — обязательно' if need else 'основание (например, решение ГСК)') }}" aria-label="Причина или основание решения"{% if need %} class="is-invalid" data-need-reason{% endif %}>{% endif %}
           {% if p.why %}<div class="adm-why">{{ p.why }}</div>{% endif %}
         </td>
       </tr>
@@ -83,12 +83,12 @@
       </div>
       <div class="adm-team-decision">
         <span class="muted">Решение по команде:</span>
-        <select name="decision" aria-label="Решение по команде">
+        <select name="decision" aria-label="Решение по команде"{% if t.unreviewed or t.missing_team_docs %} data-confirm-admit="{% if t.unreviewed %}Заявку секретарь не проверил{% if t.missing_team_docs %}, документы команды не отмечены{% endif %}{% else %}Документы команды не отмечены{% endif %}. Допустить решением комиссии? Основание впишите в поле замечания — оно попадёт в протокол."{% endif %}>
           <option value="">по участникам и документам</option>
           <option value="admitted"{% if t.decision == "admitted" %} selected{% endif %}>допустить решением комиссии</option>
           <option value="rejected"{% if t.decision == "rejected" %} selected{% endif %}>не допускать</option>
         </select>
-        <input type="text" name="note" value="{{ t.note }}" placeholder="замечание или решение комиссии — попадёт в протокол" aria-label="Замечание комиссии">
+        {% set need = t.by_decision and not t.note %}<input type="text" name="note" value="{{ t.note }}" placeholder="{{ 'основание решения — обязательно' if need else 'замечание или решение комиссии — попадёт в протокол' }}" aria-label="Замечание комиссии"{% if need %} class="is-invalid" data-need-reason{% endif %}>
       </div>
       <div class="adm-actions">
         <button class="btn btn-small btn-check" type="submit" name="do" value="all_docs">{{ icon("check", 16) }}Отметить все документы</button>

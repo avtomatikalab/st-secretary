@@ -162,7 +162,9 @@
         });
         if (focusName) {
           var el = fresh.querySelector('[name="' + focusName + '"]');
-          if (el) el.focus();
+          // выбрали «допустить решением комиссии» — сразу в поле основания
+          var need = /decision$/.test(focusName) ? fresh.querySelector("[data-need-reason]") : null;
+          if (need) need.focus(); else if (el) el.focus();
         }
       })
       .catch(function () {
@@ -170,6 +172,15 @@
         form.classList.add("adm-failed");
       });
   }
+  // «Допустить решением комиссии», когда заявка или документы не проверены, — только с подтверждением
+  document.addEventListener("change", function (e) {
+    var sel = e.target;
+    if (!sel.matches || !sel.matches("select[data-confirm-admit]") || sel.value !== "admitted") return;
+    if (window.confirm(sel.dataset.confirmAdmit)) return;
+    var was = Array.prototype.filter.call(sel.options, function (o) { return o.defaultSelected; })[0];
+    sel.value = was ? was.value : "";
+    e.stopPropagation();  // не сохранять
+  }, true);
   document.addEventListener("change", function (e) {
     var form = e.target.closest ? e.target.closest("form[data-autosave]") : null;
     if (form) autosave(form);
