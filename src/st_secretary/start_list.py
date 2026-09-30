@@ -25,6 +25,7 @@ from typing import Any
 
 from st_secretary.issues import INFO, WARNING, Issue
 from st_secretary.qualification import Qual
+from st_secretary.textclean import alpha_key
 
 METHODS = {
     "random": "Общая жеребьёвка — случайный порядок (компьютерная, п. 8.4)",
@@ -68,7 +69,7 @@ def settings(zdata: dict) -> dict:
 
 def _num_key(t) -> tuple:
     n = re.sub(r"\D", "", str(t.number or ""))
-    return (0, int(n), t.file) if n else (1, 0, t.file)
+    return (0, int(n), alpha_key(t.file)) if n else (1, 0, alpha_key(t.file))
 
 
 def team_rank(members, rank_format: str | None, norms) -> Fraction | None:

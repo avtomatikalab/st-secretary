@@ -10,6 +10,7 @@ from fastapi import Request
 from st_secretary import staff as sf
 from st_secretary import verify as vf
 from st_secretary.issues import ERROR, WARNING
+from st_secretary.textclean import alpha_key
 from st_secretary.web.store import CompFolder
 
 
@@ -28,7 +29,7 @@ def register(app, cx) -> None:
         out = []
         for label, d in (("Документы по итогам", f.out_dir), ("Договоры и табель", store.contracts_dir(f))):
             if d.is_dir():
-                out += [(f"{label}\\{p.name}", p) for p in sorted(d.iterdir())
+                out += [(f"{label}\\{p.name}", p) for p in sorted(d.iterdir(), key=lambda p: alpha_key(p.name))
                         if p.is_file() and p.suffix.lower() in vf.READABLE and not p.name.startswith("~$")]
         return out
 

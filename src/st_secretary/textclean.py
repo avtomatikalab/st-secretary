@@ -278,3 +278,24 @@ def edit_distance(a: str, b: str) -> int:
             cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
         prev = cur
     return prev[-1]
+
+
+# ------------------------------------------------------------------ алфавитный порядок
+
+
+def alpha_key(text) -> tuple:
+    """Ключ сортировки по-русски для названий команд, ФИО, файлов: регистр не важен, «Ё» — сразу после «Е»
+    (в Юникоде «ё» стоит после «я» — «Ёлки-палки» уезжали в конец), разложенные имена файлов с macOS («Е» + «̈»)
+    — как обычные, числа — по значению («Команда 2» раньше «Команда 10»)."""
+    import unicodedata
+
+    s = unicodedata.normalize("NFC", str(text or "")).casefold()
+    out = []
+    for part in re.split(r"(\d+)", s):
+        if not part:
+            continue
+        if part.isdigit():
+            out.append((0, int(part), ()))
+        else:
+            out.append((1, 0, tuple(2 * ord("е") + 1 if c == "ё" else 2 * ord(c) for c in part)))
+    return tuple(out)

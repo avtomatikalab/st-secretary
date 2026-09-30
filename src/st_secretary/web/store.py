@@ -47,6 +47,7 @@ from st_secretary.exporters.preapp_xlsx import write_preapp_report
 from st_secretary.importers.card_xlsx import load_card, write_card
 from st_secretary.importers.preapp_xlsx import read_preapplication, write_preapplication
 from st_secretary.preapp import PreappResult, process
+from st_secretary.textclean import alpha_key
 from st_secretary.web.review import HAND, STATUSES, Review, apply_marks
 
 CARD = "Карточка_соревнования.xlsx"
@@ -125,7 +126,7 @@ class CompFolder:
             return []
         return sorted((p for p in self.preapp_dir.iterdir()
                        if p.is_file() and p.suffix.lower() in EXCEL and not p.name.startswith("~$")),
-                      key=lambda p: p.name.lower())
+                      key=lambda p: alpha_key(p.name))  # «Ёлки-палки» — после «Е», а не в конце
 
     def preapp_path(self, name: str) -> Path | None:
         """Файл заявки по имени — только из папки «Предзаявки» этого соревнования."""

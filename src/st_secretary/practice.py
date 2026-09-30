@@ -24,6 +24,7 @@ from openpyxl.utils import get_column_letter
 from st_secretary.competition import GSK_ROLES, LEVEL_LABELS, Competition
 from st_secretary.reference import Level, judge_points
 from st_secretary.results import person_key
+from st_secretary.textclean import alpha_key
 
 # Должности судей (а не комендантской бригады) среди добавленных на странице договоров.
 _JUDGING = re.compile(r"суд|секретар|инспектор|начальник дистанции|хронометр|стартер|стартёр", re.IGNORECASE)
@@ -193,7 +194,7 @@ def judges(records: list[Record]) -> list[Judge]:
         by.setdefault(k, Judge(k, r.fio)).records.append(r)
     for j in by.values():
         j.records.sort(key=lambda r: r.date_from, reverse=True)
-    return sorted(by.values(), key=lambda j: j.fio.lower().replace("ё", "е"))
+    return sorted(by.values(), key=lambda j: alpha_key(j.fio))
 
 
 THIN = Side(style="thin", color="7F7F7F")
