@@ -38,12 +38,13 @@
       {% for key, label in methods.items() %}
       <label class="st-method"><input type="radio" name="method" value="{{ key }}"{% if sl.settings.method == key %} checked{% endif %}>
         <span>{{ label }}</span></label>
-      {% if key == "rank" %}
+      {% if key == "strict" %}
       <div class="st-rank">
-        <label>Групп <input type="text" inputmode="numeric" name="groups" value="{{ sl.settings.groups }}" class="st-num" aria-label="Число групп"></label>
+        <label>Групп (у групповой) <input type="text" inputmode="numeric" name="groups" value="{{ sl.settings.groups }}" class="st-num" aria-label="Число групп"></label>
         <label>Сильные стартуют <select name="strong" aria-label="Кто стартует первым">
           <option value="last">последними</option><option value="first"{% if sl.settings.strong == "first" %} selected{% endif %}>первыми</option></select></label>
-        <span class="hint">Ранг состава — баллы разрядов участников, как в стартовом протоколе СЕКРЕТАРЬ_ST.</span>
+        <span class="hint">Для групповой и «строго по рангу». Ранг состава — баллы разрядов участников, как в стартовом
+          протоколе СЕКРЕТАРЬ_ST; все без разрядов — «без ранга». Равные ранги (и на границе групп) разводит жребий.</span>
       </div>
       {% endif %}
       {% endfor %}
@@ -88,6 +89,7 @@
     <thead><tr><th><span class="sr-only">Перетащить</span></th><th>Порядок</th><th>№</th><th>Команда</th><th>Состав (разряд)</th><th>Ранг</th><th>Время старта</th></tr></thead>
     <tbody>
     {% for r in sl.rows %}{% set i = loop.index0 %}
+    {% if r.group_head %}<tr class="st-group"><td colspan="7">{{ r.group_head }}{% if loop.first %} · внутри группы — жребий (Правила, п. 8.4){% endif %}</td></tr>{% endif %}
     <tr{% if sl.drawn and not r.drawn %} class="sev-warning"{% endif %} data-row>
       <td class="st-grip"><button type="button" class="st-handle" data-drag
           aria-label="{{ r.inp.team }}: перетащить (стрелки вверх и вниз — переставить)">{{ icon("grip", 18) }}</button></td>

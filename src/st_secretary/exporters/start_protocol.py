@@ -17,13 +17,14 @@ from openpyxl.utils import get_column_letter
 
 from st_secretary.competition import Competition
 from st_secretary.exporters.results_protocol import GROUP_WORDS
-from st_secretary.start_list import METHODS, StartList, hm_text
+from st_secretary.start_list import METHODS, StartList, hm_text, rank_word
 
 THIN = Side(style="thin", color="7F7F7F")
 BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 WRAP = Alignment(vertical="center", wrap_text=True)
 HEAD = PatternFill("solid", fgColor="DCE6F1")
+GROUP = PatternFill("solid", fgColor="F2F2F2")
 
 
 def rank_text(x) -> str:
@@ -36,9 +37,11 @@ def draw_line(sl: StartList) -> str:
         return "Порядок старта — по стартовым номерам."
     what = {"random": "общая, компьютерная (случайные числа)",
             "rank": f"групповая по рангу состава, групп: {sl.settings['groups']}, внутри группы — компьютерная",
+            "strict": ("строго по рангу состава — " + ("слабые раньше сильных" if sl.settings["strong"] == "last"
+                                                        else "сильные раньше слабых") + ", равные ранги — компьютерная"),
             "manual": "на совещании ГСК с представителями команд",
             "number": "не проводилась — по стартовым номерам"}.get(sl.method, METHODS.get(sl.method, ""))
-    tail = f", число жребия {sl.seed}" if sl.method in ("random", "rank") and sl.seed is not None else ""
+    tail = f", число жребия {sl.seed}" if sl.method in ("random", "rank", "strict") and sl.seed is not None else ""
     edited = f"; порядок изменён вручную {sl.edited_at:%d.%m.%Y в %H:%M}" if sl.edited_at else ""
     return f"Жеребьёвка: {what}; {sl.drawn_at:%d.%m.%Y в %H:%M}{tail}{edited}."
 
@@ -78,12 +81,17 @@ def write_start_protocol(comp: Competition, sl: StartList, path: str | Path, at:
         cell.font, cell.fill, cell.border, cell.alignment = Font(bold=True, size=10), HEAD, BOX, CENTER
     r += 1
     for row in sl.rows:
+        if row.group_head:  # групповая жеребьёвка: разделитель группы
+            ws.cell(r, 1, f"{row.group_head}. Внутри группы — жребий (Правила, раздел 3, п. 8.4)")
+            ws.cell(r, 1).font, ws.cell(r, 1).fill = Font(bold=True, size=10), GROUP
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=width)
+            r += 1
         t = row.inp
         members = ", ".join(f"{m.fio} ({m.qual_label or 'б/р'})" for m in t.members)
         chip = ", ".join(dict.fromkeys(m.chip for m in t.members if m.chip))
         who_values = ([t.team, t.club, t.territory, t.representative,
-                       ", ".join(m.qual_label or "б/р" for m in t.members), rank_text(row.rank)] if person
-                      else [t.team, t.territory, t.representative, members, rank_text(row.rank)])
+                       ", ".join(m.qual_label or "б/р" for m in t.members), rank_word(row.rank)] if person
+                      else [t.team, t.territory, t.representative, members, rank_word(row.rank)])
         values = [row.pos, t.number or ""] + who_values + ([chip] if chips else []) + [hm_text(row.time), "", ""]
         for c, v in enumerate(values, start=1):
             cell = ws.cell(r, c, v)

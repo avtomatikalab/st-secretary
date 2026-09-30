@@ -3,6 +3,8 @@
 Очерёдность стартов определяется жеребьёвкой — для возрастных групп, мужчин и женщин раздельно (в программе —
 по зачётам). Способы по Правилам: общая (единая для всех; допускается компьютерная — случайными числами),
 групповая (участники делятся на группы по квалификации, внутри группы — жребий), командная, свободный старт.
+Ещё — «строго по рангу»: слабые раньше сильных (или наоборот), равные ранги — жребием; команды с равным рангом на
+границе групп в групповой тоже разводит жребий, а не номер.
 Жеребьёвку часто проводят на совещании ГСК с представителями — тогда секретарь вносит вытянутый порядок
 вручную. По окончании жеребьёвки составляется стартовый протокол; он публикуется не позднее чем за час до
 старта. С публикации идёт час на протесты по допуску (п. 8.17).
@@ -30,6 +32,7 @@ from st_secretary.textclean import alpha_key
 METHODS = {
     "random": "Общая жеребьёвка — случайный порядок (компьютерная, п. 8.4)",
     "rank": "Групповая — по рангу состава: команды делятся на группы, внутри группы — жребий",
+    "strict": "Строго по рангу — слабые раньше сильных: порядок по рангу состава, равные ранги — жребием",
     "manual": "По жеребьёвке на совещании — номера вытянули представители, секретарь вносит порядок",
     "number": "По стартовым номерам (без жеребьёвки)",
 }
@@ -89,14 +92,23 @@ def team_rank(members, rank_format: str | None, norms) -> Fraction | None:
 def draw(teams: list, method: str, seed: int, ranks: dict[str, Fraction | None] | None = None,
          groups: int = 2, strong_last: bool = True) -> list[str]:
     """Порядок старта (файлы заявок). Жребий повторяется при том же seed и том же составе зачёта."""
+    return draw_groups(teams, method, seed, ranks, groups, strong_last)[0]
+
+
+def draw_groups(teams: list, method: str, seed: int, ranks: dict[str, Fraction | None] | None = None,
+                groups: int = 2, strong_last: bool = True) -> tuple[list[str], dict[str, int]]:
+    """Порядок старта и, у групповой, номер группы каждой команды (1 — стартует первой)."""
     base = sorted(teams, key=_num_key)
     rng = random.Random(seed)
     if method == "random":
         rng.shuffle(base)
-        return [t.file for t in base]
-    if method == "rank":
+        return [t.file for t in base], {}
+    if method in ("rank", "strict"):
         ranks = ranks or {}
-        by_rank = sorted(base, key=lambda t: ranks.get(t.file) or Fraction(0))  # слабые — первыми
+        lot = {t.file: rng.random() for t in base}  # равные ранги — жребием (и на границе групп), а не по номеру
+        by_rank = sorted(base, key=lambda t: (ranks.get(t.file) or Fraction(0), lot[t.file]))  # слабые — первыми
+        if method == "strict":
+            return [t.file for t in (by_rank if strong_last else by_rank[::-1])], {}
         n = len(by_rank)
         k = max(1, min(groups, n or 1))
         out, start = [], 0
@@ -108,8 +120,8 @@ def draw(teams: list, method: str, seed: int, ranks: dict[str, Fraction | None] 
             out.append(part)
         if not strong_last:
             out.reverse()
-        return [t.file for part in out for t in part]
-    return [t.file for t in base]  # по номерам; «вручную» — начинаем с порядка номеров
+        return [t.file for part in out for t in part], {t.file: g for g, part in enumerate(out, 1) for t in part}
+    return [t.file for t in base], {}  # по номерам; «вручную» — начинаем с порядка номеров
 
 
 def ordered(teams: list, zdata: dict) -> list:
@@ -132,6 +144,8 @@ class StartRow:
     manual_time: bool
     rank: Fraction | None
     drawn: bool  # была при жеребьёвке
+    group: int | None = None  # групповая жеребьёвка: номер группы (1 — стартует первой)
+    group_head: str = ""  # с этой команды начинается группа: «Группа 1 — ранг 1–15, стартуют первыми»
 
 
 @dataclass
@@ -182,6 +196,7 @@ def _rows(zdata: dict, teams: list, ranks: dict) -> list[StartRow]:
     iv = st["interval"].strip().replace(",", ".")
     interval = round(float(iv) * 60) if re.fullmatch(r"\d+(\.\d+)?", iv) else 0
     manual = d.get("times", {})
+    groups = d.get("groups_of", {}) if d.get("done_method") == "rank" else {}
     rows = []
     for i, t in enumerate(ordered(teams, zdata), start=1):
         own = None
@@ -191,8 +206,36 @@ def _rows(zdata: dict, teams: list, ranks: dict) -> list[StartRow]:
             pass
         auto = first + (i - 1) * interval if first is not None else None
         rows.append(StartRow(i, t, own if own is not None else auto, own is not None, ranks.get(t.file),
-                             t.file in order))
+                             t.file in order, groups.get(t.file)))
+    _group_heads(rows)
     return rows
+
+
+def rank_word(x: Fraction | None) -> str:
+    """Ранг для таблицы: «14», «43,1»; 0 — «без ранга» (все без разрядов); не посчитан — пусто."""
+    if x is None:
+        return ""
+    return "без ранга" if x == 0 else f"{float(x):.2f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def _group_heads(rows: list[StartRow]) -> None:
+    """Разделители групп: у первой команды каждой группы — «Группа N — ранг a–b, стартуют первыми»."""
+    if not any(r.group for r in rows):
+        return
+    last = max(r.group or 0 for r in rows)
+    for i, r in enumerate(rows):
+        if r.group is None or (i and rows[i - 1].group == r.group):
+            continue
+        ranks = sorted(x.rank or Fraction(0) for x in rows if x.group == r.group)
+        if ranks[-1] == 0:
+            span = "без ранга"
+        elif ranks[0] == ranks[-1]:
+            span = f"ранг {rank_word(ranks[0])}"
+        else:
+            span = f"ранг {'0' if ranks[0] == 0 else rank_word(ranks[0])}–{rank_word(ranks[-1])}"
+            span += " (есть команды без ранга)" if ranks[0] == 0 else ""
+        when = ", стартуют первыми" if r.group == 1 else ", стартуют последними" if r.group == last else ""
+        r.group_head = f"Группа {r.group} — {span}{when}"
 
 
 def build(z, zdata: dict, teams: list, ranks: dict[str, Fraction | None] | None = None,

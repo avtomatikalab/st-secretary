@@ -70,7 +70,7 @@ def register(app, cx) -> None:
         pub = _parse_dt(lst.published["at"]) if lst.published else None
         day, first = start_default(f, comp)
         return page(request, "start.html", active="start", zachet=zz, zachety=comp.zachety, sl=lst,
-                    methods=sl.METHODS, hm=sl.hm_text, rank_text=sp.rank_text, draw_line=sp.draw_line(lst),
+                    methods=sl.METHODS, hm=sl.hm_text, rank_text=sl.rank_word, draw_line=sp.draw_line(lst),
                     zq=urlencode({"z": zz.key}), pub_at=pub, until=pub + PROTEST_HOUR if pub else None,
                     defaults={"day": day.isoformat(), "first": first}, is_time=tr.is_time_discipline(zz),
                     publish_by=lst.first_start - PROTEST_HOUR if lst.first_start else None, now=app.state.clock(),
@@ -96,7 +96,7 @@ def register(app, cx) -> None:
                "interval": str(form.get("interval", "")).strip().replace(",", ".")}
         new = {k: v for k, v in new.items() if k in form}  # у жеребьёвки и времени старта — разные формы
         drawing = form.get("action") == "draw"
-        order, seed = [], None
+        order, seed, groups = [], None, {}
         if drawing:
             zdata, teams, ranks, _ = start_ctx(f, comp, zz)
             admitted = [t for t in teams if t.admitted]
@@ -104,14 +104,15 @@ def register(app, cx) -> None:
                 return _redirect(_with_done(back, "start_empty"))
             st = sl.settings({"draw": {**zdata.get("draw", {}), **new}})
             seed = secrets.randbelow(900000) + 100000  # шесть цифр — легко записать и проверить
-            order = sl.draw(admitted, st["method"], seed, ranks, st["groups"], st["strong"] == "last")
+            order, groups = sl.draw_groups(admitted, st["method"], seed, ranks, st["groups"], st["strong"] == "last")
         now = app.state.clock()
 
         def update(d):
             dr = d.setdefault("draw", {})
             dr.update(new)
             if drawing:
-                dr.update(order=order, at=now.isoformat(timespec="minutes"), seed=seed, done_method=new["method"])
+                dr.update(order=order, at=now.isoformat(timespec="minutes"), seed=seed, done_method=new["method"],
+                          groups_of=groups)
                 for k in ("times", "edited"):  # ручные правки — от прежнего порядка
                     dr.pop(k, None)
 

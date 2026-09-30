@@ -684,3 +684,7 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .adm-nocheck summary { cursor: pointer; }
 .adm-nocheck ul { margin: 6px 0 0; padding-left: 1.2rem; font-size: .9rem; }
 
+/* Порядок старта: разделитель группы (групповая жеребьёвка) */
+.st-tbl tr.st-group td { background: var(--primary-soft); font-weight: 600; font-size: .88rem; padding-top: 6px;
+  padding-bottom: 6px; }
+

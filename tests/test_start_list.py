@@ -148,3 +148,53 @@ def test_parse_hm_bad():
         with pytest.raises(ValueError):
             sl.parse_hm(bad)
     assert sl.hm_text(36000) == "10:00" and sl.hm_text(25530) == "07:05:30"
+
+
+def test_strict_rank_weak_before_strong_equal_ranks_by_lot():
+    """Правки.md, п. 25: «строго по рангу» — Ёлки-палки (33) всегда раньше Кедра (62); равные ранги — жребием."""
+    names = ["Кедр", "Ёлки-палки", "Сосна", "Горный ветер", "Пихта", "Перевал"]
+    ts = [team(n, i) for i, n in enumerate(names, start=1)]
+    ranks = {"Кедр.xlsx": Fraction(62), "Ёлки-палки.xlsx": Fraction(33), "Сосна.xlsx": Fraction(431, 10),
+             "Горный ветер.xlsx": Fraction(90), "Пихта.xlsx": Fraction(1), "Перевал.xlsx": Fraction(1)}
+    seen = set()
+    for seed in range(100000, 100040):
+        order = sl.draw(ts, "strict", seed, ranks)
+        assert order[2:] == ["Ёлки-палки.xlsx", "Сосна.xlsx", "Кедр.xlsx", "Горный ветер.xlsx"]
+        seen.add(tuple(order[:2]))
+    assert len(seen) == 2  # Пихта и Перевал (ранг 1) — то так, то наоборот: жребий, а не номер
+    assert sl.draw(ts, "strict", 7, ranks, strong_last=False)[:4] == [
+        "Горный ветер.xlsx", "Кедр.xlsx", "Сосна.xlsx", "Ёлки-палки.xlsx"]
+    lst = sl.build(Zachet("М/Ж", 3, "0840161811Я"), {"draw": {"order": order, "at": "2026-10-01T01:03",
+                                                           "done_method": "strict", "seed": 812988}}, ts, ranks)
+    line = draw_line(lst)
+    assert "строго по рангу состава — слабые раньше сильных" in line and "число жребия 812988" in line
+
+
+def test_group_boundary_by_lot_and_group_heads(tmp_path, psr_card):
+    """Правки.md, п. 25: равные ранги на границе групп делит жребий, а не номер; в «Порядке старта» и протоколе —
+    «Группа 1 — ранг 1–5, стартуют первыми»; все без разрядов — «без ранга»."""
+    ts = teams(4)  # Кедр, Сосна, Ель, Пихта
+    ranks = {"Кедр.xlsx": Fraction(1), "Сосна.xlsx": Fraction(5), "Ель.xlsx": Fraction(5), "Пихта.xlsx": Fraction(9)}
+    firsts = set()
+    for seed in range(1, 40):
+        order, groups = sl.draw_groups(ts, "rank", seed, ranks, 2)
+        g1 = {f for f, g in groups.items() if g == 1}
+        assert "Кедр.xlsx" in g1 and "Пихта.xlsx" not in g1 and set(order[:2]) == g1
+        firsts |= g1 - {"Кедр.xlsx"}
+    assert firsts == {"Сосна.xlsx", "Ель.xlsx"}  # на границе — то одна, то другая
+
+    z = Zachet("М/Ж", 3, "0840161811Я")
+    zdata = {"draw": {"order": order, "at": "2026-10-01T01:03", "done_method": "rank", "seed": 39, "groups_of": groups}}
+    lst = sl.build(z, zdata, ts, ranks)
+    heads = [r.group_head for r in lst.rows]
+    assert heads[0] == "Группа 1 — ранг 1–5, стартуют первыми" and heads[1] == ""
+    assert heads[2] == "Группа 2 — ранг 5–9, стартуют последними" and heads[3] == ""
+    from datetime import datetime
+
+    path = write_start_protocol(psr_card, lst, tmp_path / "Стартовый.xlsx", datetime(2026, 10, 3, 8, 0))
+    cells = [c for row in load_workbook(path).active.iter_rows(values_only=True) for c in row if c]
+    assert "Группа 1 — ранг 1–5, стартуют первыми. Внутри группы — жребий (Правила, раздел 3, п. 8.4)" in cells
+
+    zero = {**ranks, "Кедр.xlsx": Fraction(0)}
+    assert sl.build(z, zdata, ts, zero).rows[0].group_head.startswith("Группа 1 — ранг 0–5 (есть команды без ранга)")
+    assert sl.rank_word(Fraction(0)) == "без ранга" and sl.rank_word(Fraction(431, 10)) == "43,1"
