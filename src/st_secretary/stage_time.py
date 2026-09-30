@@ -23,6 +23,7 @@ from st_secretary.psr_run import Stage, parse_points, points_text
 from st_secretary.time_run import duration_text, parse_duration
 
 DAY = 24 * 3600
+NIGHT_FROM, NIGHT_TO = 20 * 3600, 6 * 3600  # «через полночь» — только прибытие после 20:00 и убытие до 06:00
 
 
 def clock_seconds(t) -> int | None:
@@ -34,16 +35,36 @@ def clock_seconds(t) -> int | None:
     return h * 3600 + m * 60 + s if h < 24 and m < 60 and s < 60 else None
 
 
+def span(a: int, b: int) -> int | None:
+    """Сколько секунд от a до b; через полночь — только если правдоподобно (прибытие после 20:00, убытие до 06:00),
+    иначе это опечатка во времени — None."""
+    if b >= a:
+        return b - a
+    return b - a + DAY if a >= NIGHT_FROM and b <= NIGHT_TO else None
+
+
+def times_problem(rec: dict) -> str:
+    """Убытие раньше прибытия (и это не ночь) — опечатка во времени: итог этапа не считается. Пусто — всё в порядке."""
+    a, b = clock_seconds(rec.get("arrive")), clock_seconds(rec.get("leave"))
+    if a is None or b is None or span(a, b) is not None:
+        return ""
+    return f"убытие ({rec.get('leave')}) раньше прибытия ({rec.get('arrive')}) — проверьте время"
+
+
 def stage_seconds(rec: dict) -> int | None:
-    """Время на этапе, с: убытие − прибытие − отсечки (через полночь — тоже); нет прибытия или убытия — None."""
+    """Время на этапе, с: убытие − прибытие − отсечки (через полночь — только ночью); нет прибытия или убытия,
+    или убытие раньше прибытия — None."""
     a, b = clock_seconds(rec.get("arrive")), clock_seconds(rec.get("leave"))
     if a is None or b is None:
+        return None
+    d = span(a, b)
+    if d is None:
         return None
     try:
         cut = parse_duration(rec.get("cutoff"))
     except ValueError:
         cut = Fraction(0)
-    return max(0, int((b - a) % DAY - cut))
+    return max(0, int(d - cut))
 
 
 def time_penalty(stage: Stage, secs: int, full_intervals: bool = True) -> Fraction:
@@ -90,6 +111,9 @@ def score(stage: Stage, rec: dict, full_intervals: bool = True) -> StageScore:
         why = "снята с этапа" if rec.get("removed") else f"превышено КВ ({duration_text(Fraction(secs or 0))})"
         return StageScore(mx, f"{why} — МШ {points_text(mx)}" if mx is not None else f"{why} — МШ этапа не задан",
                           secs)
+    bad = times_problem(rec)
+    if bad:
+        return StageScore(None, bad, None, bad)
     try:
         tech = parse_points(rec.get("points"))
     except ValueError:
@@ -127,11 +151,14 @@ def refresh(zdata: dict, stage: Stage, files: list[str] | None = None) -> int:
         if rec is None:
             continue
         sc = score(stage, rec, full_intervals(zdata))
-        if sc.total is None:
-            continue
         t = teams.setdefault(file, {})
         cell = str(t.get("points", {}).get(stage.id, "")).strip()
         prev = str(t.get("auto", {}).get(stage.id, "")).strip()
+        if sc.total is None:
+            if sc.check and prev and cell == prev:  # время стало с ошибкой — прежний итог программы убрать
+                t.get("points", {}).pop(stage.id, None)
+                t.get("auto", {}).pop(stage.id, None)
+            continue
         new = points_text(sc.total)
         if cell in ("", prev):
             t.setdefault("points", {})[stage.id] = new

@@ -138,7 +138,10 @@
   }
   function stageSecs(r) {  // время на этапе: убытие (или сейчас) − прибытие − отсечки (ожидание очереди)
     var a = secs(r.arrive); if (a === null) return null;
-    var l = secs(r.leave), spent = (l === null ? nowSecs() : l) - a; if (spent < 0) spent += 86400;
+    var l = secs(r.leave), end = l === null ? nowSecs() : l, spent = end - a;
+    if (spent < 0) {  // через полночь — только ночью (прибытие после 20:00, убытие до 06:00), иначе ошибка во времени
+      if (a >= 72000 && end <= 21600) spent += 86400; else return NaN;
+    }
     spent -= durSecs(r.cutoff) || 0;
     if (r.cut_on && l === null) spent -= since(r.cut_on);
     return Math.max(0, spent);
@@ -156,11 +159,12 @@
   function fmtPts(x) { return (Math.round(x * 100) / 100).toString().replace(".", ","); }
   function howText(r) {  // ПСР, этап с НВ: из чего сложится итог — как посчитает программа (stage_time.py)
     var a = info.stage.auto; if (!a) return "";
-    var t = stageSecs(r), over = t !== null && info.stage.kv && t > info.stage.kv * 60;
+    var t = stageSecs(r), over = t !== null && !isNaN(t) && info.stage.kv && t > info.stage.kv * 60;
     var mx = a.max === null ? "не задан" : fmtPts(a.max);
     if (r.removed) return "Снята с этапа — <b>МШ " + mx + "</b>";
     if (over && r.leave) return "Превышено КВ — <b>МШ " + mx + "</b>";
     if (!r.leave || t === null) return "";
+    if (isNaN(t)) return "<b>Убытие раньше прибытия — проверьте время</b>: итог не посчитан";
     var tech = r.points === "" ? 0 : parseFloat(String(r.points).replace(",", ".").replace("−", "-"));
     if (isNaN(tech)) return "";
     var ov = t - a.nv, k = ov <= 0 ? 0 : (a.full ? Math.ceil(ov / a.m) : Math.floor(ov / a.m));
@@ -212,6 +216,10 @@
     v = v.trim();
     if (v && secs(v) === null) { window.alert("Время — в виде 14:05:30"); return; }
     var patch = {}; patch[field] = v; change(f, patch);
+    var r = rec(f);
+    if (r.arrive && r.leave && isNaN(stageSecs(r))) {
+      window.alert("Убытие раньше прибытия — проверьте время. Итог этапа не посчитается, пока время не исправлено.");
+    }
   }
 
   var box = document.getElementById("teams");
@@ -334,6 +342,10 @@
     }
     var el = c.querySelector(".timer"), spent = stageSecs(r);
     if (spent === null) { el.textContent = ""; el.classList.remove("over"); return; }
+    if (isNaN(spent)) {
+      el.textContent = r.leave ? "убытие раньше прибытия — проверьте время" : "прибытие позже, чем сейчас — проверьте время";
+      el.classList.add("over"); return;
+    }
     // время на этапе — за вычетом ожидания очереди (отсечек); КВ — по нему же
     el.textContent = (r.cut_on && !r.leave ? "ждёт " + dur(since(r.cut_on)) + " · " : "") +
       (r.leave ? "на этапе было " : "на этапе ") + dur(spent);

@@ -207,6 +207,9 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
                 if cell and not _same(cell, got):
                     out.append(Issue(WARNING, f"«{team}», {st.title}: судья этапа прислал {got} ({when}), в таблице "
                                               f"{cell} — проверьте", team=team, target=f"cell:{file}:{sid}"))
+            bad_times = stt.times_problem(rec)
+            if bad_times:
+                out.append(Issue(WARNING, f"«{team}», {st.title}: {bad_times}", team=team, target=f"cell:{file}:{sid}"))
             wait = stt.waiting_check(rec)
             if wait:
                 out.append(Issue(WARNING, f"«{team}», {st.title}: {wait}", team=team, target=f"cell:{file}:{sid}"))

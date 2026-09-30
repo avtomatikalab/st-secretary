@@ -109,3 +109,23 @@ def test_waiting_closed_together_with_leave_is_flagged():
     assert z["judge"]["s1"]["Кедр.xlsx"]["started"] == "10:20:00"
     issues = js.judge_issues(z, stages_of(z), {"Кедр.xlsx": "Кедр"})
     assert any("ожидание очереди" in i.text and i.target == "cell:Кедр.xlsx:s1" for i in issues)
+
+
+def test_leave_before_arrive_is_a_typo_not_midnight():
+    """Правки.md, п. 9: прибыла 14:25, убыла 14:15 — не «23:50 через полночь» и не МШ, а «проверьте время»."""
+    s = stages_of(zdata())[0]
+    typo = {"points": "0", "arrive": "14:25:00", "leave": "14:15:00"}
+    assert stt.stage_seconds(typo) is None
+    sc = stt.score(s, typo)
+    assert sc.total is None and "раньше прибытия" in sc.check
+    assert stt.stage_seconds({"arrive": "23:58:00", "leave": "00:03:00"}) == 300  # ночью — через полночь можно
+    z = zdata()
+    stage = stages_of(z)[0]
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "0", "14:10:00", "14:15:00", updated=1)], FILES, "т",
+             "2026-10-03T14:16:00", stage=stage, distance_cutoffs=False)
+    assert z["teams"]["Кедр.xlsx"]["points"]["s1"] == "0"
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "0", "14:25:00", "14:15:00", updated=2)], FILES, "т",
+             "2026-10-03T14:17:00", stage=stage, distance_cutoffs=False)  # прибытие «исправили» с опечаткой
+    assert "s1" not in z["teams"]["Кедр.xlsx"]["points"]  # ни МШ, ни прежнего итога — пусто, пока не исправят
+    issues = js.judge_issues(z, stages_of(z), {"Кедр.xlsx": "Кедр"})
+    assert any("раньше прибытия" in i.text and i.target == "cell:Кедр.xlsx:s1" for i in issues)
