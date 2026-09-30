@@ -16,14 +16,25 @@ def test_launcher_works_with_any_console_code_page():
         if line.lstrip().lower().startswith(("echo", "title", "rem")):
             continue
         assert line.isascii(), line  # пути и команды — латиницей: работают при любой кодовой странице
-    assert r'"program\python\python.exe" -m st_secretary web' in bp.LAUNCHER
+    assert r'"program\python\python.exe" -m st_secretary web %*' in bp.LAUNCHER
     assert 'cd /d "%~dp0"' in bp.LAUNCHER and "pause" in bp.LAUNCHER
+
+
+def test_launcher_installs_update_and_restarts():
+    from st_secretary.updates import RESTART
+
+    text = bp.LAUNCHER
+    assert f'if "%RC%"=="{RESTART}" (' in text and "goto start" in text  # код «перезапустить» → снова с начала
+    assert text.index(':start') < text.index('program.new\\python\\python.exe') < text.index(':run')
+    assert 'move "program" "program.old"' in text and 'move "program.new" "program"' in text
+    assert 'set "ST_NO_BROWSER=1"' in text  # страница уже открыта — второй вкладки не нужно
 
 
 def test_readme_explains_start_data_and_update():
     text = bp.README.format(version="1.0", py=bp.PY_VERSION)
-    for must in ("СТ-Секретарь.bat", "«данные»", "Удалите старую папку «program»", "AGPL-3.0",
-                 "github.com/avtomatikalab/st-secretary", "документы участников"):
+    for must in ("СТ-Секретарь.bat", "«данные»", "Вручную: скачайте архив", "AGPL-3.0",
+                 "github.com/avtomatikalab/st-secretary", "документы участников", "program.old",
+                 "--no-update-check"):
         assert must in text
 
 

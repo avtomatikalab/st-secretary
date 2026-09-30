@@ -315,4 +315,71 @@
       document.querySelectorAll('[data-sev="' + chip.dataset.filter + '"]').forEach(function (el) { el.hidden = !on; });
     });
   });
+
+  // --- Новая версия: GitHub спрашивают в фоне при запуске — главная узнаёт ответ у программы, когда он придёт.
+  var updSlot = document.querySelector("[data-update-banner]");
+  if (updSlot) {
+    var updTries = 0;
+    (function ask() {
+      fetch(updSlot.dataset.updateBanner, { cache: "no-store" }).then(function (r) {
+        if (r.status === 202 && ++updTries < 10) { setTimeout(ask, 2000); return null; }
+        return r.status === 200 ? r.text() : null;
+      }).then(function (html) { if (html) updSlot.innerHTML = html; }).catch(function () { /* без ответа — молчим */ });
+    })();
+  }
+
+  // --- Страница обновления: ход скачивания, потом перезапуск и переход на новую версию.
+  var upd = document.getElementById("upd");
+  if (upd && upd.querySelector("[data-upd-bar]")) {
+    var bar = upd.querySelector("[data-upd-bar]");
+    var title = upd.querySelector("[data-upd-title]");
+    var text = upd.querySelector("[data-upd-text]");
+    var want = upd.dataset.version;
+    var titles = { backup: "Делаю резервную копию…", download: "Скачиваю новую версию…",
+                   unpack: "Распаковываю…", ready: "Перезапускаю программу…", restart: "Перезапускаю программу…" };
+    function show(state) {
+      upd.dataset.state = state;
+      upd.querySelectorAll("[data-upd-show]").forEach(function (el) {
+        el.hidden = el.dataset.updShow.split(" ").indexOf(state) < 0;
+      });
+      if (titles[state]) title.textContent = titles[state];
+    }
+    function waitNew(started) {  // программа перезапускается: ждать, пока ответит новая версия
+      fetch("/health", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (h) {
+        if (h.version === want) { location.href = "/?done=updated"; return; }
+        setTimeout(function () { waitNew(started); }, 1000);
+      }).catch(function () {
+        if (Date.now() - started > 90000) {
+          text.textContent = "Программа долго не отвечает. Посмотрите чёрное окно: если оно закрылось — дважды " +
+                             "щёлкните «СТ-Секретарь.bat».";
+        }
+        setTimeout(function () { waitNew(started); }, 1000);
+      });
+    }
+    function poll() {
+      fetch("/update/status", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (s) {
+        show(s.state);
+        if (s.state === "download" && s.total) {
+          bar.style.width = Math.min(100, Math.round(100 * s.done / s.total)) + "%";
+          text.textContent = "Скачано " + (s.done / 1048576).toFixed(1) + " из " + (s.total / 1048576).toFixed(1) +
+                             " МБ. Не закрывайте чёрное окно программы.";
+        } else if (s.state === "unpack") {
+          bar.style.width = "100%";
+        } else if (s.state === "ready") {
+          bar.style.width = "100%";
+          text.textContent = "Новая версия готова. Программа перезапускается — страница откроется сама через полминуты.";
+          fetch("/update/restart", { method: "POST" }).finally(function () { waitNew(Date.now()); });
+          return;
+        } else if (s.state === "error") {
+          var err = upd.querySelector("[data-upd-error]");
+          if (err) err.textContent = "Не получилось: " + s.error + ".";
+          return;
+        } else if (s.state === "idle") {
+          return;
+        }
+        setTimeout(poll, 700);
+      }).catch(function () { setTimeout(poll, 2000); });
+    }
+    if (upd.dataset.state !== "idle" && upd.dataset.state !== "error") poll();
+  }
 })();

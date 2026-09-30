@@ -1,0 +1,11 @@
+{% from "_icons.html" import icon %}
+<div class="panel panel-update">
+  <h2>{{ icon("download") }} Вышла новая версия СТ-Секретаря — {{ rel.version }}</h2>
+  <p class="muted">У вас версия {{ current }}{% if rel.published %}, новая выпущена {{ rel.published.strftime("%d.%m.%Y") }}{% endif %}.
+    {% if can_install %}Обновление займёт пару минут: программа скачает новую версию, сама перезапустится, соревнования
+    останутся как были.{% endif %} Обновляйте между соревнованиями, а не во время них.</p>
+  <div class="upd-actions">
+    <a class="btn btn-primary" href="/update">{{ icon("arrow", 18) }}Что нового{% if can_install %} и обновить{% endif %}</a>
+    <form method="post" action="/update/later"><button class="btn btn-ghost" type="submit">Напомнить при следующем запуске</button></form>
+  </div>
+</div>

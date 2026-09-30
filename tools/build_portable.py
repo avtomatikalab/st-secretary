@@ -43,12 +43,41 @@ NAME = "СТ-Секретарь"
 LAUNCHER = r"""@echo off
 rem ST-Secretary, portable version: double-click to open the program in the browser.
 rem Competitions are stored in the "данные" folder next to this file. The "program" folder is Python with
-rem the libraries - it is replaced as a whole on update. Paths here are ASCII so the file works with any
-rem console code page; the messages are in CP866 (the Russian Windows console).
+rem the libraries - it is replaced as a whole on update: the program unpacks a new version to "program.new"
+rem and exits with code 75, then this file renames program -> program.old, program.new -> program and starts
+rem it again. Paths here are ASCII so the file works with any console code page; the messages are in CP866
+rem (the Russian Windows console).
 cd /d "%~dp0"
 title СТ-Секретарь
 set "ST_PORTABLE=1"
 set "PYTHONDONTWRITEBYTECODE=1"
+
+:start
+if not exist "program.new\python\python.exe" goto run
+echo Ставлю новую версию СТ-Секретаря...
+if exist "program.old" rmdir /s /q "program.old"
+set /a TRY=0
+:swap
+if not exist "program" goto swapped
+move "program" "program.old" >nul 2>nul
+if not exist "program" goto swapped
+set /a TRY+=1
+if %TRY% GEQ 10 goto swap_failed
+ping -n 2 127.0.0.1 >nul
+goto swap
+:swapped
+move "program.new" "program" >nul 2>nul
+if exist "program\python\python.exe" goto installed
+if not exist "program" if exist "program.old" move "program.old" "program" >nul 2>nul
+echo Новую версию поставить не получилось - запускаю прежнюю.
+goto run
+:swap_failed
+echo Папка program занята другой программой - новая версия встанет при следующем запуске.
+goto run
+:installed
+echo Новая версия поставлена. Прежняя сохранена в папке program.old.
+
+:run
 if not exist "program\python\python.exe" (
   echo.
   echo Не найдена папка program рядом с этим файлом.
@@ -59,8 +88,12 @@ if not exist "program\python\python.exe" (
 )
 echo Запускаю СТ-Секретарь...
 echo.
-"program\python\python.exe" -m st_secretary web
+"program\python\python.exe" -m st_secretary web %*
 set "RC=%errorlevel%"
+if "%RC%"=="75" (
+  set "ST_NO_BROWSER=1"
+  goto start
+)
 echo.
 if not "%RC%"=="0" (
   echo Программа остановилась с ошибкой. Сообщение выше пригодится разработчикам.
@@ -88,8 +121,15 @@ README = """СТ-Секретарь {version} — программа для се
   пользователя: «СТ-Секретарь — документы участников». В облако и в папку соревнования они не попадают.
 
 КАК ОБНОВИТЬ
-Удалите старую папку «program» и распакуйте новый архив в ту же папку, согласившись заменить файлы.
-Папки «данные» и «Резервные копии» останутся как были: в архиве их нет.
+Программа сама проверяет при запуске, нет ли новой версии (если есть интернет), и предлагает обновиться на
+главной странице — одной кнопкой: сделает резервную копию, скачает новую версию, перезапустится. Соревнования,
+резервные копии и документы участников обновление не трогает. Отключить проверку: запускать с ключом
+--no-update-check. Программа отправляет GitHub только сам запрос — ни соревнований, ни имён.
+Прежняя версия сохраняется в папке «program.old». Если новая не запускается: закройте чёрное окно, удалите папку
+«program» и переименуйте «program.old» в «program».
+Вручную: скачайте архив со страницы https://github.com/avtomatikalab/st-secretary/releases, удалите старую папку
+«program» и распакуйте новый архив в ту же папку, согласившись заменить файлы. Папки «данные» и «Резервные копии»
+останутся как были: в архиве их нет.
 
 ТАБЛО И ТЕЛЕФОНЫ СУДЕЙ
 При первом включении раздачи по Wi-Fi Windows спросит разрешение в брандмауэре для python.exe —
@@ -169,7 +209,7 @@ def build(out_dir: Path) -> Path:
             shutil.copy(manual, top / manual.name)
 
         out_dir.mkdir(parents=True, exist_ok=True)
-        dest = out_dir / f"{NAME}-{ver}-windows.zip"
+        dest = out_dir / f"{NAME}-{ver}-windows.zip"  # на GitHub — st-secretary-<версия>-windows.zip (латиница)
         tmp = dest.with_suffix(".part")
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             for p in sorted(top.rglob("*")):

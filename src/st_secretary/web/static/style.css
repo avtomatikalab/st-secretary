@@ -619,3 +619,13 @@ input.st-time.is-manual { font-weight: 700; }
   .layout { display: block; }
   body { background: #fff; }
 }
+
+/* Новая версия: сообщение на главной и страница обновления */
+.panel-update { border-color: var(--primary); border-left: 5px solid var(--primary); background: var(--primary-soft); }
+.panel-update h2 { color: var(--primary); display: flex; align-items: center; gap: 8px; }
+.upd-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.upd-steps { margin: 0 0 12px; padding-left: 22px; }
+.upd-steps li { margin-bottom: 4px; }
+.upd-bar { height: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 8px 0 10px; }
+.upd-bar > div { height: 100%; width: 0; background: var(--primary); transition: width .4s; }
+.upd-notes { white-space: pre-wrap; max-width: 780px; }

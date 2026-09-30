@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException
 
-from st_secretary import __version__
+from st_secretary import __version__, updates
 from st_secretary.competition import LEVEL_LABELS
 from st_secretary.importers.card_xlsx import CardError
 from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, WARNING, Issue
@@ -34,6 +34,7 @@ from st_secretary.web.pages import (
     start,
     verify,
 )
+from st_secretary.web.pages import updates as update_pages
 from st_secretary.web.review import CHECK, DONE, FIX, STATUS_LABEL, issue_key
 from st_secretary.web.steps import STEPS
 from st_secretary.web.store import CompFolder, Store
@@ -50,6 +51,11 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     app.state.store = store
     app.state.opener = opener or open_in_os
     app.state.clock = datetime.now  # часы — отдельно, чтобы в тестах проверять «час на протесты»
+    # новая версия: ответ GitHub кладёт cli.py (проверка в фоне при запуске); установка — только в переносной
+    app.state.update, app.state.update_state, app.state.update_hidden = None, "off", False
+    root = updates.portable_root()
+    app.state.installer = updates.Installer(root) if root else None
+    app.state.restart = False  # выключиться с кодом «перезапустить» (новая версия распакована)
     run_lock = threading.RLock()  # Результаты_дистанции.json: пишут и страница секретаря, и телефоны судей
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
@@ -91,7 +97,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     cx.update(store=store, templates=templates, run_lock=run_lock, page=page, folder=folder, comp_ctx=comp_ctx,
               board_host=board_host)
     # страницы по шагам работы (pages/); общие помощники страниц — в cx, их берут и другие страницы
-    for module in (home, competition, preapps, admission, awards, contracts, results, start, board, verify):
+    for module in (home, competition, preapps, admission, awards, contracts, results, start, board, verify,
+                   update_pages):
         module.register(app, cx)
 
     # ------------------------------------------------------------ ошибки

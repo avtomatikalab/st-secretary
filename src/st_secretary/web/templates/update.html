@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Новая версия {{ rel.version }} — СТ-Секретарь{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Новая версия {{ rel.version }}</h1>
+    <p class="lead">У вас версия {{ current }}.{% if rel.published %} Новая выпущена {{ rel.published.strftime("%d.%m.%Y") }}.{% endif %}
+      Обновляйте между соревнованиями, а не во время них.</p>
+  </div>
+  <a class="btn btn-ghost" href="/">{{ icon("back") }}Все соревнования</a>
+</div>
+
+{% set st = installer.state if installer else "idle" %}
+<div class="panel" id="upd" data-state="{{ st }}" data-version="{{ rel.version }}">
+  {% if can_install %}
+  <div data-upd-show="idle error">
+    <h2>Обновить сейчас</h2>
+    <ol class="upd-steps">
+      <li>Программа сделает резервную копию соревнований, где что-то менялось.</li>
+      <li>Скачает новую версию с GitHub (около {{ (rel.asset_size / 2**20)|round|int }} МБ) и проверит, что архив
+        скачался без ошибок.</li>
+      <li>Перезапустится — эта страница сама откроет новую версию. Чёрное окно не закрывайте.</li>
+    </ol>
+    <p class="muted">Соревнования, резервные копии и документы участников обновление не трогает. Прежняя версия
+      сохранится в папке «program.old» рядом с «СТ-Секретарь.bat» — на случай, если понадобится вернуться.</p>
+    <p class="text-err" data-upd-error>{% if installer.error %}Не получилось: {{ installer.error }}.{% endif %}</p>
+    <form method="post" action="/update/install" data-busy="Начинаю…">
+      <button class="btn btn-primary btn-big" type="submit">{{ icon("download") }}<span>Обновить до {{ rel.version }}</span></button>
+    </form>
+  </div>
+  <div data-upd-show="backup download unpack ready restart" hidden>
+    <h2 data-upd-title>Обновляю…</h2>
+    <div class="upd-bar"><div data-upd-bar></div></div>
+    <p class="muted" data-upd-text>Не закрывайте чёрное окно программы.</p>
+  </div>
+  {% elif portable %}
+  <h2>Как обновить</h2>
+  <p>Скачайте архив со страницы выпуска и распакуйте его в ту же папку, где лежит «СТ-Секретарь.bat», согласившись
+    заменить файлы (подробно — в файле «Прочтите меня»). Папки «данные» и «Резервные копии» останутся как были.</p>
+  <p><a class="btn btn-primary" href="{{ rel.page }}" target="_blank" rel="noopener">{{ icon("download") }}Страница выпуска на GitHub</a></p>
+  {% else %}
+  <h2>Как обновить</h2>
+  <p>Программа запущена из исходного кода. Закройте её, обновите исходники (<code>git pull</code>) и запустите снова —
+    библиотеки подтянутся сами. Переносная версия для Windows — на
+    <a href="{{ rel.page }}" target="_blank" rel="noopener">странице выпуска</a>.</p>
+  {% endif %}
+</div>
+
+{% if rel.notes %}
+<div class="panel">
+  <h2>Что нового</h2>
+  <div class="upd-notes">{{ rel.notes }}</div>
+  <p><a href="{{ rel.page }}" target="_blank" rel="noopener">Страница выпуска на GitHub</a></p>
+</div>
+{% endif %}
+{% endblock %}

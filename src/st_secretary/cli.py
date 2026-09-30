@@ -206,6 +206,16 @@ def _auto_backup(store, data: Path) -> None:
         print(f"Резервная копия при запуске не сделана: {e}")
 
 
+def _check_updates(app) -> None:
+    """Есть ли новая версия на GitHub (в фоне; без интернета — молча ничего)."""
+    from st_secretary import updates
+
+    app.state.update = updates.check()
+    app.state.update_state = "done"
+    if app.state.update:
+        print(f"Вышла новая версия СТ-Секретаря — {app.state.update.version}. Подробнее — на главной странице.")
+
+
 def cmd_web(a) -> int:
     loading = Loading("Загружаю программу").start()  # первая загрузка библиотек бывает небыстрой
     try:
@@ -229,6 +239,9 @@ def cmd_web(a) -> int:
         data = Path(a.data).resolve()
         data.mkdir(parents=True, exist_ok=True)
         port = _free_port(a.port)
+        # после обновления программу перезапускает «СТ-Секретарь.bat»: страница в браузере уже открыта и сама
+        # перейдёт на новую версию — второй вкладки не нужно (если порт тот же)
+        no_browser = a.no_browser or (bool(os.environ.get("ST_NO_BROWSER")) and port == a.port)
         url = f"http://{HOST}:{port}/"
         servers: list = []  # сервер создаётся после приложения, а кнопке «Выключить» нужен именно он
         app = create_app(data, shutdown=lambda: setattr(servers[0], "should_exit", True), docs_dir=a.docs)
@@ -250,15 +263,23 @@ def cmd_web(a) -> int:
             print()
             print("Это окно — сама программа: пока оно открыто, страница в браузере работает.")
             print("Выключить программу: кнопка «Выключить» вверху страницы или просто закройте это окно.")
-            if not a.no_browser:
+            if not no_browser:
                 webbrowser.open(url)
 
         threading.Thread(target=announce_when_ready, daemon=True).start()
         threading.Thread(target=_auto_backup, args=(app.state.store, data), daemon=True).start()
+        if not (a.no_update_check or os.environ.get("ST_NO_UPDATE_CHECK")):
+            app.state.update_state = "pending"
+            threading.Thread(target=_check_updates, args=(app,), daemon=True).start()
         server.run()
     finally:
         loading.stop()
     print()
+    if app.state.restart:
+        from st_secretary.updates import RESTART
+
+        print(f"Перезапускаю СТ-Секретарь — ставлю версию {app.state.installer.version}…")
+        return RESTART
     print("СТ-Секретарь выключен. Всё сохранено в папке с данными.")
     return 0
 
@@ -273,6 +294,8 @@ def main(argv=None) -> int:
                                                "«СТ-Секретарь — документы участников» в профиле пользователя, не в облаке)")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--no-browser", action="store_true", help="не открывать браузер автоматически")
+    p.add_argument("--no-update-check", action="store_true",
+                   help="не спрашивать GitHub при запуске, есть ли новая версия (или ST_NO_UPDATE_CHECK=1)")
     p.set_defaults(func=cmd_web)
     p = sub.add_parser("card-template", help="создать пустую карточку соревнования (xlsx)")
     p.add_argument("out")
