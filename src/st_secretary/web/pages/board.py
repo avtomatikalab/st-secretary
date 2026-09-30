@@ -127,6 +127,25 @@ def register(app, cx) -> None:
         return [{"fio": p.fio, "role": p.role, "phone": str(personal.get(p.key, {}).get("phone", ""))}
                 for p in sf.people(comp, f.contracts())]
 
+    HEAD_ROLES = ("главный судья", "главный секретарь", "заместитель главного", "начальник дистанции")
+
+    def contacts(f: CompFolder, comp) -> dict:
+        """«Связь» на телефоне судьи: ГСК с номерами (из личных данных) и судьи всех этапов — кто присылал с этапа
+        (номер с телефона, иначе из личных данных); этап без судьи — пусто."""
+        personal = store.personal()
+        people = sf.people(comp, f.contracts())
+        heads = [{"role": p.role, "fio": p.fio, "phone": str(personal.get(p.key, {}).get("phone", ""))} for p in people
+                 if p.role.lower().startswith(HEAD_ROLES)]
+        data = f.run_data()
+        stages = []
+        for z in comp.zachety:
+            zd = data.get("zachety", {}).get(z.key, {})
+            for s in pr.stages_of(zd):
+                w = (js.stage_judges(zd, s.id) or [{}])[0]
+                phone = w.get("phone") or str(personal.get(res.person_key(w.get("fio", "")), {}).get("phone", ""))
+                stages.append({"z": z.key, "id": s.id, "title": s.title, "fio": w.get("fio", ""), "phone": phone})
+        return {"heads": [h for h in heads if h["phone"]], "stages": stages}
+
     def judge_page(token: str) -> dict | None:
         found = judge_link(token)
         if found is None:
@@ -145,8 +164,8 @@ def register(app, cx) -> None:
                 "stage": {"title": stage.title, "kv": stage.kv_minutes,
                           "nv": pr.points_text(stage.nv_minutes) if stage.auto else "",
                           "wait_cut": stt.subtract_wait(zdata)},
-                "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams,
-                            "judges": judge_people(f, comp),
+                "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams, "zachet": z.key,
+                            "judges": judge_people(f, comp), "contacts": contacts(f, comp), "stage_id": stage.id,
                             "stage": {"kv": stage.kv_minutes, "cutoffs": True, "auto": auto,
                                       "wait_cut": stt.subtract_wait(zdata)},
                             "records": {file: {**rec, "file": file} for file, rec in log.items()}}}
@@ -165,7 +184,7 @@ def register(app, cx) -> None:
         _save_zachet(f, z.key, lambda zdata: out.update(js.merge(
             zdata, stage.id, records, files, device, now.isoformat(timespec="seconds"), mark, stage=stage,
             distance_cutoffs=tr.is_time_discipline(z), judge=payload.get("judge"))))
-        return {"saved": out.get("saved", []), "time": f"{now:%H:%M:%S}"}
+        return {"saved": out.get("saved", []), "time": f"{now:%H:%M:%S}", "contacts": contacts(f, comp)}
 
     app.state.board = BoardServer(create_board_app(board_list, board_data, judge_page, judge_receive), host=board_host)
 

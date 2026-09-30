@@ -64,6 +64,14 @@
   .who[hidden] { display: none; }
   select, input[type=tel] { width: 100%; min-height: 48px; font: inherit; font-size: 1.05rem; padding: 6px 10px;
     border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .contacts { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 0 0 10px; }
+  .contacts summary { font-weight: 600; cursor: pointer; padding: 6px 0; }
+  .contacts h3 { font-size: .85rem; color: var(--muted); margin: 10px 0 4px; font-weight: 600; }
+  .ct { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 6px 0;
+        border-top: 1px solid var(--line); font-size: .92rem; }
+  .ct a { white-space: nowrap; font-weight: 700; color: var(--accent); }
+  .ct .none { color: var(--muted); white-space: nowrap; }
+  .ct.mine { font-weight: 600; }
   .who .btn { margin-top: 10px; } .who .later { width: 100%; background: none; border: 0; color: var(--muted);
     font: inherit; padding: 10px; text-decoration: underline; }
 </style>
@@ -102,6 +110,10 @@
     в очередь, а время на этапе считается с прибытия (ожидание не вычитается — так настроен зачёт){% endif %}.
     {% if info.stage.nv %}Вносите только <b>технический штраф</b> (премию — со знаком минус): временной штраф по НВ программа
     добавит сама.{% endif %} Нет штрафа — ничего не вводите: при «Убыла» запишется 0.</p>
+  <details class="contacts" id="contacts"><summary>Связь: главный судья, судьи этапов</summary>
+    <div id="contacts-list"></div>
+    <p class="note">Номера — по мобильной сети, Wi-Fi ноутбука не нужен. Список обновляется, когда телефон отправляет записи.</p>
+  </details>
   <div class="filters" role="group" aria-label="Какие команды показывать">
     <button type="button" data-f="all" aria-pressed="true">Все <span class="cnt"></span></button>
     <button type="button" data-f="wait" aria-pressed="false">Не было <span class="cnt"></span></button>
@@ -228,6 +240,7 @@
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (x) {
         if (x.ok && x.j.ok) {
+          if (x.j.contacts) { st.contacts = x.j.contacts; renderContacts(); }
           Object.keys(sentAt).forEach(function (f) { if ((st.sent[f] || 0) < sentAt[f]) st.sent[f] = sentAt[f]; });
           st.lastSent = x.j.time; lastError = ""; save(); done = true;
           Object.keys(sentAt).forEach(function (f) { paint(f); });  // «✓ на ноутбуке» у отправленных команд
@@ -479,6 +492,32 @@
   document.getElementById("who-later").addEventListener("click", closeWho);
   showMe();
   if (!me || !me.fio) openWho();
+
+  // --- Связь: ГСК и судьи этапов с номерами — приходит с ноутбука и хранится на телефоне (работает без связи)
+  function tel(p) { return "tel:" + String(p).replace(/[^\d+]/g, ""); }
+  function renderContacts() {
+    var c = st.contacts || { heads: [], stages: [] };
+    var el = document.getElementById("contacts-list"); el.textContent = "";
+    function line(text, phone, mine, quiet) {
+      var d = document.createElement("div"); d.className = "ct" + (mine ? " mine" : "");
+      var s = document.createElement("span"); s.textContent = text; d.appendChild(s);
+      if (phone) { var a = document.createElement("a"); a.href = tel(phone); a.textContent = phone; d.appendChild(a); }
+      else if (!quiet) { var n = document.createElement("span"); n.className = "none"; n.textContent = "номер не указан"; d.appendChild(n); }
+      el.appendChild(d);
+    }
+    function head(t) { var h = document.createElement("h3"); h.textContent = t; el.appendChild(h); }
+    if (c.heads.length) { head("Главная судейская коллегия"); c.heads.forEach(function (x) { line(x.role + " — " + x.fio, x.phone); }); }
+    var zs = {}; c.stages.forEach(function (x) { zs[x.z] = 1; });
+    var many = Object.keys(zs).length > 1;
+    head("Судьи этапов");
+    c.stages.forEach(function (x) {
+      var mine = x.z === info.zachet && x.id === info.stage_id;
+      line((many ? x.z + " · " : "") + x.title + " — " + (x.fio || "судья не указан") + (mine ? " (ваш этап)" : ""),
+           x.fio ? x.phone : "", mine, !x.fio);
+    });
+  }
+  if (info.contacts) st.contacts = info.contacts;  // свежее с ноутбука при открытии страницы
+  renderContacts();
 
   updateHint(); counts(); save(); sync();
 })();

@@ -1421,3 +1421,31 @@ def test_judge_names_self_and_secretary_sees_who_and_phone(client, tmp_path, psr
     results = client.get(base(f) + "/results" + q).text
     assert f'title="С телефона судьи этапа: {chief.fio}, +7 999 111-22-33"' in results
     assert chief.fio not in TestClient(client.app.state.board.app).get("/").text  # на табло — нет
+
+
+def test_judge_phone_contacts_heads_and_stage_judges(client, tmp_path, psr_card):
+    """Правки.md, п. 14: на телефоне судьи — «Связь»: ГСК с номерами и судьи всех этапов (кто присылал с этапа);
+    этап без судьи — «судья не указан»; список обновляется с каждой отправкой."""
+    import json
+
+    from st_secretary import staff as sf
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    q = "?z=М/Ж_3"
+    client.post(base(f) + "/results/stages" + q, data={"st-0-tour": "Тур 1", "st-0-name": "Узлы",
+                                                       "st-1-tour": "Тур 1", "st-1-name": "Бивак"})
+    client.post(base(f) + "/judges/link" + q, data={"stage": "*"})
+    links = {v["stage"]: t for t, v in f.run_data()["judge_links"].items()}
+    chief = sf.people(psr_card, f.contracts())[0]
+    client.app.state.store.save_personal(chief.key, {"phone": "+7 913 000-00-01"})
+    phone = TestClient(client.app.state.board.app)
+    html = phone.get(f"/j/{links['s1']}").text
+    data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', html, re.DOTALL).group(1))
+    assert "Связь: главный судья, судьи этапов" in html and data["stage_id"] == "s1" and data["zachet"] == "М/Ж_3"
+    assert data["contacts"]["heads"] == [{"role": "Главный судья", "fio": chief.fio, "phone": "+7 913 000-00-01"}]
+    assert [(s["title"], s["fio"]) for s in data["contacts"]["stages"]] == [("Тур 1 · Узлы", ""), ("Тур 1 · Бивак", "")]
+    r = phone.post(f"/j/{links['s2']}/sync", json={"device": "т-2", "judge": {"fio": "Петров Пётр", "phone": "+7 900 1"},
+                                                   "records": [{"file": "Кедр.xlsx", "points": "3", "updated": 1}]})
+    stages = r.json()["contacts"]["stages"]
+    assert (stages[1]["fio"], stages[1]["phone"]) == ("Петров Пётр", "+7 900 1") and stages[0]["fio"] == ""
