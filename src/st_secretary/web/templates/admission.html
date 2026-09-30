@@ -85,8 +85,17 @@
 </div>
 <p class="filter-empty muted" hidden>Таких команд сейчас нет.</p>
 
+<p class="adm-view">Показать: {% if by_delegation %}<a href="{{ base }}/admission">по порядку заявок</a> · <b>по делегациям</b>
+  {% else %}<b>по порядку заявок</b> · <a href="{{ base }}/admission?by=delegation">по делегациям</a>{% endif %}
+  <span class="muted">(делегация — территория и представитель в заявке)</span></p>
 <section data-team-list aria-label="Команды">
+{% if by_delegation %}{% for d in delegations %}
+<div class="adm-deleg"><h3>{{ d.territory }}{% if d.representative %} · {{ d.representative }}{% endif %}</h3>
+  <span class="muted">{{ d.teams|length }} {{ "команда" if d.teams|length == 1 else "команды" if d.teams|length < 5 else "команд" }}{% if d.fee_due %} · взнос {{ "{:,}".format(d.fee_due).replace(",", " ") }} ₽, оплачено {{ "{:,}".format(d.fee_paid).replace(",", " ") }} ₽{% endif %}</span></div>
+{% for t in d.teams %}{% include "_admission_team.html" %}{% endfor %}
+{% endfor %}{% else %}
 {% for t in teams %}{% include "_admission_team.html" %}{% endfor %}
+{% endif %}
 </section>
 {% endif %}
 {% endblock %}

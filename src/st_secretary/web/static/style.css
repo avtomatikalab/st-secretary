@@ -708,3 +708,9 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
   padding: 0 0 0 8px; border: 1px solid var(--line); border-radius: 999px; }
 .own-values.own-hidden { display: none; }
 
+/* Комиссия «по делегациям» */
+.adm-view { margin: 0 0 10px; }
+.adm-deleg { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin: 18px 0 6px;
+  padding: 8px 12px; border-left: 4px solid var(--primary); background: var(--primary-soft); border-radius: 8px; }
+.adm-deleg h3 { margin: 0; font-size: 1.05rem; }
+

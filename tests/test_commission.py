@@ -221,3 +221,22 @@ def test_unreviewed_application_needs_commission_decision_with_basis(tmp_path, p
     les = run({"Лесовики.xlsx": True})
     assert les.persons[0].status == ADMITTED
     assert without_check([les])[-1].startswith("Иванов Пётр Сергеевич («Лесовики») — допущен решением комиссии")
+
+
+def test_person_documents_marked_once_count_in_all_his_teams(tmp_path, psr_card):
+    """Правки.md, п. 20: один человек (ФИО + дата рождения) в двух командах — документы отмечают один раз, в любой;
+    тёзка с другой датой рождения — другой человек."""
+    kedr = make_application(tmp_path / "Кедр.xlsx", "Кедр", "Красноярск", "Иванов Пётр Сергеевич", "89130000000", 3, [
+        ["Кедр", "Красноярск", "Иванов Пётр Сергеевич", "Иванов Пётр Сергеевич", "17.10.1989", "II", "м", "М/Ж", 3],
+        ["Кедр", "Красноярск", "Иванов Пётр Сергеевич", "Кузьмин Олег Игоревич", "01.01.1990", "б/р", "м", "М/Ж", 3],
+        ["Кедр", "Красноярск", "Иванов Пётр Сергеевич", "Белова Ирина Петровна", "03.07.1999", "III", "ж", "М/Ж", 3],
+    ])
+    result = process(apps(tmp_path) + [read_preapplication(kedr)], psr_card)
+    files = ["Лесовики.xlsx", "Сосна.xlsx", "Кедр.xlsx"]
+    data = {"teams": {"Лесовики.xlsx": all_docs(LES)}}  # у «Лесовиков» всё отмечено
+    teams = {t.file: t for t in evaluate(result, files, psr_card, data)}
+    ivanov, kuzmin, belova = teams["Кедр.xlsx"].persons
+    assert all(ivanov.docs.values()) and set(ivanov.shared_docs) == set(ALL_DOCS)
+    assert ivanov.shared_docs["med"] == "Лесовики" and not ivanov.missing
+    assert not any(kuzmin.docs.values())  # Кузьмин Олег Игоревич 01.01.1990 — не тот, что в «Лесовиках» (1960)
+    assert not any(belova.docs.values())  # Белова Ирина Петровна есть в «Сосне», но там ничего не отмечено

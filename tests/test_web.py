@@ -1557,3 +1557,14 @@ def test_unofficial_card_remembers_own_values_on_this_computer(client, psr_card)
     assert store.own_values()["disciplines"] == [] and store.own_values()["groups"] == ["СЕМЬИ"]
     store.remember_own(replace(psr_card, zachety=[Zachet("НОВЫЕ", 1, "0840161811Я")]))  # официальные — не запоминаем
     assert "НОВЫЕ" not in store.own_values()["groups"]
+
+
+def test_admission_by_delegation_view(client, tmp_path, psr_card):
+    """Правки.md, п. 20: комиссия «по делегациям» — команды одной территории и представителя подряд, их взнос."""
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    page = client.get(base(f) + "/admission?by=delegation").text
+    assert "<b>по делегациям</b>" in page and page.count('class="adm-deleg"') == 2
+    assert "Красноярск · Лебедев Антон Игоревич" in page and "1 команда" in page
+    assert "по делегациям</a>" in client.get(base(f) + "/admission").text

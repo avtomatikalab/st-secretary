@@ -72,6 +72,26 @@ def required_docs(data: dict) -> tuple[list[Doc], list[Doc]]:
     return [d for d in PERSON_DOCS if d.key in s["docs"]], [d for d in TEAM_DOCS if d.key in s["team_docs"]]
 
 
+def person_id(e: Entry) -> str:
+    """Один человек в разных командах: ФИО + дата (или год) рождения (Правки, п. 20)."""
+    born = e.birth.isoformat() if e.birth else str(e.birth_year or "")
+    return f"{person_key(e.name.full)}|{born}"
+
+
+def docs_by_person(result: PreappResult, files: list[str], data: dict) -> dict[str, dict[str, str]]:
+    """Где у человека отмечены документы: {человек: {документ: файл заявки}} — по всем командам соревнования."""
+    teams = {t.source: t for t in result.teams}
+    out: dict[str, dict[str, str]] = {}
+    for file in files:
+        team = teams.get(file)
+        people = data.get("teams", {}).get(file, {}).get("people", {})
+        for e in (team.entries if team else []):
+            for k, v in people.get(person_key(e.name.full), {}).get("docs", {}).items():
+                if v:
+                    out.setdefault(person_id(e), {}).setdefault(k, file)
+    return out
+
+
 def reentry_added(reentries: list[dict]) -> set[str]:
     """Кого включили в заявку перезаявкой (ключи ФИО) — в заявке с печатью врача их не было."""
     out: set[str] = set()
@@ -109,6 +129,7 @@ class PersonCheck:
     decision: str = ""  # решение комиссии: "", ADMITTED, REJECTED
     reason: str = ""  # причина недопуска или основание решения
     auto_docs: set[str] = field(default_factory=set)  # отмечены сами: мед. допуск — по допуску врача в заявке
+    shared_docs: dict[str, str] = field(default_factory=dict)  # отмечены у этого человека в другой команде: док → команда
 
     @property
     def label(self) -> str:
@@ -204,6 +225,7 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
     reviewed — отметил ли секретарь заявку «Проверено» (None — не учитывать): без этого команда сама не допускается."""
     pdocs, tdocs = required_docs(data)
     teams = {t.source: t for t in result.teams}
+    marked = docs_by_person(result, files, data)  # документы человека отмечают один раз — в любой его команде
     by_source: dict[str, list[Issue]] = {}
     for i in result.issues:
         by_source.setdefault(i.source, []).append(i)
@@ -220,12 +242,16 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
             docs = {d.key: bool(pm.get("docs", {}).get(d.key)) for d in pdocs}
             auto = {MED} if MED in docs and not docs[MED] and doctor_covers(m, key, pdocs, tdocs) else set()
             docs |= dict.fromkeys(auto, True)
+            elsewhere = marked.get(person_id(e), {})
+            shared = {d.key: teams[elsewhere[d.key]].team for d in pdocs if not docs[d.key]
+                      and elsewhere.get(d.key, file) != file and elsewhere[d.key] in teams}
+            docs |= dict.fromkeys(shared, True)
             # «проверено» на предзаявках снимает сомнение в данных (ФИО, территория), но не решает допуск:
             # возраст младше, чем в Положении, — только решением ГСК на комиссии
             waiting = [i for i in mine if i.severity == WARNING or (i.severity == CHECKED and i.field in DECIDED_HERE)]
             p = PersonCheck(e, key, PENDING, docs, [d for d in pdocs if not docs[d.key]],
                             [i for i in mine if i.severity == ERROR], waiting,
-                            pm.get("decision", ""), pm.get("reason", ""), auto)
+                            pm.get("decision", ""), pm.get("reason", ""), auto, shared)
             if p.decision == REJECTED:
                 p.status = REJECTED
             elif p.errors:

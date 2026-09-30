@@ -66,8 +66,22 @@ def register(app, cx) -> None:
                 "base": _base(f), "docs_n": {p.name: len(store.team_docs(f, p.name)) for p in f.preapp_files()},
                 "gear_on": bool(eq.settings(f.equipment())["items"])}
 
+    def delegations(teams: list) -> list[dict]:
+        """Делегации — пока по территории и представителю (Правки, п. 20, решение 040): кто, команды, взнос."""
+        out: dict[tuple, dict] = {}
+        for t in teams:
+            if not t.team:
+                continue
+            k = (t.team.territory, t.team.representative)
+            d = out.setdefault(k, {"territory": k[0] or "территория не указана", "representative": k[1], "teams": [],
+                                   "fee_due": 0, "fee_paid": 0})
+            d["teams"].append(t)
+            d["fee_due"] += t.fee_due
+            d["fee_paid"] += t.fee_paid
+        return sorted(out.values(), key=lambda d: (-len(d["teams"]), d["territory"]))
+
     @app.get("/c/{cid}/admission")
-    def admission_page(request: Request, cid: str):
+    def admission_page(request: Request, cid: str, by: str = ""):
         f = folder(cid)
         ctx = comp_ctx(f)
         comp = ctx["comp"]
@@ -77,6 +91,7 @@ def register(app, cx) -> None:
             data, teams = commission(f, comp)
         return page(request, "admission.html", active="admission", blocked=blocked, teams=teams,
                     totals=adm_totals(teams), all_person_docs=cm.PERSON_DOCS, all_team_docs=cm.TEAM_DOCS,
+                    by_delegation=by == "delegation", delegations=delegations(teams),
                     **{**ctx, **adm_parts(f, data)})
 
     @app.post("/c/{cid}/admission/team")
@@ -93,6 +108,8 @@ def register(app, cx) -> None:
         everything = form.get("do") == "all_docs"  # «Отметить все документы»
         # мед. допуск, стоявший сам по допуску врача в заявке, — не отметка секретаря: сняли — врач не допустил
         keys = [str(form.get(k)) for k in form if re.fullmatch(r"p-\d+-key", k)]
+        _, before = commission(f, comp)
+        shared = {p.key: set(p.shared_docs) for t in before if t.file == path.name for p in t.persons}
         auto_med = {key for key in keys if cm.doctor_covers(tm, key, pdocs, tdocs)
                     and not tm.get("people", {}).get(key, {}).get("docs", {}).get(cm.MED)}
         tm["team_docs"] = {**tm.get("team_docs", {}),
@@ -114,6 +131,8 @@ def register(app, cx) -> None:
                 if not posted[cm.MED]:
                     pm["med_off"] = True  # врач участника не допустил — сама галочка больше не ставится
                 posted[cm.MED] = False  # стоит сама, пока у команды «Допуск врача»; сняли его — уйдёт
+            for d in shared.get(key, ()):  # отмечено у этого человека в другой команде — там и снимается
+                posted.pop(d, None)
             pm["docs"] = {**pm.get("docs", {}), **posted}
             decision = str(form.get(f"p-{i}-decision", ""))
             pm["decision"] = decision if decision in (cm.ADMITTED, cm.REJECTED) else ""
