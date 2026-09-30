@@ -34,6 +34,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
+        target: [native]
+        include:  # Mac с процессором Intel: сборка x86_64 на Mac с Apple M — через Rosetta
+          - os: macos-latest
+            target: macos-x86_64
     runs-on: ${{ matrix.os }}
     env:
       UV_PYTHON: "3.12"
@@ -42,7 +46,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - name: Сборка
-        run: uv run --frozen python tools/build_portable.py build --target native
+        run: |
+          softwareupdate --install-rosetta --agree-to-license 2>/dev/null || true
+          uv run --frozen python tools/build_portable.py build --target ${{ matrix.target }}
+        shell: bash
       - name: Проверка архива
         shell: bash
         run: uv run --frozen python tools/check_portable.py build/st-secretary-windows.zip build/st-secretary-macos-*.tar.gz build/st-secretary-linux-*.tar.gz
