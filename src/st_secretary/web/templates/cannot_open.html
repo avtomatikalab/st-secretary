@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Открыть не получилось — СТ-Секретарь{% endblock %}
+{% block content %}
+<div class="panel panel-err">
+  <h1>{{ icon("alert") }} Открыть не получилось</h1>
+  {% if is_dir %}
+  <p>Программа не смогла открыть {{ what }} на этом компьютере. {{ hint }}</p>
+  {% else %}
+  <p>На этом компьютере нет программы, которая открывает {{ what }}. Сам файл готов и сохранён — открыть его
+    просто нечем. {{ hint }}</p>
+  {% endif %}
+  <p><code>{{ path }}</code></p>
+  <div class="upd-actions">
+    {% if not is_dir %}<a class="btn btn-primary" href="/open-failed/{{ token }}"{% if path.suffix|lower == ".pdf" %} target="_blank" rel="noopener"{% endif %}>{{ icon("download") }}Скачать «{{ path.name }}»</a>{% endif %}
+    <a class="btn btn-ghost" href="{{ back }}">{{ icon("back") }}Вернуться</a>
+  </div>
+  {% if reason %}<p class="muted">Ответ системы: {{ reason }}</p>{% endif %}
+</div>
+{% endblock %}

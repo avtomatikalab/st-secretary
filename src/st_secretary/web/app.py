@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import secrets
 import threading
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException
@@ -20,7 +23,18 @@ from st_secretary.competition import LEVEL_LABELS
 from st_secretary.importers.card_xlsx import CardError
 from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, WARNING, Issue
 from st_secretary.textclean import from_years
-from st_secretary.web.common import HERE, _base, _flash, _fmt_date, _step_url, log, open_in_os, team_anchor
+from st_secretary.web.common import (
+    HERE,
+    CannotOpen,
+    _base,
+    _flash,
+    _fmt_date,
+    _step_url,
+    cannot_open_text,
+    log,
+    open_in_os,
+    team_anchor,
+)
 from st_secretary.web.forms import empty_zachet
 from st_secretary.web.pages import (
     admission,
@@ -103,6 +117,29 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         module.register(app, cx)
 
     # ------------------------------------------------------------ ошибки
+
+    failed_opens: dict[str, Path] = {}  # код → файл, который не открылся (скачать через браузер)
+
+    @app.exception_handler(CannotOpen)
+    async def cannot_open(request: Request, exc: CannotOpen):
+        """Кнопка «Открыть», а открыть нечем: сказать это прямо и дать скачать файл (он уже сохранён)."""
+        log.warning("Не открылся %s: %s", exc.path, exc.reason)
+        token = secrets.token_urlsafe(12)
+        failed_opens[token] = exc.path
+        while len(failed_opens) > 50:
+            failed_opens.pop(next(iter(failed_opens)))
+        ref = urlsplit(request.headers.get("referer", ""))
+        back = (ref.path + (f"?{ref.query}" if ref.query else "")) if ref.path.startswith("/") else "/"
+        return page(request, "cannot_open.html", status_code=200, path=exc.path, reason=exc.reason, back=back,
+                    token=token, is_dir=exc.path.is_dir(), **cannot_open_text(exc.path))
+
+    @app.get("/open-failed/{token}")
+    def open_failed_download(token: str):
+        path = failed_opens.get(token)
+        if path is None or not path.is_file():
+            raise HTTPException(404)
+        inline = path.suffix.lower() == ".pdf"  # PDF браузер покажет сам
+        return FileResponse(path, filename=path.name, content_disposition_type="inline" if inline else "attachment")
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException):

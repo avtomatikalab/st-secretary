@@ -1,4 +1,4 @@
-"""Общее для страниц программы: адреса, переадресации, сообщения «Готово…», открыть файл в Windows."""
+"""Общее для страниц программы: адреса, переадресации, сообщения «Готово…», открыть файл программой системы."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -32,14 +33,59 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-def open_in_os(path: Path) -> None:
-    """Открыть файл или папку программой по умолчанию (Excel, Проводник)."""
-    if sys.platform.startswith("win"):
-        os.startfile(path)  # noqa: S606 — путь всегда внутри папки данных
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", str(path)])
-    else:
-        subprocess.Popen(["xdg-open", str(path)])
+OPEN_WAIT = 5  # секунд ждать ответа open / xdg-open: нашлась ли программа (обычно отвечают сразу)
+
+
+class CannotOpen(Exception):
+    """На этом компьютере нечем открыть файл или папку; reason — что ответила система."""
+
+    def __init__(self, path: Path, reason: str = ""):
+        super().__init__(f"{path}: {reason}")
+        self.path, self.reason = Path(path), reason
+
+
+def open_in_os(path: Path, system_name: str = sys.platform, popen=subprocess.Popen, startfile=None) -> None:
+    """Открыть файл или папку программой по умолчанию (Excel, Word, Проводник, Finder).
+
+    Если открыть нечем (нет Excel/Numbers/LibreOffice для .xlsx, нет xdg-open в Linux) — CannotOpen: страница
+    объяснит это секретарю и даст скачать файл через браузер, а не скажет «Открываю…» впустую."""
+    try:
+        if system_name.startswith("win"):
+            (startfile or os.startfile)(path)  # нет программы для этого типа файлов — OSError (WinError 1155)
+            return
+        cmd = ["open", str(path)] if system_name == "darwin" else ["xdg-open", str(path)]
+        proc = popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    except OSError as e:
+        raise CannotOpen(path, str(e)) from e
+    try:
+        _, err = proc.communicate(timeout=OPEN_WAIT)
+    except subprocess.TimeoutExpired:  # программа запустилась и держит запуск — значит, открылось
+        threading.Thread(target=proc.wait, daemon=True).start()
+        return
+    if proc.returncode:  # macOS: kLSApplicationNotFoundErr; Linux: xdg-open 3/4 — нечем открыть
+        raise CannotOpen(path, (err or b"").decode("utf-8", "replace").strip())
+
+
+OPEN_KINDS = {  # тип файла → (как назвать, чем открыть: Windows, macOS, Linux)
+    ".xlsx": ("файлы Excel (.xlsx)", "Excel или LibreOffice", "Excel, Numbers или LibreOffice", "LibreOffice"),
+    ".xls": ("файлы Excel (.xls)", "Excel или LibreOffice", "Excel, Numbers или LibreOffice", "LibreOffice"),
+    ".docx": ("документы Word (.docx)", "Word или LibreOffice", "Word, Pages или LibreOffice", "LibreOffice"),
+    ".doc": ("документы Word (.doc)", "Word или LibreOffice", "Word, Pages или LibreOffice", "LibreOffice"),
+    ".pdf": ("файлы PDF", "программу для PDF", "программу для PDF", "программу для PDF"),
+}
+
+
+def cannot_open_text(path: Path, system_name: str = sys.platform) -> dict:
+    """Что сказать секретарю, если файл не открылся: какой это файл и что поставить."""
+    kind = OPEN_KINDS.get(path.suffix.lower())
+    col = 1 if system_name.startswith("win") else 2 if system_name == "darwin" else 3
+    if path.is_dir():
+        return {"what": "папку", "hint": "Откройте её вручную — путь ниже можно скопировать."}
+    if kind:
+        return {"what": kind[0], "hint": f"Установите {kind[col]} — или скачайте файл кнопкой ниже и откройте его "
+                                        "там, где такая программа есть (или на другом компьютере)."}
+    return {"what": f"файлы «{path.suffix or path.name}»",
+            "hint": "Скачайте файл кнопкой ниже и откройте его подходящей программой."}
 
 
 def _fmt_date(d) -> str:
