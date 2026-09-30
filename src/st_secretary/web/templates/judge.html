@@ -57,6 +57,15 @@
   .btn.off { opacity: .45; }
   .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
   .filters button .cnt { font-weight: 700; }
+  .me { padding: 8px 14px; font-size: .9rem; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .me button { background: none; border: 0; color: var(--accent); text-decoration: underline; font: inherit; padding: 4px; }
+  .who { background: var(--surface); border: 2px solid var(--accent); border-radius: 12px; padding: 12px; margin: 0 0 12px; }
+  .who h2 { font-size: 1.05rem; margin: 0 0 6px; }
+  .who[hidden] { display: none; }
+  select, input[type=tel] { width: 100%; min-height: 48px; font: inherit; font-size: 1.05rem; padding: 6px 10px;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .who .btn { margin-top: 10px; } .who .later { width: 100%; background: none; border: 0; color: var(--muted);
+    font: inherit; padding: 10px; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -69,9 +78,23 @@
   <h1>{{ info.stage.title }}</h1>
   <div class="sub">{{ info.title }} · зачёт {{ info.zachet }}{% if info.stage.nv %} · НВ {{ info.stage.nv }} мин{% endif %}{% if info.stage.kv %} · КВ этапа {{ info.stage.kv }} мин{% endif %}</div>
 </header>
+<div id="me" class="me"></div>
 <div id="status" class="ok" role="status" aria-live="polite">Загружаю…</div>
 <div id="qhint" class="qhint" role="status" aria-live="polite" hidden></div>
 <main>
+  <section id="who" class="who" hidden aria-labelledby="who-h">
+    <h2 id="who-h">Кто судит этап?</h2>
+    <p class="note">Один раз на этом телефоне — для всех этапов. Имя и номер уходят на ноутбук вместе с записями: главный
+      судья увидит, кто поставил штраф, и сможет позвонить.</p>
+    <label for="who-pick">Выберите себя из списка судей</label>
+    <select id="who-pick"></select>
+    <div id="who-other" hidden><label for="who-fio">Фамилия, имя, отчество</label>
+      <input type="text" id="who-fio" autocomplete="name"></div>
+    <label for="who-phone">Ваш телефон</label>
+    <input type="tel" id="who-phone" inputmode="tel" autocomplete="tel" placeholder="+7 …">
+    <button type="button" class="btn go" id="who-ok">Готово</button>
+    <button type="button" class="later" id="who-later">Позже</button>
+  </section>
   <p class="note">Всё записанное хранится в телефоне и уходит на ноутбук секретаря само, когда телефон в Wi-Fi.
     <b>Не закрывайте эту вкладку на дистанции</b>: без связи страница заново не откроется (записи при этом не пропадут).
     Время прибытия и убытия — по часам телефона; чтобы поправить время, нажмите на него. Если этап занят, у подошедшей
@@ -94,6 +117,9 @@
   "use strict";
   var info = JSON.parse(document.getElementById("data").textContent);
   var KEY = "st-judge:" + info.token, busy = false, filter = "all", lastError = "";
+  // кто судит — один раз на телефоне, для всех этапов (не по коду ссылки, как записи этапа)
+  var ME_KEY = "st-judge-me", me = null;
+  try { me = JSON.parse(localStorage.getItem(ME_KEY) || "null"); } catch (e) { me = null; }
   var device = localStorage.getItem("st-judge-device");
   if (!device) { device = "т-" + Math.random().toString(36).slice(2, 8); localStorage.setItem("st-judge-device", device); }
   var st;
@@ -196,7 +222,7 @@
     if (busy || !list.length) return;
     busy = true;
     // что именно уходит: пока идёт запрос, судья может ещё поменять запись — отправленной считать только эту версию
-    var body = JSON.stringify({ device: device, records: list }), sentAt = {}, done = false;
+    var body = JSON.stringify({ device: device, judge: me || {}, records: list }), sentAt = {}, done = false;
     list.forEach(function (r) { sentAt[r.file] = r.updated || 0; });
     fetch(info.sync_url, { method: "POST", headers: { "Content-Type": "application/json" }, body: body })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
@@ -400,6 +426,60 @@
   setInterval(sync, 15000);
   window.addEventListener("online", sync);
   window.addEventListener("beforeunload", function (e) { if (pending().length) { e.preventDefault(); e.returnValue = ""; } });
+  // --- Кто судит этап: выбор из списка судей соревнования или ФИО вручную; телефон подставляется, если известен
+  var judges = info.judges || [], who = document.getElementById("who"), pick = document.getElementById("who-pick");
+  var fioIn = document.getElementById("who-fio"), phoneIn = document.getElementById("who-phone");
+  function norm(s) { return String(s || "").toLowerCase().replace(/ё/g, "е").split(/\s+/).filter(Boolean).join(" "); }
+  function known(fio) { var k = norm(fio); return judges.filter(function (x) { return norm(x.fio) === k; })[0]; }
+  function showMe() {
+    var el = document.getElementById("me"), b = document.createElement("button");
+    el.textContent = "";
+    if (me && me.fio) {
+      el.appendChild(document.createTextNode("Судья: "));
+      var s = document.createElement("b"); s.textContent = me.fio + (me.phone ? ", " + me.phone : ""); el.appendChild(s);
+      b.textContent = "изменить";
+    } else { el.appendChild(document.createTextNode("Судья не указан —")); b.textContent = "указать"; }
+    b.type = "button"; b.addEventListener("click", openWho); el.appendChild(document.createTextNode(" ")); el.appendChild(b);
+  }
+  function listShown(on) {
+    box.hidden = !on; document.querySelector(".filters").hidden = !on;
+    if (on) counts(); else document.getElementById("empty").hidden = true;
+  }
+  function openWho() {
+    pick.textContent = "";
+    [["", "— выберите —"]].concat(judges.map(function (x) { return [x.fio, x.fio + (x.role ? " — " + x.role : "")]; }))
+      .concat([["*", "Нет в списке — впишу сам(а)"]]).forEach(function (o) {
+        var op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; pick.appendChild(op);
+      });
+    var k = me && me.fio ? known(me.fio) : null;
+    pick.value = k ? k.fio : (me && me.fio ? "*" : "");
+    fioIn.value = me && me.fio && !k ? me.fio : "";
+    phoneIn.value = me ? me.phone || "" : "";
+    document.getElementById("who-other").hidden = pick.value !== "*";
+    who.hidden = false; listShown(false);
+    window.scrollTo(0, 0);
+  }
+  function closeWho() { who.hidden = true; listShown(true); showMe(); }
+  pick.addEventListener("change", function () {
+    document.getElementById("who-other").hidden = pick.value !== "*";
+    if (pick.value === "*") { fioIn.focus(); return; }
+    var k = known(pick.value);
+    if (k && k.phone) phoneIn.value = k.phone;  // номер уже есть в программе — не спрашивать второй раз
+  });
+  document.getElementById("who-ok").addEventListener("click", function () {
+    var fio = (pick.value === "*" ? fioIn.value : pick.value).split(/\s+/).filter(Boolean).join(" ");
+    if (!fio) { window.alert("Выберите себя из списка или впишите фамилию, имя, отчество."); return; }
+    var phone = phoneIn.value.trim();
+    if (!phone && !window.confirm("Без телефона главный судья не сможет вам позвонить. Продолжить без номера?")) return;
+    me = { fio: fio, phone: phone };
+    try { localStorage.setItem(ME_KEY, JSON.stringify(me)); } catch (e) { /* без памяти — только на эту вкладку */ }
+    closeWho();
+    sync();
+  });
+  document.getElementById("who-later").addEventListener("click", closeWho);
+  showMe();
+  if (!me || !me.fio) openWho();
+
   updateHint(); counts(); save(); sync();
 })();
 </script>

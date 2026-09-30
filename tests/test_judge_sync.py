@@ -129,3 +129,22 @@ def test_leave_without_arrive_is_flagged():
     js.merge(z, "s1", [js.Record("Кедр.xlsx", "0", "", "10:12:00", updated=1)], FILES, "т", "2025-09-21T10:13:00")
     issues = js.judge_issues(z, stages_of(z), NAMES)
     assert any("убытие (10:12:00) без прибытия" in i.text and i.target == "cell:Кедр.xlsx:s1" for i in issues)
+
+
+def test_judge_name_and_phone_go_to_stage_journal():
+    """Правки.md, п. 12: судья указал себя на телефоне — ФИО и номер в журнале этапа у каждой записи; по этапу —
+    кто и когда был на связи; сменились судьи — видны оба."""
+    z = {"stages": [{"id": "s1", "name": "Узлы"}], "teams": {}}
+    ivan = {"fio": "Иванов  Иван Иванович", "phone": "+7 913 123-45-67", "лишнее": "x"}
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "5", updated=1)], {"Кедр.xlsx"}, "т-1", "2026-10-03T10:00:00",
+             judge=ivan)
+    rec = z["judge"]["s1"]["Кедр.xlsx"]
+    assert (rec["judge"], rec["judge_phone"]) == ("Иванов Иван Иванович", "+7 913 123-45-67")
+    assert js.who(rec) == "Иванов Иван Иванович, +7 913 123-45-67"
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "6", updated=2)], {"Кедр.xlsx"}, "т-2", "2026-10-03T12:00:00",
+             judge={"fio": "Петрова Анна", "phone": ""})
+    assert [w["fio"] for w in js.stage_judges(z, "s1")] == ["Петрова Анна", "Иванов Иван Иванович"]
+    assert js.who(z["judge"]["s1"]["Кедр.xlsx"]) == "Петрова Анна"
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "7", updated=3)], {"Кедр.xlsx"}, "т-3", "2026-10-03T12:05:00")
+    assert js.who(z["judge"]["s1"]["Кедр.xlsx"]) == "" and len(js.stage_judges(z, "s1")) == 2  # судья не указан
+    assert js.phone_same("+7 913 123-45-67", "89131234567") and not js.phone_same("+7 913 123-45-67", "")

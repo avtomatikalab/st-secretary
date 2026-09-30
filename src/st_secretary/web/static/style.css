@@ -688,3 +688,11 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .st-tbl tr.st-group td { background: var(--primary-soft); font-weight: 600; font-size: .88rem; padding-top: 6px;
   padding-bottom: 6px; }
 
+/* Телефоны судей этапов: кто судит, номер — ссылкой (с телефона — звонок), журнал этапа */
+.jd-who { font-size: .9rem; min-width: 180px; } .jd-who > div + div { margin-top: 6px; }
+.jd-tel { white-space: nowrap; font-weight: 600; }
+.jd-accept { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: 2px; font-size: .85rem; }
+.jd-logrow > td { padding-top: 0; }
+.jd-log summary { cursor: pointer; color: var(--muted); font-size: .88rem; }
+.jd-log .tbl { font-size: .85rem; margin-top: 6px; }
+

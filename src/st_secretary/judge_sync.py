@@ -17,10 +17,16 @@
   (сверх КВ или снята — МШ) считает программа и пишет в таблицу по тем же правилам.
 
 Ссылки — по случайному коду на этап: без кода с телефона ничего не изменить; код можно отозвать.
+
+Кто судит: судья указывает себя на телефоне (из списка судей соревнования или вписывает ФИО) и номер телефона —
+один раз, для всех этапов на этом телефоне. Имя и номер приходят с каждой отправкой и пишутся в журнал этапа рядом
+с записью; по этапу — кто и когда был на связи (если судьи сменились — видны оба). Хранится только в данных
+соревнования на ноутбуке; в личные данные судьи (для договоров) номер сам не записывается.
 """
 
 from __future__ import annotations
 
+import re
 import secrets
 from dataclasses import dataclass
 from fractions import Fraction
@@ -91,14 +97,43 @@ class Record:
                    clip(d.get("cutoff"), 12), clip(d.get("cut_on"), 8), clip(d.get("started"), 8))
 
 
+def judge_of(d) -> dict:
+    """Кто судит этап — как прислал телефон: {"fio", "phone"} (пробелы схлопнуты, длина ограничена); пусто — {}."""
+    if not isinstance(d, dict):
+        return {}
+    fio, phone = (" ".join(str(d.get(k) or "").split())[:n] for k, n in (("fio", 80), ("phone", 30)))
+    return {"fio": fio, "phone": phone} if fio or phone else {}
+
+
+def who(rec: dict) -> str:
+    """«Иванов Иван Иванович, +7 913 …» — кто прислал запись журнала этапа (пусто — судья себя не указал)."""
+    return ", ".join(x for x in (rec.get("judge"), rec.get("judge_phone")) if x)
+
+
+def stage_judges(zdata: dict, sid: str) -> list[dict]:
+    """Судьи, присылавшие с этапа (по телефонам): ФИО, телефон, когда последний раз на связи — свежие первыми."""
+    return sorted(zdata.get("judge_who", {}).get(sid, {}).values(), key=lambda w: str(w.get("last", "")),
+                  reverse=True)
+
+
+def phone_same(a: str, b: str) -> bool:
+    """Один и тот же номер: +7 913 123-45-67 = 89131234567 (сравниваются последние 10 цифр)."""
+    da, db = re.sub(r"\D", "", a or ""), re.sub(r"\D", "", b or "")
+    return bool(da) and da[-10:] == db[-10:]
+
+
 def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], device: str, received: str,
-          removal_mark: str = "", stage: Stage | None = None, distance_cutoffs: bool = True) -> dict:
+          removal_mark: str = "", stage: Stage | None = None, distance_cutoffs: bool = True,
+          judge: dict | None = None) -> dict:
     """Присланное с телефона → журнал этапа и таблица баллов. Возвращает {"saved": [файлы], "conflicts": n}.
     removal_mark — чем в таблице отмечается снятие с этапа («с» у спелео); пусто — снятие в таблицу не идёт (ПСР).
     stage с НВ и ВШ — в таблицу идёт итог техштраф + ВШ (stage_time); distance_cutoffs — отсечки этапов
     складываются в колонку «Отсечки» дистанции (спелео, пешеходные; в ПСР — нет; и нет, если ожидание очереди
-    в зачёте не вычитается)."""
+    в зачёте не вычитается); judge — кто судит этап (ФИО и телефон с телефона судьи)."""
+    judge = judge_of(judge)
     log = zdata.setdefault("judge", {}).setdefault(sid, {})
+    if judge and records:  # кто и когда был на связи с этого этапа
+        zdata.setdefault("judge_who", {}).setdefault(sid, {})[device] = {**judge, "device": device, "last": received}
     teams = zdata.setdefault("teams", {})
     saved, conflicts = [], 0
     for rec in records:
@@ -117,7 +152,8 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
         before = str(prev.get("points", "")).strip()
         log[rec.file] = {"points": rec.points, "arrive": rec.arrive, "leave": rec.leave, "removed": rec.removed,
                          "reason": rec.reason, "note": rec.note, "updated": rec.updated, "device": device,
-                         "received": received, "cutoff": rec.cutoff, "cut_on": rec.cut_on, "started": rec.started}
+                         "received": received, "cutoff": rec.cutoff, "cut_on": rec.cut_on, "started": rec.started,
+                         "judge": judge.get("fio", ""), "judge_phone": judge.get("phone", "")}
         saved.append(rec.file)
         if distance_cutoffs and stt.subtract_wait(zdata) and not merge_cutoffs(zdata, rec.file):
             conflicts += 1

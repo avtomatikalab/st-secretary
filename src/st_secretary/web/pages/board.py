@@ -9,6 +9,8 @@ from fastapi.responses import JSONResponse
 
 from st_secretary import judge_sync as js
 from st_secretary import psr_run as pr
+from st_secretary import results as res
+from st_secretary import staff as sf
 from st_secretary import stage_time as stt
 from st_secretary import start_list as sl
 from st_secretary import time_run as tr
@@ -119,6 +121,12 @@ def register(app, cx) -> None:
             return (f, comp, z, stage) if stage else None
         return None
 
+    def judge_people(f: CompFolder, comp) -> list[dict]:
+        """Судьи соревнования для выбора на телефоне: ФИО, должность, телефон (если есть в личных данных)."""
+        personal = store.personal()
+        return [{"fio": p.fio, "role": p.role, "phone": str(personal.get(p.key, {}).get("phone", ""))}
+                for p in sf.people(comp, f.contracts())]
+
     def judge_page(token: str) -> dict | None:
         found = judge_link(token)
         if found is None:
@@ -138,6 +146,7 @@ def register(app, cx) -> None:
                           "nv": pr.points_text(stage.nv_minutes) if stage.auto else "",
                           "wait_cut": stt.subtract_wait(zdata)},
                 "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams,
+                            "judges": judge_people(f, comp),
                             "stage": {"kv": stage.kv_minutes, "cutoffs": True, "auto": auto,
                                       "wait_cut": stt.subtract_wait(zdata)},
                             "records": {file: {**rec, "file": file} for file, rec in log.items()}}}
@@ -155,7 +164,7 @@ def register(app, cx) -> None:
         mark = "с" if tr.is_time_discipline(z) else ""  # спелео: снятие с этапа — «с» в клетке этапа
         _save_zachet(f, z.key, lambda zdata: out.update(js.merge(
             zdata, stage.id, records, files, device, now.isoformat(timespec="seconds"), mark, stage=stage,
-            distance_cutoffs=tr.is_time_discipline(z))))
+            distance_cutoffs=tr.is_time_discipline(z), judge=payload.get("judge"))))
         return {"saved": out.get("saved", []), "time": f"{now:%H:%M:%S}"}
 
     app.state.board = BoardServer(create_board_app(board_list, board_data, judge_page, judge_receive), host=board_host)
@@ -171,12 +180,26 @@ def register(app, cx) -> None:
         srv = app.state.board
         urls = srv.urls() if srv.running else []
         stages = []
+        staff_keys = {p.key for p in sf.people(comp, f.contracts())}
+        personal = store.personal()
+        names = {r.inp.file: r.inp.team for r in run.rows}
         for s in run.stages:
             t = js.stage_token(data, zz.key, s.id)
             link = f"{urls[0]}j/{t}" if t and urls else ""
-            stages.append({"s": s, "token": t, "link": link, "sum": js.stage_summary(zdata, s.id, len(run.rows))})
+            judges = []
+            for w in js.stage_judges(zdata, s.id):  # кто судит; номер не такой, как в личных данных, — принять
+                key = res.person_key(w.get("fio", ""))
+                known = str(personal.get(key, {}).get("phone", "")) if key in staff_keys else ""
+                judges.append({**w, "key": key if key in staff_keys else "", "known": known,
+                               "differs": key in staff_keys and bool(w.get("phone"))
+                               and not js.phone_same(w.get("phone", ""), known)})
+            log = sorted(((names.get(file, file), rec) for file, rec in zdata.get("judge", {}).get(s.id, {}).items()),
+                         key=lambda x: str(x[1].get("received", "")), reverse=True)
+            stages.append({"s": s, "token": t, "link": link, "sum": js.stage_summary(zdata, s.id, len(run.rows)),
+                           "judges": judges, "log": log})
         return page(request, "judges.html", active="judges", zachet=zz, zachety=comp.zachety, stages=stages,
                     running=srv.running, urls=urls, error=srv.error, zq=urlencode({"z": zz.key}), run=run,
+                    now_day=app.state.clock().date().isoformat(),
                     **comp_ctx(f))
 
     @app.post("/c/{cid}/judges/link")
@@ -198,6 +221,17 @@ def register(app, cx) -> None:
             f.save_run_data(data)
         done = "judge_revoked" if do == "revoke" else "judge_issued"
         return _redirect(f"{_base(f)}/judges?{urlencode({'z': zz.key, 'done': done})}")
+
+    @app.post("/c/{cid}/judges/accept-phone")
+    async def judges_accept_phone(request: Request, cid: str, z: str = ""):
+        """Номер, который судья указал на телефоне, — в личные данные судьи (для договоров и связи)."""
+        f = folder(cid)
+        comp = need_comp(f)
+        form = await request.form()
+        key, phone = str(form.get("key", "")), " ".join(str(form.get("phone", "")).split())[:30]
+        if key in {p.key for p in sf.people(comp, f.contracts())} and phone:
+            store.save_personal(key, {**store.personal().get(key, {}), "phone": phone})
+        return _redirect(f"{_base(f)}/judges?{urlencode({'z': z, 'done': 'judge_phone'})}")
 
     @app.post("/c/{cid}/judges/server")
     async def judges_server(request: Request, cid: str, z: str = ""):

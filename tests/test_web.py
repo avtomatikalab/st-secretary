@@ -1382,3 +1382,42 @@ def test_author_in_footer_quietly(client):
                                                                                "judges_print.html"))
     meta = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
     assert meta["project"]["authors"] == [{"name": "Udnikov Denis"}]
+
+
+def test_judge_names_self_and_secretary_sees_who_and_phone(client, tmp_path, psr_card):
+    """Правки.md, п. 12: на телефоне — список судей соревнования (номер подставляется, если известен); на странице
+    «Телефоны судей этапов» — кто судит, номер ссылкой tel:, журнал этапа; другой номер — «Принять номер»."""
+    import json
+
+    from st_secretary import staff as sf
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    q = "?z=М/Ж_3"
+    client.post(base(f) + "/results/stages" + q, data={"st-0-tour": "Тур 1", "st-0-name": "Узлы"})
+    client.post(base(f) + "/judges/link" + q, data={"stage": "s1"})
+    token = js_token(f)
+    store = client.app.state.store
+    chief = sf.people(psr_card, f.contracts())[0]
+    store.save_personal(chief.key, {"phone": "+7 913 000-00-01"})
+    phone = TestClient(client.app.state.board.app)
+    html = phone.get(f"/j/{token}").text
+    data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', html, re.DOTALL).group(1))
+    assert "Кто судит этап?" in html
+    assert {"fio": chief.fio, "role": "Главный судья", "phone": "+7 913 000-00-01"} in data["judges"]
+
+    phone.post(f"/j/{token}/sync", json={"device": "т-1", "judge": {"fio": chief.fio, "phone": "8 913 000 00 01"},
+                                         "records": [{"file": "Кедр.xlsx", "points": "5", "updated": 1}]})
+    page = client.get(base(f) + "/judges" + q).text
+    assert chief.fio in page and 'href="tel:89130000001"' in page and "судья указал другой номер" not in page
+    assert "Журнал этапа: кто что прислал (1)" in page
+    phone.post(f"/j/{token}/sync", json={"device": "т-2", "judge": {"fio": chief.fio, "phone": "+7 999 111-22-33"},
+                                         "records": [{"file": "Кедр.xlsx", "points": "6", "updated": 2}]})
+    page = client.get(base(f) + "/judges" + q).text
+    assert "судья указал другой номер (в личных данных +7 913 000-00-01)" in page
+    client.post(base(f) + "/judges/accept-phone" + q, data={"key": chief.key, "phone": "+7 999 111-22-33"})
+    assert store.personal()[chief.key]["phone"] == "+7 999 111-22-33"
+    assert client.get(base(f) + "/judges" + q).text.count("судья указал другой номер") == 1  # у прежней записи
+    results = client.get(base(f) + "/results" + q).text
+    assert f'title="С телефона судьи этапа: {chief.fio}, +7 999 111-22-33"' in results
+    assert chief.fio not in TestClient(client.app.state.board.app).get("/").text  # на табло — нет

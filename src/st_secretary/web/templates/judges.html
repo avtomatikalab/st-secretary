@@ -46,7 +46,7 @@
   </div>
   <div class="table-wrap">
   <table class="tbl jd-tbl">
-    <thead><tr><th>Этап</th><th>КВ</th><th>Ссылка</th><th>Прислано</th><th></th></tr></thead>
+    <thead><tr><th>Этап</th><th>КВ</th><th>Ссылка</th><th>Судья</th><th>Прислано</th><th></th></tr></thead>
     <tbody>
     {% for x in stages %}
     <tr>
@@ -55,6 +55,12 @@
       <td>{% if x.token %}{% if x.link %}<code class="jd-link">{{ x.link }}</code>{% else %}<span class="muted">код {{ x.token }} — адрес появится, когда включена раздача</span>{% endif %}
           <a class="jd-open" href="{{ base }}/judges/phone/{{ x.token }}" target="_blank" rel="noopener">открыть здесь</a>
           {% else %}<span class="muted">нет</span>{% endif %}</td>
+      <td class="jd-who">{% for w in x.judges %}<div><b>{{ w.fio or "без имени" }}</b>{% if w.phone %} <a class="jd-tel" href="tel:{{ w.phone|replace(' ', '')|replace('-', '') }}">{{ w.phone }}</a>{% endif %}
+          <span class="adm-sub">на связи в {{ w.last[11:16] }}{% if w.last[:10] != now_day %} {{ w.last[8:10] }}.{{ w.last[5:7] }}{% endif %}</span>
+          {% if w.differs %}<form method="post" action="{{ base }}/judges/accept-phone?{{ zq }}" class="jd-accept"><input type="hidden" name="key" value="{{ w.key }}"><input type="hidden" name="phone" value="{{ w.phone }}">
+            <span class="text-warn">судья указал другой номер{% if w.known %} (в личных данных {{ w.known }}){% else %} — в личных данных номера нет{% endif %}</span>
+            <button class="btn btn-small btn-ghost" type="submit">Принять номер</button></form>{% endif %}</div>
+        {% else %}<span class="muted">не указан</span>{% endfor %}</td>
       <td>{% if x.sum.teams %}{{ x.sum.teams }} из {{ x.sum.of }}<span class="adm-sub">в {{ x.sum.last[11:16] }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
       <td class="jd-act">
         <form method="post" action="{{ base }}/judges/link?{{ zq }}"{% if x.token %} data-confirm="Выдать новую ссылку этапу «{{ x.s.name }}»? Старая перестанет работать — судье нужно будет открыть новую."{% endif %}>
@@ -65,12 +71,22 @@
           <button class="btn btn-ghost btn-small" type="submit">Отозвать</button></form>{% endif %}
       </td>
     </tr>
+    {% if x.log %}<tr class="jd-logrow"><td colspan="6"><details class="jd-log"><summary>Журнал этапа: кто что прислал ({{ x.log|length }})</summary>
+      <table class="tbl"><thead><tr><th>Команда</th><th>Прибыла</th><th>Убыла</th><th>Баллы</th><th>Судья</th><th>Пришло</th></tr></thead><tbody>
+      {% for team, rec in x.log %}<tr><td>{{ team }}</td><td>{{ rec.arrive or "—" }}</td><td>{{ rec.leave or "—" }}</td>
+        <td>{{ rec.points or "—" }}{% if rec.removed %} · снята{% if rec.reason %}: {{ rec.reason }}{% endif %}{% endif %}{% if rec.note %}<span class="adm-sub">{{ rec.note }}</span>{% endif %}</td>
+        <td>{{ rec.judge or "не указан" }}{% if rec.judge_phone %} <a class="jd-tel" href="tel:{{ rec.judge_phone|replace(' ', '')|replace('-', '') }}">{{ rec.judge_phone }}</a>{% endif %}</td>
+        <td>{{ rec.received[11:16] }}</td></tr>{% endfor %}
+      </tbody></table></details></td></tr>{% endif %}
     {% endfor %}
     </tbody>
   </table>
   </div>
   <p class="hint">КВ этапа (для таймера на телефоне) задаётся в этапах дистанции на странице результатов. «Открыть здесь» —
-    страница судьи на ноутбуке: посмотреть, что видит судья, или внести за судью, если у него сел телефон.</p>
+    страница судьи на ноутбуке: посмотреть, что видит судья, или внести за судью, если у него сел телефон.
+    Судья указывает себя на телефоне при первом открытии ссылки (из списка судей в «Договорах и табеле» или вписывает
+    ФИО) и свой номер; имя и номер приходят с каждой отправкой — видно, кто поставил балл. Номер, который судья указал,
+    в личные данные сам не записывается — кнопка «Принять номер».</p>
   {% endif %}
 </section>
 
