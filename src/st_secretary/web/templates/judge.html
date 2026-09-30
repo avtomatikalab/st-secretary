@@ -25,7 +25,7 @@
     background: var(--surface); color: var(--text); font: inherit; font-size: .85rem; }
   .filters button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
   .team { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0 0 10px; }
-  .team[hidden] { display: none; }
+  .team[hidden], .cut[hidden], .cutsum[hidden] { display: none; }
   .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   .name { font-weight: 700; font-size: 1.1rem; } .num { color: var(--muted); font-weight: 600; margin-right: 6px; }
   .timer { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
@@ -75,7 +75,8 @@
   <p class="note">Всё записанное хранится в телефоне и уходит на ноутбук секретаря само, когда телефон в Wi-Fi.
     <b>Не закрывайте эту вкладку на дистанции</b>: без связи страница заново не откроется (записи при этом не пропадут).
     Время прибытия и убытия — по часам телефона; чтобы поправить время, нажмите на него. Если этап занят, у подошедшей
-    команды — «ждёт очереди»: время ожидания не входит во время на этапе.
+    команды — «ждёт очереди»: {% if info.stage.wait_cut %}время ожидания не входит во время на этапе{% else %}она встаёт
+    в очередь, а время на этапе считается с прибытия (ожидание не вычитается — так настроен зачёт){% endif %}.
     {% if info.stage.nv %}Вносите только <b>технический штраф</b> (премию — со знаком минус): временной штраф по НВ программа
     добавит сама.{% endif %} Нет штрафа — ничего не вводите: при «Убыла» запишется 0.</p>
   <div class="filters" role="group" aria-label="Какие команды показывать">
@@ -141,14 +142,17 @@
     el.textContent = "Этап свободен — ждёт «" + teamName(q[0]) + "» с " + st.records[q[0]].cut_on.slice(0, 5) +
       ": нажмите у неё «Начала этап»" + (q.length > 1 ? " (в очереди ещё " + (q.length - 1) + ")" : "") + ".";
   }
+  var WAITCUT = info.stage.wait_cut !== false;  // ожидание очереди вычитается из времени (настройка зачёта)
   function stageSecs(r) {  // время на этапе: убытие (или сейчас) − прибытие − отсечки (ожидание очереди)
     var a = secs(r.arrive); if (a === null) return null;
     var l = secs(r.leave), end = l === null ? nowSecs() : l, spent = end - a;
     if (spent < 0) {  // через полночь — только ночью (прибытие после 20:00, убытие до 06:00), иначе ошибка во времени
       if (a >= 72000 && end <= 21600) spent += 86400; else return NaN;
     }
-    spent -= durSecs(r.cutoff) || 0;
-    if (r.cut_on && l === null) spent -= since(r.cut_on);
+    if (WAITCUT) {
+      spent -= durSecs(r.cutoff) || 0;
+      if (r.cut_on && l === null) spent -= since(r.cut_on);
+    }
     return Math.max(0, spent);
   }
   function teamName(f) { var t = info.teams.filter(function (x) { return x.file === f; })[0]; return t ? t.team : f; }
@@ -239,7 +243,8 @@
       '<div class="times"><button type="button" class="btn go" data-act="arrive"></button>' +
       '<button type="button" class="btn" data-act="leave"></button></div>' +
       '<div class="queue" hidden><button type="button" class="btn" data-act="queue">Прибыла — ждёт очереди' +
-      '<small>этап занят: ожидание не войдёт во время на этапе</small></button></div>' +
+      '<small>' + (WAITCUT ? "этап занят: ожидание не войдёт во время на этапе" :
+        "этап занят: встанет в очередь, время — с прибытия") + '</small></button></div>' +
       '<div class="how" hidden></div><div class="moved" hidden></div>' +
       (info.stage.cutoffs ? '<div class="cut"><button type="button" class="btn" data-act="cut"></button>' +
         '<button type="button" class="cutsum" data-act="cutsum"></button></div>' : '') +
@@ -264,7 +269,9 @@
       if (r.leave) { editTime(f, "leave", "Время убытия"); return; }
       if (!r.arrive) { window.alert("Сначала отметьте «Прибыла»."); return; }
       var patch = { leave: clock(new Date()) };
-      if (r.cut_on) {  // всё ещё «ждёт очереди»: забыли «Начала этап»? спросить, иначе время на этапе будет 0
+      if (r.cut_on && !WAITCUT) {  // ожидание не вычитается — спрашивать нечего, просто закрыть его
+        patch.cut_on = ""; patch.cutoff = dur((durSecs(r.cutoff) || 0) + since(r.cut_on)); patch.started = patch.leave;
+      } else if (r.cut_on) {  // всё ещё «ждёт очереди»: забыли «Начала этап»? спросить, иначе время на этапе будет 0
         var prev = prevLeave(f, r.cut_on);
         var ans = window.prompt("«" + teamName(f) + "» всё ещё «ждёт очереди». Во сколько команда начала этап? " +
           "Время — чч:мм:сс" + (prev ? " (подставлено убытие предыдущей команды)" : "") +
@@ -331,6 +338,9 @@
       cb.classList.toggle("on", !!r.cut_on && !nextInLine(f));
       cb.classList.toggle("go", !!r.cut_on && !r.leave && nextInLine(f));
       c.querySelector('[data-act=cutsum]').textContent = "отсечки: " + (r.cutoff || "0:00");
+      // ожидание не вычитается: ручных отсечек нет, остаётся только «Начала этап» у ждущей очереди
+      c.querySelector(".cut").hidden = !WAITCUT && !r.cut_on;
+      c.querySelector('[data-act=cutsum]').hidden = !WAITCUT;
     }
     c.querySelector(".rm").checked = !!r.removed;
     c.querySelector(".why").hidden = !r.removed;

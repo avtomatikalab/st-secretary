@@ -129,3 +129,46 @@ def test_leave_before_arrive_is_a_typo_not_midnight():
     assert "s1" not in z["teams"]["Кедр.xlsx"]["points"]  # ни МШ, ни прежнего итога — пусто, пока не исправят
     issues = js.judge_issues(z, stages_of(z), {"Кедр.xlsx": "Кедр"})
     assert any("раньше прибытия" in i.text and i.target == "cell:Кедр.xlsx:s1" for i in issues)
+
+
+def test_waiting_not_subtracted_from_stage_time():
+    """Правки.md, п. 3: настройка зачёта «ожидание очереди — не вычитать»: время этапа — от прибытия до убытия;
+    смена настройки пересчитывает итоги программы, ручные итоги секретаря не трогает."""
+    rec = {"points": "10", "arrive": "10:00:00", "leave": "10:07:12", "cutoff": "1:00"}
+    assert stt.stage_seconds(rec) == 372 and stt.stage_seconds(rec, subtract_wait=False) == 432
+    z = zdata()
+    stage = stages_of(z)[0]
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "10", "10:00:00", "10:07:12", cutoff="1:00", updated=1),
+                       js.Record("Сосна.xlsx", "0", "10:10:00", "10:15:00", cutoff="2:00", updated=1)],
+             FILES, "телефон", "2026-10-03T10:20:00", stage=stage, distance_cutoffs=False)
+    assert z["teams"]["Кедр.xlsx"]["points"]["s1"] == "13"  # вычитать (по умолчанию): 6:12 — 72 с сверх НВ → 3
+    z["teams"]["Сосна.xlsx"]["points"]["s1"] = "7"  # у «Сосны» — ручное значение
+    z["wait_cut"] = "no"
+    stt.refresh(z, stage)
+    assert z["teams"]["Кедр.xlsx"]["points"]["s1"] == "15"  # 7:12 — 132 с сверх НВ → 5
+    assert z["teams"]["Сосна.xlsx"]["points"]["s1"] == "7"  # ручное не трогаем
+    assert js.stage_score_text(z, stage, "Кедр.xlsx").startswith("тех. 10 + время 5 = 15 (на этапе 7:12)")
+    forgot = {"points": "0", "arrive": "10:00:00", "leave": "10:20:00", "cutoff": "20:00", "started": "10:20:00"}
+    assert stt.score_for(z, stage, forgot).check == ""  # ожидание не вычитается — «Начала этап» не важно
+    z["wait_cut"] = "yes"
+    stt.refresh(z, stage)
+    assert z["teams"]["Кедр.xlsx"]["points"]["s1"] == "13"
+
+
+def test_waiting_not_subtracted_not_in_distance_cutoffs():
+    """Правки.md, п. 3: «не вычитать» — ожидание с телефонов не идёт в «Отсечки» дистанции (спелео, пешеходные);
+    переключили — колонка пересчитывается, вписанное секретарём остаётся."""
+    z = {"stages": [{"id": "s1", "name": "Колодец"}], "teams": {}, "wait_cut": "no"}
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "", "10:00:00", "10:20:00", cutoff="3:00", updated=1),
+                       js.Record("Сосна.xlsx", "", "10:05:00", "10:25:00", cutoff="2:00", updated=1)], FILES,
+             "телефон", "2026-10-03T10:30:00", removal_mark="с")
+    assert "cutoffs" not in z["teams"]["Кедр.xlsx"] and "cutoffs" not in z["teams"]["Сосна.xlsx"]
+    z["teams"]["Сосна.xlsx"]["cutoffs"] = "5:00"  # секретарь вписал своё
+    assert not any("отсечки" in i.text for i in js.judge_issues(z, stages_of(z), {}))  # не вычитается — не сверяем
+    z["wait_cut"] = "yes"
+    js.refresh_cutoffs(z)
+    assert z["teams"]["Кедр.xlsx"]["cutoffs"] == "3:00" and z["teams"]["Сосна.xlsx"]["cutoffs"] == "5:00"
+    assert any("отсечки с телефонов судей — 2:00" in i.text for i in js.judge_issues(z, stages_of(z), {}))
+    z["wait_cut"] = "no"
+    js.refresh_cutoffs(z)
+    assert "cutoffs" not in z["teams"]["Кедр.xlsx"] and z["teams"]["Сосна.xlsx"]["cutoffs"] == "5:00"

@@ -7,10 +7,11 @@
 но не больше ВШ; неполный интервал — за полный (по умолчанию) или не считается (настройка зачёта).
 
 Время на этапе = убытие − прибытие − отсечки (ожидание очереди на занятый этап) — с телефона судьи этапа или со
-страницы судьи, открытой на ноутбуке секретаря. Судья вносит только технический штраф (премию — со знаком
-минус); итог этапа = техштраф + ВШ программа кладёт в таблицу по тем же правилам, что баллы с телефона: клетка
-пустая или в ней прежний итог программы — пишется; секретарь вписал своё (протест) — не затирается, а на
-странице результатов видно расхождение.
+страницы судьи, открытой на ноутбуке секретаря. Ожидание очереди вычитается, если так настроен зачёт (по
+умолчанию — да; «не вычитать» — очередь на телефоне только задаёт порядок, время этапа — от прибытия до убытия).
+Судья вносит только технический штраф (премию — со знаком минус); итог этапа = техштраф + ВШ программа кладёт
+в таблицу по тем же правилам, что баллы с телефона: клетка пустая или в ней прежний итог программы — пишется;
+секретарь вписал своё (протест) — не затирается, а на странице результатов видно расхождение.
 """
 
 from __future__ import annotations
@@ -51,9 +52,15 @@ def times_problem(rec: dict) -> str:
     return f"убытие ({rec.get('leave')}) раньше прибытия ({rec.get('arrive')}) — проверьте время"
 
 
-def stage_seconds(rec: dict) -> int | None:
+def subtract_wait(zdata: dict) -> bool:
+    """Настройка зачёта: ожидание очереди на занятый этап вычитается из времени, как отсечка (по умолчанию). «wait_cut»
+    = «no» — не вычитается: ни из времени этапа (ПСР, НВ/КВ), ни в «Отсечки» дистанции (спелео, пешеходные)."""
+    return zdata.get("wait_cut") != "no"
+
+
+def stage_seconds(rec: dict, subtract_wait: bool = True) -> int | None:
     """Время на этапе, с: убытие − прибытие − отсечки (через полночь — только ночью); нет прибытия или убытия,
-    или убытие раньше прибытия — None."""
+    или убытие раньше прибытия — None. subtract_wait=False — ожидание очереди (отсечки) не вычитается."""
     a, b = clock_seconds(rec.get("arrive")), clock_seconds(rec.get("leave"))
     if a is None or b is None:
         return None
@@ -61,7 +68,7 @@ def stage_seconds(rec: dict) -> int | None:
     if d is None:
         return None
     try:
-        cut = parse_duration(rec.get("cutoff"))
+        cut = parse_duration(rec.get("cutoff")) if subtract_wait else Fraction(0)
     except ValueError:
         cut = Fraction(0)
     return max(0, int(d - cut))
@@ -87,9 +94,11 @@ class StageScore:
     check: str = ""
 
 
-def waiting_check(rec: dict) -> str:
+def waiting_check(rec: dict, subtract_wait: bool = True) -> str:
     """Команда «ждала очереди», а ожидание закрыли вместе с убытием: время на этапе 0 — похоже, судья забыл
-    «Начала этап». Пусто — проверять нечего."""
+    «Начала этап». Пусто — проверять нечего (и когда ожидание не вычитается — на время оно не влияет)."""
+    if not subtract_wait:
+        return ""
     try:
         cut = parse_duration(rec.get("cutoff"))
     except ValueError:
@@ -102,9 +111,9 @@ def waiting_check(rec: dict) -> str:
     return ""
 
 
-def score(stage: Stage, rec: dict, full_intervals: bool = True) -> StageScore:
+def score(stage: Stage, rec: dict, full_intervals: bool = True, subtract_wait: bool = True) -> StageScore:
     """Итог этапа из записи судьи: снята или сверх КВ — МШ; иначе техштраф + ВШ по времени на этапе."""
-    secs = stage_seconds(rec)
+    secs = stage_seconds(rec, subtract_wait)
     mx = stage.max_penalty
     over_kv = secs is not None and stage.kv_minutes is not None and secs > stage.kv_minutes * 60
     if rec.get("removed") or over_kv:
@@ -124,7 +133,12 @@ def score(stage: Stage, rec: dict, full_intervals: bool = True) -> StageScore:
     vsh = time_penalty(stage, secs, full_intervals)
     total = tech + vsh
     return StageScore(total, f"тех. {points_text(tech)} + время {points_text(vsh)} = {points_text(total)} "
-                             f"(на этапе {duration_text(Fraction(secs))})", secs, waiting_check(rec))
+                             f"(на этапе {duration_text(Fraction(secs))})", secs, waiting_check(rec, subtract_wait))
+
+
+def score_for(zdata: dict, stage: Stage, rec: dict) -> StageScore:
+    """Итог этапа по настройкам зачёта (неполный интервал ВШ, вычитать ли ожидание очереди)."""
+    return score(stage, rec, full_intervals(zdata), subtract_wait(zdata))
 
 
 def same_points(a: str, b: str) -> bool:
@@ -150,7 +164,7 @@ def refresh(zdata: dict, stage: Stage, files: list[str] | None = None) -> int:
         rec = log.get(file)
         if rec is None:
             continue
-        sc = score(stage, rec, full_intervals(zdata))
+        sc = score_for(zdata, stage, rec)
         t = teams.setdefault(file, {})
         cell = str(t.get("points", {}).get(stage.id, "")).strip()
         prev = str(t.get("auto", {}).get(stage.id, "")).strip()

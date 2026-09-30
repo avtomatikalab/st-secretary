@@ -135,9 +135,11 @@ def register(app, cx) -> None:
                  for r in sorted(run.rows, key=lambda r: r.start_order)]
         return {"title": comp.title, "zachet": z.key,
                 "stage": {"title": stage.title, "kv": stage.kv_minutes,
-                          "nv": pr.points_text(stage.nv_minutes) if stage.auto else ""},
+                          "nv": pr.points_text(stage.nv_minutes) if stage.auto else "",
+                          "wait_cut": stt.subtract_wait(zdata)},
                 "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams,
-                            "stage": {"kv": stage.kv_minutes, "cutoffs": True, "auto": auto},
+                            "stage": {"kv": stage.kv_minutes, "cutoffs": True, "auto": auto,
+                                      "wait_cut": stt.subtract_wait(zdata)},
                             "records": {file: {**rec, "file": file} for file, rec in log.items()}}}
 
     def judge_receive(token: str, payload: dict) -> dict | None:

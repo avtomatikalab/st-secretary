@@ -96,7 +96,8 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
     """Присланное с телефона → журнал этапа и таблица баллов. Возвращает {"saved": [файлы], "conflicts": n}.
     removal_mark — чем в таблице отмечается снятие с этапа («с» у спелео); пусто — снятие в таблицу не идёт (ПСР).
     stage с НВ и ВШ — в таблицу идёт итог техштраф + ВШ (stage_time); distance_cutoffs — отсечки этапов
-    складываются в колонку «Отсечки» дистанции (спелео, пешеходные; в ПСР — нет)."""
+    складываются в колонку «Отсечки» дистанции (спелео, пешеходные; в ПСР — нет; и нет, если ожидание очереди
+    в зачёте не вычитается)."""
     log = zdata.setdefault("judge", {}).setdefault(sid, {})
     teams = zdata.setdefault("teams", {})
     saved, conflicts = [], 0
@@ -114,7 +115,7 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
                          "reason": rec.reason, "note": rec.note, "updated": rec.updated, "device": device,
                          "received": received, "cutoff": rec.cutoff, "cut_on": rec.cut_on, "started": rec.started}
         saved.append(rec.file)
-        if distance_cutoffs and not merge_cutoffs(zdata, rec.file):
+        if distance_cutoffs and stt.subtract_wait(zdata) and not merge_cutoffs(zdata, rec.file):
             conflicts += 1
         if stage is not None and stage.auto:  # ПСР: итог этапа по НВ/КВ считает программа
             conflicts += stt.refresh(zdata, stage, [rec.file])
@@ -171,6 +172,21 @@ def merge_cutoffs(zdata: dict, file: str) -> bool:
         return False
 
 
+def refresh_cutoffs(zdata: dict) -> None:
+    """Настройку «ожидание очереди» поменяли: вычитать — отсечки с телефонов в колонку «Отсечки» (где пусто или
+    прежняя сумма с телефонов); не вычитать — убрать оттуда пришедшее с телефонов. Вписанное секретарём не трогаем."""
+    teams = zdata.setdefault("teams", {})
+    files = set(teams) | {f for log in zdata.get("judge", {}).values() for f in log}
+    for file in sorted(files):
+        if stt.subtract_wait(zdata):
+            merge_cutoffs(zdata, file)
+            continue
+        t = teams.get(file, {})
+        if str(t.get("cutoffs", "")).strip() and t.get("cutoffs") == t.get("cutoffs_phone"):
+            for k in ("cutoffs", "cutoffs_phone", "cutoffs_phone_new"):
+                t.pop(k, None)
+
+
 def _same(a: str, b: str) -> bool:
     try:
         return parse_points(a) == parse_points(b)
@@ -193,7 +209,7 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
             got = str(rec.get("points", "")).strip()
             when = str(rec.get("received", ""))[11:16]
             if st.auto:  # итог этапа — по техштрафу и времени; судья мог прислать только часть
-                sc = stt.score(st, rec, stt.full_intervals(zdata))
+                sc = stt.score_for(zdata, st, rec)
                 if sc.total is not None and cell and not _same(cell, points_text(sc.total)):
                     out.append(Issue(WARNING, f"«{team}», {st.title}: с телефона судьи {sc.text} ({when}), в таблице "
                                               f"{cell} — проверьте", team=team, target=f"cell:{file}:{sid}"))
@@ -213,13 +229,13 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
             bad_times = stt.times_problem(rec)
             if bad_times:
                 out.append(Issue(WARNING, f"«{team}», {st.title}: {bad_times}", team=team, target=f"cell:{file}:{sid}"))
-            wait = stt.waiting_check(rec)
+            wait = stt.waiting_check(rec, stt.subtract_wait(zdata))
             if wait:
                 out.append(Issue(WARNING, f"«{team}», {st.title}: {wait}", team=team, target=f"cell:{file}:{sid}"))
             if rec.get("removed"):
                 why = f": {rec['reason']}" if rec.get("reason") else ""
                 out.append(Issue(INFO, f"«{team}», {st.title}: судья этапа отметил снятие с этапа{why}", team=team))
-    for file, t in teams.items():
+    for file, t in teams.items() if stt.subtract_wait(zdata) else ():  # не вычитается — сверять нечего
         total = phone_cutoffs(zdata, file)
         cell = str(t.get("cutoffs", "")).strip()
         if total is None or not cell:
@@ -253,7 +269,7 @@ def from_phone(zdata: dict, sid: str, file: str, stage: Stage | None = None) -> 
     rec = zdata.get("judge", {}).get(sid, {}).get(file)
     cell = str(zdata.get("teams", {}).get(file, {}).get("points", {}).get(sid, "")).strip()
     if rec and cell and stage is not None and stage.auto:
-        sc = stt.score(stage, rec, stt.full_intervals(zdata))
+        sc = stt.score_for(zdata, stage, rec)
         return sc.total is not None and _same(cell, points_text(sc.total))
     return bool(rec and cell and _same(cell, str(rec.get("points", ""))))
 
@@ -263,4 +279,4 @@ def stage_score_text(zdata: dict, stage: Stage, file: str) -> str:
     rec = zdata.get("judge", {}).get(stage.id, {}).get(file)
     if not stage.auto or rec is None:
         return ""
-    return stt.score(stage, rec, stt.full_intervals(zdata)).text
+    return stt.score_for(zdata, stage, rec).text

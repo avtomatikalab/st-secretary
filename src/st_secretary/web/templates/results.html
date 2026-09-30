@@ -115,6 +115,9 @@
       {% endif %}
       <div class="field span-6"><label for="f-cut">Станции отсечек SPORTident (начало-конец)</label>
         <input id="f-cut" name="cutoff_pairs" type="text" value="{{ zdata.get('cutoff_pairs', '') }}" placeholder="31-32; 41-42"></div>
+      <div class="field span-6"><label for="f-wc">Ожидание очереди на этапе (телефон судьи)</label>
+        <select id="f-wc" name="wait_cut"><option value="yes">вычитать из времени (как отсечку)</option>
+          <option value="no"{% if zdata.get("wait_cut") == "no" %} selected{% endif %}>не вычитать (очередь — только порядок прохождения)</option></select></div>
     </div>
     <p class="hint">{% if prof == "speleo" %}Сейчас 1 балл = <b>{{ run.seconds_per_point }} с</b>: по Правилам 15 с при расчётном
       времени до 30 минут, иначе 30 с (часть 8, п. 6.4), если в Условиях не сказано иное. Время на дистанции больше КВ — место не
@@ -142,6 +145,9 @@
       <div class="field span-6"><label for="f-vr">Временной штраф: неполный интервал сверх НВ</label>
         <select id="f-vr" name="vsh_round"><option value="up">считать за полный (7 с сверх НВ — уже штраф)</option>
           <option value="down"{% if zdata.get("vsh_round") == "down" %} selected{% endif %}>не считать (штраф — за каждые полные … с)</option></select></div>
+      <div class="field span-6"><label for="f-wc">Ожидание очереди на этапе (телефон судьи)</label>
+        <select id="f-wc" name="wait_cut"><option value="yes">вычитать из времени (как отсечку)</option>
+          <option value="no"{% if zdata.get("wait_cut") == "no" %} selected{% endif %}>не вычитать (очередь — только порядок прохождения)</option></select></div>
     </div>
     <p class="hint">Километраж, виды туризма и КВ — для фактически пройденного класса (часть 4, п. 4.3 и табл. 3); считается,
       когда у всех этапов задан МШ. Правило равенства — из Положения или Условий (часть 4, п. 6.1.2).</p>

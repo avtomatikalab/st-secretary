@@ -129,8 +129,12 @@ def register(app, cx) -> None:
             zdata["stages"] = stages
             if "vsh_round" in form:
                 zdata["vsh_round"] = "down" if form.get("vsh_round") == "down" else "up"
+            if "wait_cut" in form:  # ожидание очереди на этапе: вычитать из времени или нет (Правки, п. 3)
+                zdata["wait_cut"] = "no" if form.get("wait_cut") == "no" else "yes"
             for s in pr.stages_of(zdata):  # НВ, ВШ или правило поменяли — итоги этапов по записям судей заново
                 stt.refresh(zdata, s)
+            if tr.is_time_discipline(zz):  # спелео, пешеходные: отсечки с телефонов — в «Отсечки» или убрать
+                js.refresh_cutoffs(zdata)
             zdata["distance"] = {k: str(form.get(k, "")).strip() for k in ("km", "modes", "kv_hours")}
             zdata["tie"] = "start" if form.get("tie") == "start" else "same"
             for k in ("spp", "expected", "kv", "cutoff_pairs"):  # по времени: эквивалент балла, расчётное время, КВ, отсечки SI

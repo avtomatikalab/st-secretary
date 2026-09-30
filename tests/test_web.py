@@ -1271,3 +1271,29 @@ def test_check_badges_are_clickable(client, tmp_path, psr_card):
     assert "badge-link" in card and ("data-to-check" in card or "Исправить" in card)
     js = (Path(__file__).parents[1] / "src" / "st_secretary" / "web" / "static" / "app.js").read_text(encoding="utf-8")
     assert "function onlyFilter" in js and 'qs.get("show")' in js and "[data-to-check]" in js
+
+
+def test_wait_cut_setting_on_results_page_and_phone(client, tmp_path, psr_card):
+    """Правки.md, п. 3: «Ожидание очереди на этапе» — рядом с неполным интервалом; смена пересчитывает итог
+    программы; телефон судьи знает настройку."""
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    q = "?z=М/Ж_3"
+    stages = {"st-0-tour": "Тур 1", "st-0-name": "Узлы", "st-0-nv": "5", "st-0-kv": "10", "st-0-tsh": "20",
+              "st-0-vsh": "10"}
+    client.post(base(f) + "/results/stages" + q, data=stages)
+    page = client.get(base(f) + "/results" + q).text
+    assert 'name="wait_cut"' in page and page.index('name="vsh_round"') < page.index('name="wait_cut"')
+    client.post(base(f) + "/judges/link" + q, data={"stage": "s1"})
+    token = js_token(f)
+    phone = TestClient(client.app.state.board.app)
+    phone.post(f"/j/{token}/sync", json={"device": "т-1", "records": [
+        {"file": "Кедр.xlsx", "points": "10", "arrive": "10:00:00", "leave": "10:07:12", "cutoff": "1:00",
+         "updated": 1}]})
+    assert f.run_data()["zachety"]["М/Ж_3"]["teams"]["Кедр.xlsx"]["points"]["s1"] == "13"
+    assert '"wait_cut": true' in phone.get(f"/j/{token}").text
+    client.post(base(f) + "/results/stages" + q, data={**stages, "st-0-id": "s1", "wait_cut": "no"})
+    z = f.run_data()["zachety"]["М/Ж_3"]
+    assert z["wait_cut"] == "no" and z["teams"]["Кедр.xlsx"]["points"]["s1"] == "15"
+    html = phone.get(f"/j/{token}").text
+    assert '"wait_cut": false' in html and "ожидание не вычитается" in html
