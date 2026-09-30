@@ -297,3 +297,102 @@ class Installer:
     def status(self) -> dict:
         return {"state": self.state, "done": self.done, "total": self.total, "error": self.error,
                 "version": self.version}
+
+
+# ------------------------------------------------------------------ из исходников (git): разработчик, два компьютера
+
+
+def source_root(start: str | Path = __file__) -> Path | None:
+    """Папка исходников с git, если программа запущена из них (не переносная); иначе None."""
+    for p in Path(start).resolve().parents:
+        if (p / ".git").exists() and (p / "pyproject.toml").is_file():
+            return p
+    return None
+
+
+@dataclass
+class Commit:
+    hash: str
+    when: str  # «30.09.2026 23:56»
+    subject: str
+
+
+_FMT = "--format=%h%x1f%cd%x1f%s"
+_DATE = "--date=format:%d.%m.%Y %H:%M"
+
+
+def _git(root: Path, *args: str, run=None, timeout: float = 30) -> tuple[int, str, str]:
+    import subprocess
+
+    run = run or subprocess.run
+    try:
+        r = run(["git", "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=timeout, check=False)
+    except (OSError, subprocess.SubprocessError) as e:  # git нет или не ответил
+        return 1, "", str(e)
+    return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
+
+
+def _commit(out: str) -> Commit | None:
+    parts = out.split("\x1f")
+    return Commit(*parts[:3]) if len(parts) >= 3 else None
+
+
+def git_head(root: Path, run=None) -> Commit | None:
+    code, out, _ = _git(root, "log", "-1", _FMT, _DATE, run=run)
+    return _commit(out) if code == 0 else None
+
+
+def git_upstream(root: Path, run=None) -> str:
+    """Ветка на GitHub, с которой сверяться: upstream текущей ветки, иначе origin/main."""
+    code, out, _ = _git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", run=run)
+    return out if code == 0 and out else "origin/main"
+
+
+@dataclass
+class GitNews:
+    behind: int  # сколько коммитов на GitHub новее загруженного
+    last: Commit | None  # последний из них
+    upstream: str
+
+
+def git_check(root: Path, run=None) -> GitNews | None:
+    """git fetch и сколько коммитов на GitHub новее; None — нет интернета или git не ответил."""
+    code, _, _ = _git(root, "fetch", "--quiet", run=run, timeout=60)
+    if code != 0:
+        return None
+    up = git_upstream(root, run)
+    code, out, _ = _git(root, "rev-list", "--count", f"HEAD..{up}", run=run)
+    if code != 0 or not out.isdigit():
+        return None
+    n = int(out)
+    last = None
+    if n:
+        c, o, _ = _git(root, "log", "-1", _FMT, _DATE, up, run=run)
+        last = _commit(o) if c == 0 else None
+    return GitNews(n, last, up)
+
+
+def git_update(root: Path, run=None, uv: str | None = None) -> tuple[bool, str]:
+    """Обновить исходники только «вперёд» (fast-forward) и библиотеки (uv sync). Есть несохранённые изменения или
+    история разошлась — ничего не трогать и сказать, что сделать. (ok, текст для окна программы)"""
+    code, out, err = _git(root, "status", "--porcelain", "--untracked-files=no", run=run)
+    if code != 0:
+        return False, f"git не отвечает ({err[:100]}) — обновите вручную: git pull"
+    if out:
+        return False, ("в папке программы есть несохранённые изменения (git status) — обновление не трогаю: "
+                       "сохраните (commit) или отмените их и обновите вручную: git pull --rebase")
+    up = git_upstream(root, run)
+    code, _, err = _git(root, "merge", "--ff-only", up, run=run, timeout=120)
+    if code != 0:
+        return False, (f"здесь есть свои коммиты, которых нет на GitHub (история разошлась) — ничего не трогаю: "
+                       f"git pull --rebase вручную ({err.splitlines()[-1][:100] if err else up})")
+    if uv:
+        import subprocess
+
+        try:
+            (run or subprocess.run)([uv, "sync"], cwd=root, capture_output=True, timeout=900, check=False)
+        except (OSError, subprocess.SubprocessError):
+            pass  # библиотеки подтянутся при следующем «uv run»
+    head = git_head(root, run)
+    return True, f"обновлено до коммита {head.hash}: «{head.subject}»" if head else "обновлено"
