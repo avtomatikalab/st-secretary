@@ -4,7 +4,9 @@
    checked_at — когда отмечено (для уже проверенных). #}
 {% macro issue_item(i, fix_url="", show_person=True, check=None, checked_at="") -%}
 <li class="issue sev-{{ i.severity }}" data-sev="{{ i.severity }}"{% if i.severity in (FIXED, CHECKED) %} hidden{% endif %}>
-  <span class="badge badge-{{ i.severity }}">{% if i.severity == CHECKED %}{{ icon("check", 13) }} {% endif %}{{ labels[i.severity] }}</span>
+  {% if fix_url and i.severity in (ERROR, WARNING) %}<a class="badge badge-{{ i.severity }} badge-link" href="{{ fix_url }}" title="Исправить">{{ labels[i.severity] }}</a>
+  {% elif check and i.severity == WARNING %}<button type="button" class="badge badge-{{ i.severity }} badge-link" data-to-check title="К кнопке «Проверено»">{{ labels[i.severity] }}</button>
+  {% else %}<span class="badge badge-{{ i.severity }}">{% if i.severity == CHECKED %}{{ icon("check", 13) }} {% endif %}{{ labels[i.severity] }}</span>{% endif %}
   <div class="issue-body">
     <div class="issue-what">{% if show_person and i.person %}<b>{{ i.person }}</b> — {% endif %}{{ i.text }}{% if i.row %} <span class="issue-where">строка {{ i.row }} в файле</span>{% endif %}</div>
     {% if i.after %}<div class="change">было: <del>{{ i.before or "пусто" }}</del> → стало: <ins>{{ i.after }}</ins></div>

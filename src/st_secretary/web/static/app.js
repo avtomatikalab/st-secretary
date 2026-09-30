@@ -317,6 +317,52 @@
     });
   });
 
+  // --- Значки «Проверить» / «Ошибка» нажимаются: фильтр замечаний (?only=), фильтр заявок (?show=),
+  // к первому полю с замечанием (data-jump), к кнопке «Проверено» у замечания (data-to-check).
+  function onlyFilter(sev) {
+    var chips = document.querySelectorAll("[data-filter]");
+    if (!chips.length) return;
+    chips.forEach(function (chip) {
+      var want = chip.dataset.filter === sev;
+      if ((chip.getAttribute("aria-pressed") === "true") !== want) chip.click();
+    });
+    var box = document.getElementById("issues");
+    if (box) box.scrollIntoView({ block: "start" });
+  }
+  var qs = new URLSearchParams(location.search);
+  if (qs.get("only")) onlyFilter(qs.get("only"));
+  if (qs.get("show") && typeof filterTeams === "function" && teamFilters.length) filterTeams(qs.get("show"));
+  document.addEventListener("click", function (e) {
+    var only = e.target.closest("a[data-only]");
+    if (only) { e.preventDefault(); onlyFilter(only.dataset.only); return; }
+    var show = e.target.closest("a[data-show]");
+    if (show && teamFilters.length) {
+      e.preventDefault(); filterTeams(show.dataset.show);
+      var list = document.getElementById("teams"); if (list) list.scrollIntoView({ block: "start" });
+      return;
+    }
+    var jump = e.target.closest("a[data-jump]");
+    if (jump) {
+      e.preventDefault();
+      var el = document.querySelector(jump.dataset.jump);
+      if (el) {
+        el.scrollIntoView({ block: "center" });
+        var inp = el.matches("input, select, textarea") ? el : el.querySelector("input, select, textarea");
+        if (inp) inp.focus({ preventScroll: true });
+        el.classList.add("is-target"); setTimeout(function () { el.classList.remove("is-target"); }, 3000);
+      }
+      return;
+    }
+    var tc = e.target.closest("[data-to-check]");
+    if (tc) {
+      var btn = tc.closest("li") && tc.closest("li").querySelector(".btn-check");
+      if (btn) {
+        btn.scrollIntoView({ block: "center" }); btn.focus();
+        btn.classList.add("is-target"); setTimeout(function () { btn.classList.remove("is-target"); }, 3000);
+      }
+    }
+  });
+
   // --- Поле, которое растёт по тексту (длинное название этапа переносится, а не обрезается).
   function fitHeight(el) {
     if (!el.offsetParent) return;  // в свёрнутом разделе высоту не посчитать — пересчитаем при раскрытии

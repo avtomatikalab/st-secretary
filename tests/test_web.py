@@ -5,6 +5,7 @@ import os
 import re
 from dataclasses import replace
 from html.parser import HTMLParser
+from pathlib import Path
 from urllib.parse import quote, urlencode
 
 import pytest
@@ -362,7 +363,9 @@ def test_team_card_is_read_only_with_edit_button(client, tmp_path, psr_card):
     assert "status-opt-fix\" aria-pressed=\"true\"" in page.text  # есть ошибки → «Исправить» сам
     assert "1995 год не високосный" in page.text
     people = client.get(base(f) + "/preapps").text.split('id="panel-people"')[1].split("</section>")[0]
-    assert "Кузьмин Олег Игоревич" in people and "<a " not in people  # ФИО в списке участников — без ссылок
+    # ФИО в списке участников — без ссылок; ссылки — только значки «Ошибка» / «Проверить» (п. 22 правок)
+    assert "Кузьмин Олег Игоревич" in people
+    assert people.count("<a ") == people.count('<a class="badge ')
 
 
 def test_check_marks_and_statuses(client, tmp_path, psr_card):
@@ -1253,3 +1256,18 @@ def test_rename_stage_keeps_points_judge_log_and_link(client, tmp_path, psr_card
 
 def js_token(f) -> str:
     return next(iter(f.run_data()["judge_links"]))
+
+
+def test_check_badges_are_clickable(client, tmp_path, psr_card):
+    """Правки.md, п. 22: «Проверить» / «Ошибка» — не просто значки, а ссылки: плитки сводки → список с фильтром,
+    у команды → карточка заявки с фильтром замечаний, у замечания → «Исправить» или к «Проверено»."""
+    f = client.app.state.store.create(psr_card)
+    b = base(f)
+    client.post(b + "/preapps/upload", files=[("files", ("Лесовики.xlsx", lesoviki(tmp_path), XLSX))])
+    page = client.get(b + "/preapps").text
+    assert 'class="tile tile-warning tile-link" href="?show=' in page and 'data-show="' in page
+    assert re.search(r'class="badge badge-(warning|error) badge-link" href="[^"]*preapps/team\?file=[^"]*&only=', page)
+    card = client.get(b + "/preapps/team?file=" + quote("Лесовики.xlsx")).text
+    assert "badge-link" in card and ("data-to-check" in card or "Исправить" in card)
+    js = (Path(__file__).parents[1] / "src" / "st_secretary" / "web" / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function onlyFilter" in js and 'qs.get("show")' in js and "[data-to-check]" in js

@@ -65,7 +65,7 @@
 {# Замечание в коротком списке: текст — ссылка туда, где исправлять, и кнопка «Исправить» (если есть куда). #}
 {% macro fix_item(i, base, lead="") -%}
 {% set url = fix_url(base, i) if base else "" %}
-<li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>
+<li class="sev-{{ i.severity }}">{% if url and i.severity in (ERROR, WARNING) %}<a class="badge badge-{{ i.severity }} badge-link js-fix" href="{{ url }}" title="Исправить">{{ labels[i.severity] }}</a>{% else %}<span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>{% endif %}
   <span>{% if lead %}<b>{{ lead }}:</b> {% endif %}{% if url %}<a class="issue-link js-fix" href="{{ url }}">{{ i.text }}</a>{% else %}{{ i.text }}{% endif %}</span>
   {% if url and i.severity in (ERROR, WARNING) %}<a class="btn btn-ghost btn-small issue-fix js-fix" href="{{ url }}">Исправить</a>{% endif %}</li>
 {%- endmacro %}

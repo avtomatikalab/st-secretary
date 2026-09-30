@@ -107,8 +107,8 @@
   <div class="panel {% if counts[ERROR] %}panel-err{% else %}panel-warn{% endif %}" id="team">
     <h2>Проверка заявки</h2>
     <p class="check-counts">
-      {% if counts[ERROR] %}<span class="badge badge-error">Ошибок: {{ counts[ERROR] }}</span>{% endif %}
-      {% if counts[WARNING] %}<span class="badge badge-warning">Проверить: {{ counts[WARNING] }}</span>{% endif %}
+      {% if counts[ERROR] %}<a class="badge badge-error badge-link" href="#" data-jump=".sev-error, .has-error" title="К первому полю с ошибкой">Ошибок: {{ counts[ERROR] }}</a>{% endif %}
+      {% if counts[WARNING] %}<a class="badge badge-warning badge-link" href="#" data-jump=".sev-warning, .has-warning" title="К первому полю, которое нужно проверить">Проверить: {{ counts[WARNING] }}</a>{% endif %}
       {% if row_issues %}<span class="muted">Замечания по участникам — ниже, прямо под их строками; поля с замечаниями обведены.</span>{% endif %}
     </p>
     {% if head_issues %}<ul class="issue-list issue-list-boxed">{% for x in head_issues %}{{ issue_item(x) }}{% endfor %}</ul>{% endif %}

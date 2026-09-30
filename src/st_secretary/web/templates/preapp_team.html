@@ -110,7 +110,7 @@
         {% if show.pair %}<td>{{ e.pair }}</td><td>{{ e.pair_num }}</td>{% endif %}
         {% if show.team_dist %}<td>{{ e.team_dist }}</td>{% endif %}
         <td>{{ e.chip }}</td>
-        <td>{% if w == ERROR %}<span class="badge badge-error">Ошибка</span>{% elif w == WARNING %}<span class="badge badge-warning">Проверить</span>{% elif w == CHECKED %}<span class="badge badge-checked">Проверено</span>{% else %}<span class="text-ok">{{ icon("check", 18) }}</span>{% endif %}</td>
+        <td>{% if w == ERROR %}<a class="badge badge-error badge-link" href="?file={{ file|urlencode }}&only={{ ERROR }}#issues" data-only="{{ ERROR }}" title="Показать ошибки">Ошибка</a>{% elif w == WARNING %}<a class="badge badge-warning badge-link" href="?file={{ file|urlencode }}&only={{ WARNING }}#issues" data-only="{{ WARNING }}" title="Показать, что проверить">Проверить</a>{% elif w == CHECKED %}<span class="badge badge-checked">Проверено</span>{% else %}<span class="text-ok">{{ icon("check", 18) }}</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>

@@ -659,3 +659,10 @@ tr.is-target > td { background: #fff4d4 !important; }
 /* Ссылка на журнал программы внизу страниц — мелко */
 .page-foot { margin: 32px 0 0; font-size: .78rem; text-align: right; }
 .page-foot a { color: var(--muted); }
+
+/* Значки «Проверить» / «Ошибка» и плитки сводки — нажимаются */
+.badge-link { cursor: pointer; text-decoration: none; border: 0; font: inherit; }
+.badge-link:hover, .badge-link:focus-visible { filter: brightness(.93); box-shadow: 0 0 0 2px currentColor inset; }
+a.tile-link { color: inherit; text-decoration: none; cursor: pointer; }
+a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--primary) inset; }
+

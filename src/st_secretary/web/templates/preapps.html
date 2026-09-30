@@ -40,8 +40,8 @@
 <div class="tiles">
   <div class="tile"><b>{{ result.teams|length }}</b><span>команд{% if result.teams|length != files|length %} (файлов {{ files|length }}){% endif %}</span></div>
   <div class="tile"><b>{{ result.entries|length }}</b><span>участников</span></div>
-  <div class="tile tile-error"><b>{{ t[ERROR] }}</b><span>ошибок — исправить до комиссии</span></div>
-  <div class="tile tile-warning"><b>{{ t[WARNING] }}</b><span>проверить — нужно решение</span></div>
+  <a class="tile tile-error tile-link" href="?show={{ FIX }}#teams" data-show="{{ FIX }}" title="Показать заявки с ошибками"><b>{{ t[ERROR] }}</b><span>ошибок — исправить до комиссии</span></a>
+  <a class="tile tile-warning tile-link" href="?show={{ CHECK }}#teams" data-show="{{ CHECK }}" title="Показать заявки, которые нужно проверить"><b>{{ t[WARNING] }}</b><span>проверить — нужно решение</span></a>
   <div class="tile tile-fixed"><b>{{ view.by_filter[DONE] }} из {{ files|length }}</b><span>заявок проверено</span></div>
 </div>
 
@@ -104,8 +104,8 @@
         {% if g.team %}<span class="muted">{{ g.team.territory }} · {{ g.team.entries|length }} чел.</span>{% endif %}
       </div>
       <div class="team-counts">
-        {% if g.counts[ERROR] %}<span class="badge badge-error">Ошибок: {{ g.counts[ERROR] }}</span>{% endif %}
-        {% if g.counts[WARNING] %}<span class="badge badge-warning">Проверить: {{ g.counts[WARNING] }}</span>{% endif %}
+        {% if g.counts[ERROR] %}<a class="badge badge-error badge-link" href="{{ card_url }}&only={{ ERROR }}#issues" title="Открыть ошибки заявки">Ошибок: {{ g.counts[ERROR] }}</a>{% endif %}
+        {% if g.counts[WARNING] %}<a class="badge badge-warning badge-link" href="{{ card_url }}&only={{ WARNING }}#issues" title="Открыть, что проверить">Проверить: {{ g.counts[WARNING] }}</a>{% endif %}
         {{ status_badge(g.review) }}
       </div>
       {% if g.team %}
@@ -155,7 +155,7 @@
         <td>{{ e.qual.label if e.qual is not none else "?" }}</td>
         <td>{{ e.sex or "?" }}</td>
         <td>{{ e.zachet.key if e.zachet else "—" }}</td>
-        <td>{% if w == ERROR %}<span class="badge badge-error">Ошибка</span>{% elif w == WARNING %}<span class="badge badge-warning">Проверить</span>{% elif w == CHECKED %}<span class="badge badge-checked">Проверено</span>{% else %}<span class="text-ok">{{ icon("check", 18) }}</span>{% endif %}</td>
+        <td>{% if w == ERROR %}<a class="badge badge-error badge-link" href="{{ card_url }}&only={{ ERROR }}#issues" title="Открыть замечания в карточке заявки">Ошибка</a>{% elif w == WARNING %}<a class="badge badge-warning badge-link" href="{{ card_url }}&only={{ WARNING }}#issues" title="Открыть замечания в карточке заявки">Проверить</a>{% elif w == CHECKED %}<span class="badge badge-checked">Проверено</span>{% else %}<span class="text-ok">{{ icon("check", 18) }}</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
