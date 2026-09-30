@@ -75,6 +75,7 @@ class Record:
     updated: int = 0  # когда запись изменили на телефоне, мс — для порядка присылок с одного телефона
     cutoff: str = ""  # сумма отсечек на этапе, «м:сс» (секундомер на телефоне)
     cut_on: str = ""  # отсечка идёт с этого времени (часы телефона) — ещё не остановлена
+    started: str = ""  # «Начала этап» после ожидания очереди (= убытию — ожидание закрыли вместе с убытием)
 
     @classmethod
     def from_json(cls, d: dict) -> Record:
@@ -87,7 +88,7 @@ class Record:
             updated = 0
         return cls(clip(d.get("file"), 300), clip(d.get("points"), 20), clip(d.get("arrive"), 8), clip(d.get("leave"), 8),
                    bool(d.get("removed")), clip(d.get("reason")), clip(d.get("note"), 500), updated,
-                   clip(d.get("cutoff"), 12), clip(d.get("cut_on"), 8))
+                   clip(d.get("cutoff"), 12), clip(d.get("cut_on"), 8), clip(d.get("started"), 8))
 
 
 def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], device: str, received: str,
@@ -111,7 +112,7 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
         before = str(prev.get("points", "")).strip()
         log[rec.file] = {"points": rec.points, "arrive": rec.arrive, "leave": rec.leave, "removed": rec.removed,
                          "reason": rec.reason, "note": rec.note, "updated": rec.updated, "device": device,
-                         "received": received, "cutoff": rec.cutoff, "cut_on": rec.cut_on}
+                         "received": received, "cutoff": rec.cutoff, "cut_on": rec.cut_on, "started": rec.started}
         saved.append(rec.file)
         if distance_cutoffs and not merge_cutoffs(zdata, rec.file):
             conflicts += 1
@@ -206,6 +207,9 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
                 if cell and not _same(cell, got):
                     out.append(Issue(WARNING, f"«{team}», {st.title}: судья этапа прислал {got} ({when}), в таблице "
                                               f"{cell} — проверьте", team=team, target=f"cell:{file}:{sid}"))
+            wait = stt.waiting_check(rec)
+            if wait:
+                out.append(Issue(WARNING, f"«{team}», {st.title}: {wait}", team=team, target=f"cell:{file}:{sid}"))
             if rec.get("removed"):
                 why = f": {rec['reason']}" if rec.get("reason") else ""
                 out.append(Issue(INFO, f"«{team}», {st.title}: судья этапа отметил снятие с этапа{why}", team=team))

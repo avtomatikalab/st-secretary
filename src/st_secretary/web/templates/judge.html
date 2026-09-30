@@ -106,7 +106,7 @@
   function secs(t) { var m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t || ""); return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0)) : null; }
   function dur(s) { s = Math.max(0, Math.round(s)); var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
     return (h ? h + ":" + pad(m) : m) + ":" + pad(s % 60); }
-  function rec(f) { return st.records[f] || (st.records[f] = { file: f, points: "", arrive: "", leave: "", removed: false, reason: "", note: "", updated: 0, cutoff: "", cut_on: "" }); }
+  function rec(f) { return st.records[f] || (st.records[f] = { file: f, points: "", arrive: "", leave: "", removed: false, reason: "", note: "", updated: 0, cutoff: "", cut_on: "", started: "" }); }
   function pending() { return Object.keys(st.records).map(function (f) { return st.records[f]; })
     .filter(function (r) { return (st.sent[r.file] || 0) < (r.updated || 0); }); }
   function stateOf(r) { return r.leave || r.removed || r.points ? "done" : r.arrive ? "on" : "wait"; }
@@ -122,6 +122,16 @@
     spent -= durSecs(r.cutoff) || 0;
     if (r.cut_on && l === null) spent -= since(r.cut_on);
     return Math.max(0, spent);
+  }
+  function teamName(f) { var t = info.teams.filter(function (x) { return x.file === f; })[0]; return t ? t.team : f; }
+  function prevLeave(f, from) {  // последнее убытие другой команды после прихода этой — когда этап освободился
+    var best = "", a = secs(from);
+    Object.keys(st.records).forEach(function (g) {
+      var l = st.records[g].leave;
+      if (g === f || !l || secs(l) === null || secs(l) < a) return;
+      if (!best || secs(l) > secs(best)) best = l;
+    });
+    return best;
   }
   function fmtPts(x) { return (Math.round(x * 100) / 100).toString().replace(".", ","); }
   function howText(r) {  // ПСР, этап с НВ: из чего сложится итог — как посчитает программа (stage_time.py)
@@ -217,7 +227,22 @@
       var r = rec(f);
       if (r.leave) { editTime(f, "leave", "Время убытия"); return; }
       var patch = { leave: clock(new Date()) };
-      if (r.cut_on) { patch.cut_on = ""; patch.cutoff = dur((durSecs(r.cutoff) || 0) + since(r.cut_on)); }
+      if (r.cut_on) {  // всё ещё «ждёт очереди»: забыли «Начала этап»? спросить, иначе время на этапе будет 0
+        var prev = prevLeave(f, r.cut_on);
+        var ans = window.prompt("«" + teamName(f) + "» всё ещё «ждёт очереди». Во сколько команда начала этап? " +
+          "Время — чч:мм:сс" + (prev ? " (подставлено убытие предыдущей команды)" : "") +
+          ". Пусто — этап не начинала: всё время — ожидание.", prev);
+        if (ans === null) return;  // отмена — ничего не записываем
+        ans = ans.trim();
+        var from = secs(r.cut_on), upto = secs(patch.leave), at = ans ? secs(ans) : upto;
+        if (at === null) { window.alert("Время — в виде 14:05:30"); return; }
+        if (upto >= from && (at < from || at > upto)) {
+          window.alert("Начало этапа — между приходом (" + r.cut_on + ") и убытием (" + patch.leave + ")"); return;
+        }
+        var waited = at - from; if (waited < 0) waited += 86400;
+        patch.cut_on = ""; patch.cutoff = dur((durSecs(r.cutoff) || 0) + waited);
+        patch.started = ans || patch.leave;  // = убытию — ожидание закрыто вместе с убытием: у секретаря «проверить»
+      }
       if (r.points === "" && !r.removed) patch.points = "0";  // нет штрафа — 0 (п. 4 правок): судья не вводит каждый раз
       change(f, patch);
     });
@@ -228,7 +253,9 @@
       c.querySelector('[data-act=cut]').addEventListener("click", function () {  // отсечка: пуск / стоп («начала этап»)
         var r = rec(f), now = clock(new Date());
         if (!r.cut_on) { change(f, { cut_on: now }); return; }
-        change(f, { cut_on: "", cutoff: dur((durSecs(r.cutoff) || 0) + since(r.cut_on)) });
+        var patch = { cut_on: "", cutoff: dur((durSecs(r.cutoff) || 0) + since(r.cut_on)) };
+        if (!r.leave && !r.started) patch.started = now;  // «Начала этап — стоп ожидания»
+        change(f, patch);
       });
       c.querySelector('[data-act=cutsum]').addEventListener("click", function () {
         var v = window.prompt("Отсечки на этапе всего, мм:сс (пусто — стереть)", rec(f).cutoff || "");

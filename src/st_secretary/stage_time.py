@@ -58,10 +58,27 @@ def time_penalty(stage: Stage, secs: int, full_intervals: bool = True) -> Fracti
 
 @dataclass
 class StageScore:
-    """Итог этапа по записи судьи: total — что идёт в таблицу (None — ещё не посчитать), text — из чего сложилось."""
+    """Итог этапа по записи судьи: total — что идёт в таблицу (None — ещё не посчитать), text — из чего сложилось,
+    check — что секретарю проверить (пусто — всё в порядке)."""
     total: Fraction | None
     text: str
     secs: int | None = None
+    check: str = ""
+
+
+def waiting_check(rec: dict) -> str:
+    """Команда «ждала очереди», а ожидание закрыли вместе с убытием: время на этапе 0 — похоже, судья забыл
+    «Начала этап». Пусто — проверять нечего."""
+    try:
+        cut = parse_duration(rec.get("cutoff"))
+    except ValueError:
+        return ""
+    if not rec.get("leave") or cut <= 0:
+        return ""
+    if (rec.get("started") and rec.get("started") == rec.get("leave")) or stage_seconds(rec) == 0:
+        return ("всё время на этапе — ожидание очереди (время на этапе 0): «Начала этап» не отмечено — проверьте, "
+                "во сколько команда начала этап")
+    return ""
 
 
 def score(stage: Stage, rec: dict, full_intervals: bool = True) -> StageScore:
@@ -83,7 +100,7 @@ def score(stage: Stage, rec: dict, full_intervals: bool = True) -> StageScore:
     vsh = time_penalty(stage, secs, full_intervals)
     total = tech + vsh
     return StageScore(total, f"тех. {points_text(tech)} + время {points_text(vsh)} = {points_text(total)} "
-                             f"(на этапе {duration_text(Fraction(secs))})", secs)
+                             f"(на этапе {duration_text(Fraction(secs))})", secs, waiting_check(rec))
 
 
 def same_points(a: str, b: str) -> bool:

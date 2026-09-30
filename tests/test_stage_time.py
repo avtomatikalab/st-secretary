@@ -91,3 +91,21 @@ def test_time_discipline_cutoffs_still_go_to_distance_column():
              "телефон", "2026-10-03T10:30:00", removal_mark="с")
     assert z["teams"]["Кедр.xlsx"]["cutoffs"] == "3:00"
     assert Fraction(stt.stage_seconds({"arrive": "10:00:00", "leave": "10:20:00", "cutoff": "3:00"})) == 17 * 60
+
+
+def test_waiting_closed_together_with_leave_is_flagged():
+    """Правки.md, п. 7: «ждёт очереди», «Начала этап» не нажато, «Убыла» — время на этапе 0; секретарю — «проверить»."""
+    s = stages_of(zdata())[0]
+    forgot = {"points": "0", "arrive": "10:00:00", "leave": "10:20:00", "cutoff": "20:00", "started": "10:20:00"}
+    sc = stt.score(s, forgot)
+    assert sc.total == 0 and "ожидание очереди" in sc.check and "Начала этап" in sc.check
+    old_version = {**forgot, "started": ""}  # закрыто прежней версией телефона — тоже видно по времени 0
+    assert stt.waiting_check(old_version)
+    fine = {**forgot, "started": "10:12:00", "cutoff": "12:00"}  # начали в 10:12 — 8 мин на этапе, ВШ 6
+    assert stt.score(s, fine).total == 6 and stt.score(s, fine).check == ""
+    z = zdata()
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", **{k: v for k, v in forgot.items()}, updated=1)], FILES, "т",
+             "2026-10-03T10:21:00", stage=stages_of(z)[0], distance_cutoffs=False)
+    assert z["judge"]["s1"]["Кедр.xlsx"]["started"] == "10:20:00"
+    issues = js.judge_issues(z, stages_of(z), {"Кедр.xlsx": "Кедр"})
+    assert any("ожидание очереди" in i.text and i.target == "cell:Кедр.xlsx:s1" for i in issues)
