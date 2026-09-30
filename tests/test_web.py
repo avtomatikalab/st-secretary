@@ -1449,3 +1449,46 @@ def test_judge_phone_contacts_heads_and_stage_judges(client, tmp_path, psr_card)
                                                    "records": [{"file": "Кедр.xlsx", "points": "3", "updated": 1}]})
     stages = r.json()["contacts"]["stages"]
     assert (stages[1]["fio"], stages[1]["phone"]) == ("Петров Пётр", "+7 900 1") and stages[0]["fio"] == ""
+
+
+def test_penalty_table_choose_print_and_phone(client, tmp_path, psr_card):
+    """Правки.md, п. 15: у зачёта выбирается таблица штрафов (в ПСР по умолчанию нет — можно взять пешеходную или
+    загрузить свою из Excel); её можно распечатать и скачать; у судьи на телефоне — «Таблица штрафов» с поиском."""
+    import json
+
+    from openpyxl import Workbook
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    q = "?z=М/Ж_3"
+    client.post(base(f) + "/results/stages" + q, data={"st-0-tour": "Тур 1", "st-0-name": "Узлы"})
+    client.post(base(f) + "/judges/link" + q, data={"stage": "s1"})
+    page = client.get(base(f) + "/judges" + q).text
+    assert "3. Таблица штрафов" in page and "в Правилах нет (ПСР, горные" in page and "Таблица не выбрана" in page
+    assert client.get(base(f) + "/penalties" + q).status_code == 404
+
+    client.post(base(f) + "/judges/penalties" + q, data={"table": "pedestrian"})
+    page = client.get(base(f) + "/judges" + q).text
+    assert "Пешеходные дистанции — система оценки нарушений</b> — 26 строк" in page
+    printed = client.get(base(f) + "/penalties" + q).text
+    assert "Не заблокирована защёлка карабина" in printed and "Бесштрафовая" in printed
+    x = client.get(base(f) + "/penalties.xlsx" + q)
+    assert x.status_code == 200 and x.content[:2] == b"PK"
+    phone = TestClient(client.app.state.board.app)
+    html = phone.get(f"/j/{js_token(f)}").text
+    data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', html, re.DOTALL).group(1))
+    assert 'id="pen-open"' in html and data["penalties"]["systems"] and data["penalties"]["rows"][0]["code"] == "1"
+
+    wb = Workbook()
+    wb.active.append(["№", "Нарушение", "Баллы", "Разъяснение"])
+    wb.active.append(["1", "Нет каски на этапе", "5", ""])
+    buf = io.BytesIO()
+    wb.save(buf)
+    r = client.post(base(f) + "/judges/penalties" + q, data={"do": "upload"},
+                    files={"file": ("Условия штрафы.xlsx", buf.getvalue(), XLSX)}, follow_redirects=False)
+    assert "penalty_loaded" in r.headers["location"]
+    page = client.get(base(f) + "/judges" + q).text
+    assert "своя: Условия штрафы.xlsx" in page and "1 строк" in page
+    r = client.post(base(f) + "/judges/penalties" + q, data={"do": "upload"},
+                    files={"file": ("x.xlsx", b"nope", XLSX)}, follow_redirects=False)
+    assert "penalty_bad" in r.headers["location"]

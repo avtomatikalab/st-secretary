@@ -90,6 +90,34 @@
   {% endif %}
 </section>
 
+<section class="panel" id="penalties">
+  <h2>3. Таблица штрафов — зачёт {{ zachet.key }}</h2>
+  <p>Судья этапа открывает её на телефоне кнопкой «Таблица штрафов» — с поиском по словам («карабин», «муфта») и по номеру
+    пункта; работает без связи. Секретарь может посмотреть и распечатать её здесь.</p>
+  <form method="post" action="{{ base }}/judges/penalties?{{ zq }}" class="pen-choose">
+    <label for="f-pt">Таблица штрафов</label>
+    <select id="f-pt" name="table">
+      {% for k, label in penalty_choices.items() %}{% if k != "custom" or penalty_custom %}
+      <option value="{{ k }}"{% if k == penalty_choice %} selected{% endif %}>{% if k == "auto" %}по дисциплине — {{ penalty_choices[penalty_default] if penalty_default else "в Правилах нет (ПСР, горные: таблица в Условиях)" }}{% elif k == "custom" %}своя: {{ penalty_custom.source }}{% else %}{{ label }}{% endif %}</option>
+      {% endif %}{% endfor %}
+    </select>
+    <button class="btn" type="submit">{{ icon("check", 18) }}Сохранить</button>
+  </form>
+  {% if penalty_table %}
+  <p>Сейчас: <b>{{ penalty_table.title }}</b> — {{ penalty_table.rows|length }} строк.
+    <a href="{{ base }}/penalties?{{ zq }}" target="_blank" rel="noopener">Посмотреть и распечатать</a> ·
+    <a href="{{ base }}/penalties.xlsx?{{ zq }}">Скачать в Excel</a></p>
+  {% else %}<p class="muted">Таблица не выбрана — на телефоне судьи её не будет.</p>{% endif %}
+  <form method="post" action="{{ base }}/judges/penalties?{{ zq }}" enctype="multipart/form-data" class="res-inline">
+    <input type="hidden" name="do" value="upload">
+    <label class="btn btn-ghost">{{ icon("upload", 18) }}Загрузить свою таблицу из Excel
+      <input type="file" name="file" accept=".xlsx" class="visually-hidden" data-autosubmit></label>
+  </form>
+  <p class="hint">Колонки своей таблицы: №, Нарушение, Штраф (баллы), Разъяснение. В ПСР общей таблицы в Правилах нет —
+    таблица штрафов этапов в Условиях соревнования: загрузите её или возьмите за основу пешеходную — выберите
+    «Пешеходные», скачайте в Excel, поправьте под Условия и загрузите.</p>
+</section>
+
 <details class="panel howto">
   <summary>Как это работает на дистанции</summary>
   <ol>

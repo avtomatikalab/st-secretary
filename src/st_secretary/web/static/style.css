@@ -696,3 +696,7 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .jd-log summary { cursor: pointer; color: var(--muted); font-size: .88rem; }
 .jd-log .tbl { font-size: .85rem; margin-top: 6px; }
 
+/* Таблица штрафов зачёта */
+.pen-choose { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0; }
+.pen-choose select { width: auto; max-width: 100%; }
+

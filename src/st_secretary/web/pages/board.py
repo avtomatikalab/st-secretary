@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlencode
+import io
+from dataclasses import asdict
+from urllib.parse import quote, urlencode
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from starlette.exceptions import HTTPException
 
 from st_secretary import judge_sync as js
+from st_secretary import penalties as pen
 from st_secretary import psr_run as pr
 from st_secretary import results as res
 from st_secretary import staff as sf
@@ -16,7 +20,7 @@ from st_secretary import start_list as sl
 from st_secretary import time_run as tr
 from st_secretary.disciplines import Status
 from st_secretary.web.board import BoardServer, create_board_app, qr_svg
-from st_secretary.web.common import _base, _parse_dt, _redirect
+from st_secretary.web.common import XLSX, _base, _parse_dt, _redirect, _with_done
 from st_secretary.web.store import CompFolder
 
 
@@ -158,6 +162,7 @@ def register(app, cx) -> None:
             auto = {"nv": float(stage.nv_minutes * 60), "vsh": float(stage.time_max), "n": float(stage.vsh_points),
                     "m": stage.vsh_step, "full": stt.full_intervals(zdata),
                     "max": float(stage.max_penalty) if stage.max_penalty is not None else None}
+        penalty = pen.table_for(z, zdata)  # таблица штрафов — на телефон целиком (работает без связи)
         teams = [{"file": r.inp.file, "team": r.inp.team, "number": r.inp.number}
                  for r in sorted(run.rows, key=lambda r: r.start_order)]
         return {"title": comp.title, "zachet": z.key,
@@ -166,6 +171,7 @@ def register(app, cx) -> None:
                           "wait_cut": stt.subtract_wait(zdata)},
                 "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams, "zachet": z.key,
                             "judges": judge_people(f, comp), "contacts": contacts(f, comp), "stage_id": stage.id,
+                            "penalties": penalty.payload() if penalty else None,
                             "stage": {"kv": stage.kv_minutes, "cutoffs": True, "auto": auto,
                                       "wait_cut": stt.subtract_wait(zdata)},
                             "records": {file: {**rec, "file": file} for file, rec in log.items()}}}
@@ -218,6 +224,9 @@ def register(app, cx) -> None:
                            "judges": judges, "log": log})
         return page(request, "judges.html", active="judges", zachet=zz, zachety=comp.zachety, stages=stages,
                     running=srv.running, urls=urls, error=srv.error, zq=urlencode({"z": zz.key}), run=run,
+                    penalty_table=pen.table_for(zz, zdata), penalty_choice=pen.choice(zdata),
+                    penalty_default=pen.default_key(zz), penalty_choices=pen.CHOICES,
+                    penalty_custom=zdata.get("penalty_custom"),
                     now_day=app.state.clock().date().isoformat(),
                     **comp_ctx(f))
 
@@ -240,6 +249,54 @@ def register(app, cx) -> None:
             f.save_run_data(data)
         done = "judge_revoked" if do == "revoke" else "judge_issued"
         return _redirect(f"{_base(f)}/judges?{urlencode({'z': zz.key, 'done': done})}")
+
+    @app.post("/c/{cid}/judges/penalties")
+    async def judges_penalties(request: Request, cid: str, z: str = ""):
+        """Таблица штрафов зачёта: выбрать (по дисциплине, пешеходные, спелео, своя, без таблицы) или загрузить свою
+        из Excel."""
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        form = await request.form()
+        back = f"{_base(f)}/judges?{urlencode({'z': zz.key})}#penalties"
+        if form.get("do") == "upload":
+            up = form.get("file")
+            name = getattr(up, "filename", "") or ""
+            try:
+                rows = pen.read_excel(await up.read()) if name else []
+            except ValueError as e:
+                return _redirect(_with_done(back, "penalty_bad", why=str(e)))
+            if not rows:
+                return _redirect(_with_done(back, "penalty_bad", why="выберите файл Excel с таблицей"))
+            custom = {"title": "Таблица штрафов (своя)", "source": name[:120], "rows": [asdict(r) for r in rows]}
+            _save_zachet(f, zz.key, lambda zd: zd.update(penalty_custom=custom, penalty_table="custom"))
+            return _redirect(_with_done(back, "penalty_loaded", n=str(len(rows))))
+        c = str(form.get("table", "auto"))
+        _save_zachet(f, zz.key, lambda zd: zd.update(penalty_table=c if c in pen.CHOICES else "auto"))
+        return _redirect(_with_done(back, "penalty_saved"))
+
+    def need_penalties(f: CompFolder, z: str):
+        comp = need_comp(f)
+        zz = need_zachet(comp, z)
+        table = pen.table_for(zz, f.run_data().get("zachety", {}).get(zz.key, {}))
+        if table is None:
+            raise HTTPException(404, "У зачёта не выбрана таблица штрафов.")
+        return comp, zz, table
+
+    @app.get("/c/{cid}/penalties")
+    def penalties_print(request: Request, cid: str, z: str = ""):
+        """Таблица штрафов зачёта — посмотреть и распечатать."""
+        comp, zz, table = need_penalties(folder(cid), z)
+        return templates.TemplateResponse(request, "penalties_print.html", {"comp": comp, "z": zz, "table": table})
+
+    @app.get("/c/{cid}/penalties.xlsx")
+    def penalties_xlsx(cid: str, z: str = ""):
+        """Таблица штрафов в Excel — поправить под Условия и загрузить как свою."""
+        _, zz, table = need_penalties(folder(cid), z)
+        buf = io.BytesIO()
+        pen.write_excel(table, buf)
+        name = f"Таблица штрафов {zz.key.replace('/', '-')}.xlsx"
+        return Response(buf.getvalue(), media_type=XLSX,
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 
     @app.post("/c/{cid}/judges/accept-phone")
     async def judges_accept_phone(request: Request, cid: str, z: str = ""):

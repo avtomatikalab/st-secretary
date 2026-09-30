@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Таблица штрафов — {{ z.key }} — {{ comp.title }}</title>
+<style>
+  body { font: 13px/1.35 "Segoe UI", Arial, sans-serif; color: #111; margin: 16px; background: #fff; }
+  h1 { font-size: 17px; margin: 0 0 2px; } .sub { color: #555; margin: 0 0 10px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #999; padding: 3px 6px; vertical-align: top; text-align: left; }
+  th { background: #eef2f6; } td.c { white-space: nowrap; font-weight: 600; } td.p { white-space: nowrap; }
+  tr.g td { background: #f3f3f3; font-weight: 700; } .sec { color: #555; font-size: 12px; } .note { color: #333; font-size: 12px; }
+  .noprint { margin: 0 0 12px; }
+  @media print { .noprint { display: none; } body { margin: 0; } thead { display: table-header-group; } tr { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<p class="noprint"><button onclick="window.print()">Распечатать</button></p>
+<h1>{{ table.title }}</h1>
+<p class="sub">{{ comp.title }} · зачёт {{ z.key }}{% if table.source %} · {{ table.source }}{% endif %}</p>
+<table>
+  <thead><tr><th>№</th><th>Нарушение</th>{% if table.systems %}<th>Бесштрафовая</th><th>Штрафная</th>{% else %}<th>Штраф</th>{% endif %}<th>Разъяснение</th></tr></thead>
+  <tbody>
+  {% for r in table.rows %}
+  <tr{% if r.group %} class="g"{% endif %}><td class="c">{{ r.code }}</td>
+    <td>{% if r.section %}<span class="sec">{{ r.section }}: </span>{% endif %}{{ r.title }}</td>
+    {% if table.systems %}<td class="p">{{ r.nopenalty }}</td>{% endif %}<td class="p">{{ r.points }}</td>
+    <td class="note">{{ r.note }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</body>
+</html>

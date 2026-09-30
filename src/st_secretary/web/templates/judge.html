@@ -72,6 +72,24 @@
   .ct a { white-space: nowrap; font-weight: 700; color: var(--accent); }
   .ct .none { color: var(--muted); white-space: nowrap; }
   .ct.mine { font-weight: 600; }
+  .penbar { padding: 6px 14px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .penbar button { width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid var(--accent); background: none;
+    color: var(--accent); font: inherit; font-weight: 600; }
+  .pen { position: fixed; inset: 0; z-index: 20; background: var(--bg); overflow-y: auto; }
+  .pen[hidden] { display: none; }
+  .pen-head { position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--line); padding: 8px 12px;
+    display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .pen-head input { min-height: 44px; font-size: 1.05rem; }
+  .pen-head button { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+    color: var(--text); font: inherit; padding: 0 12px; }
+  .pen-src { color: var(--muted); font-size: .8rem; padding: 6px 14px 0; }
+  .pr { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; margin: 8px 12px; padding: 8px 10px; }
+  .pr.grp { border-color: var(--accent); }
+  .pr .code { font-weight: 700; margin-right: 6px; } .pr .sec { color: var(--muted); font-size: .85rem; }
+  .pr .pts { display: block; font-weight: 700; color: var(--accent); margin-top: 2px; }
+  .pr .nop { display: block; font-size: .85rem; color: var(--muted); }
+  .pr .pn { font-size: .82rem; color: var(--muted); margin-top: 4px; }
+  .pen-more { text-align: center; color: var(--muted); font-size: .85rem; padding: 10px; }
   .who .btn { margin-top: 10px; } .who .later { width: 100%; background: none; border: 0; color: var(--muted);
     font: inherit; padding: 10px; text-decoration: underline; }
 </style>
@@ -87,6 +105,13 @@
   <div class="sub">{{ info.title }} · зачёт {{ info.zachet }}{% if info.stage.nv %} · НВ {{ info.stage.nv }} мин{% endif %}{% if info.stage.kv %} · КВ этапа {{ info.stage.kv }} мин{% endif %}</div>
 </header>
 <div id="me" class="me"></div>
+{% if info.payload.penalties %}<div class="penbar"><button type="button" id="pen-open">Таблица штрафов</button></div>
+<div id="pen" class="pen" hidden role="dialog" aria-label="Таблица штрафов">
+  <div class="pen-head"><input type="search" id="pen-q" placeholder="Слова или номер: карабин, муфта, 6.2" autocomplete="off"
+    aria-label="Поиск по таблице штрафов"><button type="button" id="pen-close">Закрыть</button></div>
+  <div class="pen-src" id="pen-src"></div>
+  <div id="pen-list"></div>
+</div>{% endif %}
 <div id="status" class="ok" role="status" aria-live="polite">Загружаю…</div>
 <div id="qhint" class="qhint" role="status" aria-live="polite" hidden></div>
 <main>
@@ -518,6 +543,45 @@
   }
   if (info.contacts) st.contacts = info.contacts;  // свежее с ноутбука при открытии страницы
   renderContacts();
+
+  // --- Таблица штрафов: поиск по словам (все слова, «ё» = «е») и по номеру пункта; работает без связи
+  var PEN = info.penalties;
+  if (PEN) {
+    var penBox = document.getElementById("pen"), penQ = document.getElementById("pen-q");
+    var penList = document.getElementById("pen-list");
+    document.getElementById("pen-src").textContent = PEN.title + (PEN.source ? " · " + PEN.source : "");
+    var low = function (s) { return String(s || "").toLowerCase().replace(/ё/g, "е"); };
+    PEN.rows.forEach(function (r) { r.hay = low([r.code, r.section, r.title, r.note].join(" ")); });
+    var renderPen = function () {
+      var q = low(penQ.value).trim(), num = /^\d+(\.\d+)*\.?$/.test(q), words = q.split(/[\s,;]+/).filter(Boolean);
+      var hits = PEN.rows.filter(function (r) {
+        if (!q) return true;
+        if (num) return r.code === q.replace(/\.$/, "") || r.code.indexOf(q.replace(/\.$/, "") + ".") === 0;
+        return words.every(function (w) { return r.hay.indexOf(w) >= 0; });
+      });
+      penList.textContent = "";
+      hits.slice(0, 80).forEach(function (r) {
+        var d = document.createElement("div"); d.className = "pr" + (r.group ? " grp" : ""); d.dataset.code = r.code;
+        var c = document.createElement("span"); c.className = "code"; c.textContent = r.code; d.appendChild(c);
+        if (r.section) { var sc = document.createElement("span"); sc.className = "sec"; sc.textContent = r.section + ": "; d.appendChild(sc); }
+        d.appendChild(document.createTextNode(r.title));
+        if (r.points) { var p = document.createElement("span"); p.className = "pts"; p.textContent = (PEN.systems ? "штрафная: " : "") + r.points; d.appendChild(p); }
+        if (PEN.systems && r.nopenalty) { var n = document.createElement("span"); n.className = "nop"; n.textContent = "бесштрафовая: " + r.nopenalty; d.appendChild(n); }
+        if (r.note) { var e = document.createElement("div"); e.className = "pn"; e.textContent = r.note; d.appendChild(e); }
+        penList.appendChild(d);
+      });
+      if (!hits.length || hits.length > 80) {
+        var m = document.createElement("div"); m.className = "pen-more";
+        m.textContent = hits.length ? "Показаны первые 80 из " + hits.length + " — уточните поиск." : "Ничего не нашлось — попробуйте другое слово или номер пункта.";
+        penList.appendChild(m);
+      }
+    };
+    penQ.addEventListener("input", renderPen);
+    document.getElementById("pen-open").addEventListener("click", function () {
+      penBox.hidden = false; renderPen(); penQ.focus();
+    });
+    document.getElementById("pen-close").addEventListener("click", function () { penBox.hidden = true; });
+  }
 
   updateHint(); counts(); save(); sync();
 })();
