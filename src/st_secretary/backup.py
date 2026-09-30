@@ -32,6 +32,47 @@ MAX_BYTES = 2 * 2**30  # распакованный размер: 2 ГБ — б�
 _STAMP = re.compile(r" — (\d{4}-\d{2}-\d{2} \d{2}-\d{2}(?:-\d{2})?)( \(авто\))?\.zip$")
 
 
+FESTIVAL = "Фестиваль.json"  # в копии фестиваля: название и соревнования (решение 039)
+
+
+def make_festival(folders: list[Path], title: str, now: datetime) -> bytes:
+    """Копия фестиваля одним архивом: обычные копии всех его соревнований + «Фестиваль.json»."""
+    import json
+    import tempfile
+
+    buf = io.BytesIO()
+    with tempfile.TemporaryDirectory() as td, zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as out:
+        for folder in folders:
+            p = make(folder, Path(td), now)
+            out.write(p, p.name)
+        out.writestr(FESTIVAL, json.dumps({"title": title, "members": [f.name for f in folders]}, ensure_ascii=False))
+    return buf.getvalue()
+
+
+def is_festival(data: bytes) -> bool:
+    try:
+        return FESTIVAL in zipfile.ZipFile(io.BytesIO(data)).namelist()
+    except zipfile.BadZipFile:
+        return False
+
+
+def restore_festival(data: bytes, data_root: Path, now: datetime) -> tuple[str, list[str]]:
+    """Фестиваль из архива: каждое соревнование — новой папкой (как обычная копия). (название, папки)."""
+    import json
+
+    z = zipfile.ZipFile(io.BytesIO(data))
+    if sum(i.file_size for i in z.infolist()) > MAX_BYTES * 4:
+        raise BackupError("архив слишком большой для копии фестиваля")
+    try:
+        title = str(json.loads(z.read(FESTIVAL).decode("utf-8")).get("title") or "Фестиваль")
+    except (ValueError, KeyError):
+        raise BackupError("в архиве фестиваля не читается «Фестиваль.json»") from None
+    names = [restore(z.read(i), data_root, now) for i in z.infolist() if i.filename.lower().endswith(".zip")]
+    if not names:
+        raise BackupError("в архиве фестиваля нет копий соревнований")
+    return title, names
+
+
 class BackupError(Exception):
     """Файл не похож на резервную копию СТ-Секретаря — текст для человека."""
 

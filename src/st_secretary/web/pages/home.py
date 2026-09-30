@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException
 
 from st_secretary import __version__, training
 from st_secretary import backup as bk
+from st_secretary import commission as cm
 from st_secretary import practice as pt_
 from st_secretary.importers.card_xlsx import CardError, load_card
 from st_secretary.web.common import HERE, XLSX, _base, _redirect, _with_done, log
@@ -33,10 +34,15 @@ def register(app, cx) -> None:
         for f in store.all():
             ctx = comp_ctx(f)
             items.append({**ctx, "files": len(f.preapp_files())})
+        fests = store.festivals()
+        by_id = {it["folder"].id: it for it in items}
+        groups = [{**x, "comps": [by_id[m] for m in x["members"] if m in by_id]} for x in fests]
+        in_fest = {m for x in fests for m in x["members"]}
         journal = app.state.journal
         return page(request, "home.html", status_code=status_code, items=items, data_dir=store.root,
                     import_errors=import_errors, crashed_before=bool(journal and journal.crashed_before),
-                    crashed_at=journal.previous if journal else "")
+                    crashed_at=journal.previous if journal else "", festivals=groups,
+                    loose=[it for it in items if it["folder"].id not in in_fest])
 
     @app.get("/")
     def home(request: Request):
@@ -130,11 +136,83 @@ def register(app, cx) -> None:
         up = (await request.form()).get("backup")
         if up is None or not getattr(up, "filename", ""):
             return _redirect("/?done=restore_none")
+        data = await up.read()
         try:
-            name = bk.restore(await up.read(), store.root, app.state.clock())
+            if bk.is_festival(data):  # копия фестиваля — все его соревнования и сам фестиваль
+                title, names = bk.restore_festival(data, store.root, app.state.clock())
+                fid = store.set_festival(None, title, names)
+                return _redirect(f"/festival/{quote(fid, safe='')}?done=restored")
+            name = bk.restore(data, store.root, app.state.clock())
         except bk.BackupError as e:
             return _redirect(_with_done("/", "restore_bad", why=str(e)))
         return _redirect(f"/c/{quote(name, safe='')}?done=restored")
+
+    # ------------------------------------------------------------ фестиваль (решение 039, неспорная часть)
+
+    def need_festival(fid: str) -> dict:
+        x = store.festival(fid)
+        if x is None:
+            raise HTTPException(404)
+        return x
+
+    def festival_people(folders: list) -> list[dict]:
+        """Кто заявлен в нескольких соревнованиях фестиваля: человек (ФИО + дата рождения) — где заявлен."""
+        by: dict[str, dict] = {}
+        for f in folders:
+            try:
+                comp = f.load()
+                result, _ = store.review(f, comp)
+            except Exception:  # noqa: BLE001 — карточка или заявки не читаются: в сводке их нет
+                continue
+            for t in result.teams:
+                for e in t.entries:
+                    d = by.setdefault(cm.person_id(e), {"fio": e.name.full, "birth": e.birth or e.birth_year,
+                                                        "where": []})
+                    d["where"].append({"comp": comp.title, "base": _base(f), "team": t.team,
+                                       "zachet": e.zachet.title if e.zachet else "зачёт не найден"})
+        out = [d for d in by.values() if len({w["comp"] for w in d["where"]}) > 1]
+        return sorted(out, key=lambda d: d["fio"])
+
+    @app.post("/festival/new")
+    async def festival_new(request: Request):
+        form = await request.form()
+        members = [str(m) for m in form.getlist("member") if store.get(str(m))]
+        if len(members) < 2:
+            return _redirect("/?done=festival_few")
+        fid = store.set_festival(None, str(form.get("title", "")), members)
+        return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_made")
+
+    @app.get("/festival/{fid}")
+    def festival_page(request: Request, fid: str):
+        x = need_festival(fid)
+        folders = [store.get(m) for m in x["members"]]
+        items = [{**comp_ctx(f), "files": len(f.preapp_files())} for f in folders if f]
+        others = [comp_ctx(f) for f in store.all() if f.id not in x["members"]]
+        return page(request, "festival.html", fest=x, items=items, others=others,
+                    people=festival_people([f for f in folders if f]))
+
+    @app.post("/festival/{fid}/edit")
+    async def festival_edit(request: Request, fid: str):
+        x = need_festival(fid)
+        form = await request.form()
+        members = list(x["members"])
+        if form.get("add") and store.get(str(form.get("add"))):
+            members.append(str(form.get("add")))
+        if form.get("remove"):
+            members = [m for m in members if m != str(form.get("remove"))]
+        if form.get("do") == "split":
+            members = []
+        store.set_festival(fid, str(form.get("title", x["title"])), members)
+        return _redirect("/?done=festival_split" if not members else f"/festival/{quote(fid, safe='')}?done=festival_saved")
+
+    @app.get("/festival/{fid}/backup.zip")
+    def festival_backup(fid: str):
+        x = need_festival(fid)
+        folders = [store.get(m).path for m in x["members"] if store.get(m)]
+        data = bk.make_festival(folders, x["title"], app.state.clock())
+        name = f"Фестиваль {x['title']} — {app.state.clock():%Y-%m-%d %H-%M}.zip"
+        return Response(data, media_type="application/zip",
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 
     @app.post("/open-backups")
     def open_backups():

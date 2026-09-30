@@ -31,9 +31,7 @@
 </div>
 {% endif %}
 
-{% if items %}
-<div class="comp-list">
-  {% for it in items %}
+{% macro comp_card(it) -%}
   <a class="comp-card" href="{{ it.base }}">
     <div class="comp-date">{% if it.comp %}{{ it.comp.date_from|d }}{% endif %}</div>
     <div class="comp-main">
@@ -47,8 +45,29 @@
     <div class="comp-stat"><b>{{ it.files }}</b><span>заявок</span></div>
     {{ icon("arrow") }}
   </a>
-  {% endfor %}
+{%- endmacro %}
+{% if items %}
+{% for x in festivals %}
+<section class="fest-group">
+  <a class="fest-head" href="/festival/{{ x.id|urlencode }}"><small>Фестиваль</small> <b>{{ x.title }}</b> · {{ x.comps|length }} соревнования</a>
+  <div class="comp-list">{% for it in x.comps %}{{ comp_card(it) }}{% endfor %}</div>
+</section>
+{% endfor %}
+<div class="comp-list">
+  {% for it in loose %}{{ comp_card(it) }}{% endfor %}
 </div>
+{% if loose|length > 1 %}
+<details class="panel fest-new"><summary>Объединить соревнования в фестиваль (несколько за один выезд)</summary>
+  <form method="post" action="/festival/new">
+    <p class="muted">Каждое соревнование останется самостоятельным — со своей карточкой, зачётами и протоколами. Фестиваль
+      сводит их вместе: на главной — одной группой, переключение в один клик, сводка «кто заявлен в нескольких
+      соревнованиях», копия одним архивом. Разъединить можно в любой момент — данные соревнований не меняются.</p>
+    <div class="field"><label for="f-fest">Название фестиваля</label><input id="f-fest" type="text" name="title" placeholder="Осенний выезд 2026"></div>
+    {% for it in loose %}<label class="check"><input type="checkbox" name="member" value="{{ it.folder.id }}"> {{ it.comp.title if it.comp else it.folder.id }}</label>{% endfor %}
+    <button class="btn" type="submit">{{ icon("plus", 18) }}Объединить в фестиваль</button>
+  </form>
+</details>
+{% endif %}
 {% else %}
 <div class="empty">
   {{ icon("logo", 48) }}

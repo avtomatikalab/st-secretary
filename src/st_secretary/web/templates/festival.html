@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Фестиваль «{{ fest.title }}» — СТ-Секретарь{% endblock %}
+{% block content %}
+<a class="back" href="/">← Все соревнования</a>
+<h1>Фестиваль «{{ fest.title }}»</h1>
+<p class="lead">Несколько соревнований за один выезд. Каждое — самостоятельное: своя карточка, зачёты, результаты,
+  протоколы, ранг и нормы. Общие судьи, ГСК и отметки документов участников — появятся после ответов владельца
+  (решение 039); сейчас — группа на главной, переключение, сводка и копия одним архивом.</p>
+
+<section class="panel">
+  <h2>Соревнования фестиваля</h2>
+  <div class="comp-list">
+  {% for it in items %}
+    <div class="fest-member">
+      <a class="comp-card" href="{{ it.base }}"><div class="comp-date">{% if it.comp %}{{ it.comp.date_from|d }}{% endif %}</div>
+        <div class="comp-main"><strong>{{ it.comp.title if it.comp else it.folder.id }}</strong>
+          {% if it.comp %}<span>{{ it.comp.place }} · {{ it.comp.zachety|map(attribute="title")|join(", ") }}</span>{% endif %}</div>
+        <div class="comp-stat"><b>{{ it.files }}</b><span>заявок</span></div>{{ icon("arrow") }}</a>
+      <form method="post" action="/festival/{{ fest.id|urlencode }}/edit" data-confirm="Убрать соревнование из фестиваля? Его данные не изменятся.">
+        <input type="hidden" name="remove" value="{{ it.folder.id }}"><button class="btn btn-ghost btn-small" type="submit">Убрать из фестиваля</button></form>
+    </div>
+  {% endfor %}
+  </div>
+  {% if others %}
+  <form method="post" action="/festival/{{ fest.id|urlencode }}/edit" class="fest-add">
+    <label for="f-add">Добавить соревнование</label>
+    <select id="f-add" name="add">{% for o in others %}<option value="{{ o.folder.id }}">{{ o.comp.title if o.comp else o.folder.id }}</option>{% endfor %}</select>
+    <button class="btn" type="submit">{{ icon("plus", 18) }}Добавить</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel" id="people">
+  <h2>Кто заявлен в нескольких соревнованиях: {{ people|length }}</h2>
+  {% if people %}
+  <p class="muted">Один человек — одинаковые ФИО и дата рождения в предварительных заявках.</p>
+  <div class="table-wrap"><table class="tbl">
+    <thead><tr><th>Участник</th><th>Где заявлен</th></tr></thead>
+    <tbody>{% for p in people %}<tr><td><b>{{ p.fio }}</b><span class="adm-sub">{{ p.birth|d if p.birth.year is defined else p.birth }}</span></td>
+      <td>{% for w in p.where %}<a href="{{ w.base }}/preapps">{{ w.comp }}</a> — «{{ w.team }}», {{ w.zachet }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">Пока никто не заявлен больше чем в одном соревновании фестиваля.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Название, копия, разъединить</h2>
+  <form method="post" action="/festival/{{ fest.id|urlencode }}/edit" class="fest-add">
+    <label for="f-title">Название</label><input id="f-title" type="text" name="title" value="{{ fest.title }}">
+    <button class="btn" type="submit">{{ icon("check", 18) }}Сохранить</button>
+  </form>
+  <div class="actions">
+    <a class="btn" href="/festival/{{ fest.id|urlencode }}/backup.zip">{{ icon("download", 18) }}Скачать копию фестиваля (.zip)</a>
+    <form method="post" action="/festival/{{ fest.id|urlencode }}/edit" data-confirm="Разъединить фестиваль? Соревнования останутся как были.">
+      <input type="hidden" name="do" value="split"><button class="btn btn-ghost" type="submit">Разъединить фестиваль</button></form>
+  </div>
+  <p class="hint">Копия фестиваля — копии всех его соревнований в одном архиве; восстановить — на главной, «Восстановить из
+    резервной копии»: соревнования восстановятся и снова соберутся в фестиваль.</p>
+</section>
+{% endblock %}

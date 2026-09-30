@@ -69,6 +69,8 @@ PERSONAL = "Судьи и персонал — личные данные.json"
 # Свои группы, дисциплины и названия зачётов неофициальных соревнований — подсказки в карточке (решение 038)
 OWN_VALUES = "Свои значения (неофициальные).json"
 OWN_KINDS = ("groups", "names", "disciplines")
+# Фестивали — группы соревнований одного выезда (решение 039): в папке «данные», соревнования не трогаются
+FESTIVALS = "Фестивали.json"
 CONTRACTS_DIR = "Договоры и табель"
 # Сканы и фото документов участников (паспорта, полисы, справки): только на этом компьютере и не в облачной
 # папке — поэтому отдельно от данных соревнования (их часто держат на Google Диске или передают на флешке).
@@ -451,6 +453,54 @@ class Store:
         except (OSError, ValueError):
             return {}
         return data if isinstance(data, dict) else {}
+
+    # ------------------------------------------------------------ фестивали
+
+    @property
+    def festivals_path(self) -> Path:
+        return self.root / FESTIVALS
+
+    def festivals(self) -> list[dict]:
+        """[{id, title, members: [папки соревнований]}]; соревнования, которых уже нет, пропускаются."""
+        try:
+            data = json.loads(self.festivals_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        have = {f.id for f in self.all()}
+        out = []
+        for x in (data.get("festivals", []) if isinstance(data, dict) else []):
+            if isinstance(x, dict) and x.get("id"):
+                out.append({"id": str(x["id"]), "title": str(x.get("title") or "Фестиваль"),
+                            "members": [m for m in x.get("members", []) if m in have]})
+        return out
+
+    def save_festivals(self, items: list[dict]) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        tmp = self.root / f"~{FESTIVALS}"
+        tmp.write_text(json.dumps({"festivals": items}, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.festivals_path)
+
+    def festival(self, fid: str) -> dict | None:
+        return next((x for x in self.festivals() if x["id"] == fid), None)
+
+    def festival_of(self, cid: str) -> dict | None:
+        return next((x for x in self.festivals() if cid in x["members"]), None)
+
+    def set_festival(self, fid: str | None, title: str, members: list[str]) -> str:
+        """Создать или изменить фестиваль; соревнование — только в одном фестивале. Пустой фестиваль — удаляется."""
+        import secrets
+
+        fid = fid or "ф" + secrets.token_hex(4)
+        items = []
+        for x in self.festivals():
+            if x["id"] == fid:
+                continue
+            x["members"] = [m for m in x["members"] if m not in members]
+            items.append(x)
+        if members:
+            items.append({"id": fid, "title": " ".join(title.split())[:200] or "Фестиваль", "members": members})
+        self.save_festivals(items)
+        return fid
 
     @property
     def own_values_path(self) -> Path:

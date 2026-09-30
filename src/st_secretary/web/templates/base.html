@@ -34,6 +34,8 @@
       <strong>{{ comp.title if comp else folder.id }}</strong>
       {% if comp %}<span>{{ comp.dates_text }}</span>{% endif %}
     </a>
+    {% if festival %}<div class="side-fest"><a href="/festival/{{ festival.id|urlencode }}"><small>Фестиваль</small> {{ festival.title }}</a>
+      {% for o in festival.others %}<a class="side-fest-other" href="/c/{{ o|urlencode }}">→ {{ o }}</a>{% endfor %}</div>{% endif %}
     <ol class="steps">
       {% for s in steps %}
       <li><a href="{{ step_url(base, s) }}" class="{% if s.slug == active %}is-active{% endif %}{% if not s.ready %} is-soon{% endif %}"{% if s.slug == active %} aria-current="page"{% endif %}>

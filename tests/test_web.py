@@ -1568,3 +1568,38 @@ def test_admission_by_delegation_view(client, tmp_path, psr_card):
     assert "<b>по делегациям</b>" in page and page.count('class="adm-deleg"') == 2
     assert "Красноярск · Лебедев Антон Игоревич" in page and "1 команда" in page
     assert "по делегациям</a>" in client.get(base(f) + "/admission").text
+
+
+def test_festival_group_summary_switch_backup_and_restore(client, tmp_path, psr_card):
+    """Правки.md, п. 19 (неспорная часть, решение 039): фестиваль — группа соревнований на главной, переключение,
+    сводка «кто заявлен в нескольких соревнованиях», копия одним архивом и восстановление; данные соревнований
+    не трогаются."""
+    from dataclasses import replace
+    from urllib.parse import unquote
+
+    store = client.app.state.store
+    a = store.create(psr_card)
+    b = store.create(replace(psr_card, title="Кубок города по спортивному туризму"))
+    a.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    b.add_preapp("Кедр.xlsx", kedr(tmp_path))  # те же люди заявлены и там, и там
+    before = sorted(p.name for p in a.path.rglob("*"))
+    r = client.post("/festival/new", data={"title": "Осенний выезд", "member": [a.id, b.id]}, follow_redirects=False)
+    assert r.status_code == 303 and "done=festival_made" in r.headers["location"]
+    fid = unquote(r.headers["location"].split("/festival/")[1].split("?")[0])
+    assert store.festival(fid)["members"] == [a.id, b.id] and sorted(p.name for p in a.path.rglob("*")) == before
+    home = client.get("/").text
+    assert 'class="fest-group"' in home and "Осенний выезд" in home
+    page = client.get(f"/festival/{fid}").text
+    assert "Кто заявлен в нескольких соревнованиях: 3" in page and "Лебедев Антон Игоревич" in page
+    assert 'class="side-fest"' in client.get(base(a)).text and b.id in client.get(base(a)).text
+
+    data = client.get(f"/festival/{fid}/backup.zip").content
+    assert data[:2] == b"PK"
+    r = client.post("/restore", files={"backup": ("фестиваль.zip", data, "application/zip")}, follow_redirects=False)
+    assert "done=restored" in r.headers["location"] and "/festival/" in r.headers["location"]
+    fests = store.festivals()
+    assert len(fests) == 2 and all(len(x["members"]) == 2 for x in fests)
+    client.post(f"/festival/{fid}/edit", data={"do": "split"})
+    assert store.festival(fid) is None and store.get(a.id) and store.get(b.id)
+    r = client.post("/festival/new", data={"title": "Один", "member": [a.id]}, follow_redirects=False)
+    assert "festival_few" in r.headers["location"]

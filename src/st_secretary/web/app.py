@@ -107,7 +107,10 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             card_errors = e.issues
         except Exception as e:  # noqa: BLE001 — повреждённый файл: показать, а не упасть
             card_errors = [Issue(ERROR, f"файл карточки не читается: {e}")]
-        return {"folder": f, "comp": comp, "card_errors": card_errors, "base": _base(f)}
+        fest = store.festival_of(f.id)  # фестиваль: переключатель на другие его соревнования
+        if fest:
+            fest = {**fest, "others": [m for m in fest["members"] if m != f.id]}
+        return {"folder": f, "comp": comp, "card_errors": card_errors, "base": _base(f), "festival": fest}
 
     class Ctx:  # общее для страниц: хранилище, шаблоны, помощники; страницы добавляют свои
         def update(self, **kw):
