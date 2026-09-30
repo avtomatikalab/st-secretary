@@ -56,7 +56,7 @@
     <div class="flash flash-{{ flash.kind }}" role="status">{{ icon("check-circle" if flash.kind == "ok" else "alert") }}<div>{{ flash.text }}</div></div>
     {% endif %}
     {% block content %}{% endblock %}
-    {% if journal_on %}<p class="page-foot"><a href="/journal.zip" title="Файл с записями о работе программы — для разработчика, если что-то пошло не так">Журнал программы</a></p>{% endif %}
+    <p class="page-foot">СТ-Секретарь {{ app_version }} · автор Udnikov Denis{% if journal_on %} · <a href="/journal.zip" title="Файл с записями о работе программы — для разработчика, если что-то пошло не так">Журнал программы</a>{% endif %}</p>
   </main>
 </div>
 <script src="/static/app.js?v={{ version }}"></script>

@@ -5,6 +5,7 @@ description = "СТ-Секретарь: система для секретари
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
+authors = [{ name = "Udnikov Denis" }]
 requires-python = ">=3.12"
 # openpyxl — чтение и запись xlsx (карточка соревнования, предзаявки, сводки для секретаря).
 # fastapi, uvicorn, jinja2, python-multipart — интерфейс в браузере (локальный сервер на ноутбуке).

@@ -80,7 +80,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     templates.env.filters["team_anchor"] = team_anchor
     # Метка для адресов стилей и скриптов: меняется вместе с файлами, чтобы браузер не держал старую версию.
     static_version = f"{__version__}-{max(int(p.stat().st_mtime) for p in (HERE / 'static').iterdir())}"
-    templates.env.globals.update(steps=STEPS, step_url=_step_url, version=static_version, labels=SEVERITY_LABEL,
+    templates.env.globals.update(steps=STEPS, step_url=_step_url, version=static_version, app_version=__version__,
+                                 labels=SEVERITY_LABEL,
                                  level_labels=LEVEL_LABELS, empty_zachet=empty_zachet(),
                                  ERROR=ERROR, WARNING=WARNING, CHECKED=CHECKED, FIXED=FIXED, INFO=INFO,
                                  issue_key=issue_key, status_label=STATUS_LABEL, CHECK=CHECK, FIX=FIX, DONE=DONE,

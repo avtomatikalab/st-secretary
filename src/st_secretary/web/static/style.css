@@ -657,7 +657,8 @@ tr.is-moved td { transition: background .6s; background: var(--primary-soft); }
 tr.is-target > td { background: #fff4d4 !important; }
 
 /* Ссылка на журнал программы внизу страниц — мелко */
-.page-foot { margin: 32px 0 0; font-size: .78rem; text-align: right; }
+.page-foot { margin: 32px 0 0; font-size: .78rem; text-align: right; color: var(--muted); }
+@media print { .page-foot { display: none; } }
 .page-foot a { color: var(--muted); }
 
 /* Значки «Проверить» / «Ошибка» и плитки сводки — нажимаются */

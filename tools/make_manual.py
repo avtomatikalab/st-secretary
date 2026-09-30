@@ -407,7 +407,8 @@ def write(shots: dict[str, Path], info: dict, path: Path) -> Path:
     t = d.add_paragraph()
     t.alignment = WD_ALIGN_PARAGRAPH.CENTER
     t.paragraph_format.space_before = Pt(160)
-    r = t.add_run(f"Версия программы {__version__}\nСнимки экрана — на учебном соревновании с выдуманными данными.\n"
+    r = t.add_run(f"Версия программы {__version__} · автор Udnikov Denis\n"
+                  "Снимки экрана — на учебном соревновании с выдуманными данными.\n"
                   "Исходный код и новые версии: github.com/avtomatikalab/st-secretary")
     r.font.size, r.font.color.rgb = Pt(11), GRAY
 

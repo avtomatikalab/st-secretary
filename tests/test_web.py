@@ -1364,3 +1364,21 @@ def test_admission_doctor_mark_sets_med_for_team(client, tmp_path, psr_card):
     client.post(url + "/team", data=data, headers={"X-Autosave": "1"})
     data = team_form(client.get(url).text, "Кедр.xlsx")
     assert not any(k.endswith("-d-med") for k in data)
+
+
+def test_author_in_footer_quietly(client):
+    """Правки.md, п. 11: «СТ-Секретарь 0.2.0 · автор Udnikov Denis» — мелко в подвале страниц программы; на печати и
+    на страницах для судей и табло — нет."""
+    import tomllib
+
+    from st_secretary import __version__
+
+    home = client.get("/").text
+    assert f'<p class="page-foot">СТ-Секретарь {__version__} · автор Udnikov Denis' in home
+    css = (Path(__file__).parents[1] / "src" / "st_secretary" / "web" / "static" / "style.css").read_text(encoding="utf-8")
+    assert "@media print { .page-foot { display: none; } }" in css
+    tpl = Path(__file__).parents[1] / "src" / "st_secretary" / "web" / "templates"
+    assert all("Udnikov" not in (tpl / n).read_text(encoding="utf-8") for n in ("judge.html", "board.html",
+                                                                               "judges_print.html"))
+    meta = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    assert meta["project"]["authors"] == [{"name": "Udnikov Denis"}]

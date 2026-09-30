@@ -299,3 +299,5 @@ uv run python tools/reconcile_psr2024.py --data "путь/к/папке/с/да�
 
 AGPL-3.0-or-later. Любой может использовать и изменять код; если изменённая версия работает как
 сетевой сервис, её исходный код тоже должен быть открыт.
+
+Автор — Udnikov Denis. © 2026, AGPL-3.0-or-later (Copyright (C) 2026 Udnikov Denis).
