@@ -316,6 +316,39 @@
     });
   });
 
+  // --- «Исправить» у замечания: перейти прямо к полю (?focus=имя или id; «блок/поле» — поле внутри блока с этим id),
+  // раскрыть свёрнутые разделы, прокрутить, поставить курсор и подсветить. На той же странице — без перезагрузки.
+  function focusTarget(spec) {
+    if (!spec) return false;
+    var scope = document, name = spec, k = spec.indexOf("/");
+    if (k > 0) { scope = document.getElementById(spec.slice(0, k)) || document; name = spec.slice(k + 1); }
+    var el = null;
+    try {
+      el = (scope === document ? document.getElementById(name) : scope.querySelector("#" + CSS.escape(name))) ||
+           scope.querySelector('[name="' + name.replace(/["\\]/g, "\\$&") + '"]');
+    } catch (e) { el = null; }
+    if (!el) return false;
+    for (var d = el.closest("details"); d; d = d.parentElement ? d.parentElement.closest("details") : null) d.open = true;
+    el.scrollIntoView({ block: "center" });
+    if (!el.matches("input, select, textarea, button, a")) el.setAttribute("tabindex", "-1");
+    try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+    el.classList.add("is-target");
+    setTimeout(function () { el.classList.remove("is-target"); }, 3000);
+    return true;
+  }
+  var focusQ = new URLSearchParams(location.search).get("focus");
+  if (focusQ) {
+    var focusLater = function () { setTimeout(function () { focusTarget(focusQ); }, 50); };
+    if (document.readyState === "complete") focusLater(); else window.addEventListener("load", focusLater);
+  }
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest("a.js-fix");
+    if (!a || a.origin !== location.origin || a.pathname !== location.pathname) return;
+    var here = new URLSearchParams(location.search), there = new URLSearchParams(a.search);
+    if ((there.get("z") || "") !== (here.get("z") || "") || (there.get("key") || "") !== (here.get("key") || "")) return;
+    if (focusTarget(there.get("focus") || a.hash.slice(1))) e.preventDefault();
+  });
+
   // --- Порядок старта: строки перетаскиваются за «ручку» (мышь и палец — pointer events, клавиатура — стрелки).
   // Номера «Порядок» и время «по расчёту» (первый старт + интервал × место) пересчитываются сразу; сохраняет
   // прежняя кнопка — сервер берёт порядок из полей pos-i. Вписанное вручную время остаётся за командой.

@@ -195,17 +195,17 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
                 sc = stt.score(st, rec, stt.full_intervals(zdata))
                 if sc.total is not None and cell and not _same(cell, points_text(sc.total)):
                     out.append(Issue(WARNING, f"«{team}», {st.title}: с телефона судьи {sc.text} ({when}), в таблице "
-                                              f"{cell} — проверьте", team=team))
+                                              f"{cell} — проверьте", team=team, target=f"cell:{file}:{sid}"))
             elif got:
                 try:
                     parse_points(got)
                 except ValueError:
                     out.append(Issue(WARNING, f"«{team}», {st.title}: судья этапа прислал «{got}» — не число",
-                                     team=team))
+                                     team=team, target=f"cell:{file}:{sid}"))
                     continue
                 if cell and not _same(cell, got):
                     out.append(Issue(WARNING, f"«{team}», {st.title}: судья этапа прислал {got} ({when}), в таблице "
-                                              f"{cell} — проверьте", team=team))
+                                              f"{cell} — проверьте", team=team, target=f"cell:{file}:{sid}"))
             if rec.get("removed"):
                 why = f": {rec['reason']}" if rec.get("reason") else ""
                 out.append(Issue(INFO, f"«{team}», {st.title}: судья этапа отметил снятие с этапа{why}", team=team))
@@ -220,7 +220,8 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
             same = False
         if not same:
             out.append(Issue(WARNING, f"«{team_names.get(file, file)}»: отсечки с телефонов судей — {duration_text(total)}, "
-                                      f"в таблице {cell} — проверьте", team=team_names.get(file, file)))
+                                      f"в таблице {cell} — проверьте", team=team_names.get(file, file),
+                             target=f"cell:{file}:cutoffs"))
     return out
 
 

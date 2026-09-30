@@ -225,12 +225,14 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
         rows.append(r)
         for sid in bad:
             st = next(s for s in stages if s.id == sid)
-            issues.append(Issue(ERROR, f"«{t.team}», {st.title}: «{raw[sid]}» — не число", source=z.key, team=t.team))
+            issues.append(Issue(ERROR, f"«{t.team}», {st.title}: «{raw[sid]}» — не число", source=z.key, team=t.team,
+                                target=f"cell:{t.file}:{sid}"))
         for s in stages:
             x = pts.get(s.id)
             if x is not None and s.max_penalty is not None and x > 2 * s.max_penalty:
                 issues.append(Issue(WARNING, f"«{t.team}», {s.title}: {points_text(x)} — больше 2 × МШ "
-                                             f"({points_text(2 * s.max_penalty)})", source=z.key, team=t.team))
+                                             f"({points_text(2 * s.max_penalty)})", source=z.key, team=t.team,
+                                    target=f"cell:{t.file}:{s.id}"))
 
     # команда без единого внесённого балла места не получает: её баллы ещё не внесены, а не «0 — лучший результат»
     cards = [PsrTeamCard(r.inp.file, r.start_order, r.points, r.status if r.points else Status.DNS) for r in rows]
@@ -252,7 +254,8 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     try:
         norms = norm_edition(comp.norms_edition)
     except KeyError:
-        issues.append(Issue(ERROR, f"нет редакции норм «{comp.norms_edition}» — нормативы не считаются", source=z.key))
+        issues.append(Issue(ERROR, f"нет редакции норм «{comp.norms_edition}» — нормативы не считаются", source=z.key,
+                            target="card"))
     if norms and fmt:
         if any(m.qual is None for r in started for m in r.inp.members):
             issues.append(Issue(WARNING, "у части участников не распознан разряд — в ранге они считаются без разряда",

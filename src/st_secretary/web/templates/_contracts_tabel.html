@@ -1,5 +1,6 @@
 {# Табель по дням. Этот же блок сервер присылает после каждого изменения. #}
 {% from "_icons.html" import icon %}
+{% from "_form.html" import fix_item with context %}
 <article class="team ct-tabel" id="tabel">
 <form method="post" action="{{ base }}/contracts/days" data-autosave>
   <div class="table-wrap">
@@ -11,7 +12,7 @@
     </thead>
     <tbody>
     {% for p in team %}{% set i = loop.index0 %}{% set probs = per_person[p.key] %}
-    <tr class="{% if p.unpaid %}ct-unpaid{% endif %}">
+    <tr class="{% if p.unpaid %}ct-unpaid{% endif %}" id="tabel-{{ p.key|team_anchor }}">
       <td class="ct-n">{{ loop.index }}<input type="hidden" name="p-{{ i }}-key" value="{{ p.key }}"></td>
       <td><b>{{ p.fio }}</b><span class="adm-sub">{{ p.role }}{% if p.cat != "б/к" %}, {{ p.cat }} кат.{% endif %}{% if not p.from_card %} · добавлен(а) здесь{% endif %}</span></td>
       {% for d in s.days %}
@@ -47,9 +48,7 @@
 {% if issues %}
 <h3 class="ct-issues-title">Проверка перед печатью</h3>
 <ul class="issues-simple">
-  {% for i in issues %}
-  <li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span><span>{{ i.text }}</span></li>
-  {% endfor %}
+  {% for i in issues %}{{ fix_item(i, base) }}{% endfor %}
 </ul>
 {% else %}
 <p class="text-ok ct-issues-title">{{ icon("check-circle", 18) }} Проверка: ошибок нет — дни, ставки и данные для договоров на месте.</p>

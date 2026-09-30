@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_form.html" import fix_item with context %}
 {% block title %}{{ p.fio }} — договор — СТ-Секретарь{% endblock %}
 {% block content %}
 <a class="back" href="{{ base }}/contracts#tabel">← Договоры, акты, табель</a>
@@ -11,7 +12,7 @@
 {% set mine = per_person[p.key] %}
 {% if mine %}
 <ul class="issues-simple">
-  {% for i in mine %}<li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span><span>{{ i.text }}</span></li>{% endfor %}
+  {% for i in mine %}{{ fix_item(i, base) }}{% endfor %}
 </ul>
 {% endif %}
 

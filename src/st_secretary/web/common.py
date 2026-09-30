@@ -304,3 +304,48 @@ def _preapp_view(files: list[Path], result, reviews: dict) -> dict:
         by_filter[g["review"].status] += 1
     return {"groups": groups, "general": by_source.get("", []), "by_filter": by_filter,
             "totals": Counter(i.severity for i in result.issues)}
+
+
+def fix_url(base: str, i) -> str:
+    """«Исправить» у замечания: адрес страницы, где это правят, с полем для курсора (?focus=имя или id поля;
+    «блок/поле» — поле внутри блока, например команды на странице допуска). Пусто — вести некуда (например,
+    расхождение в чужом документе при сверке: исправляют в самом документе)."""
+    get = i.get if isinstance(i, dict) else lambda k, d="": getattr(i, k, d)
+    target = get("target", "") or ""
+    kind, _, rest = target.partition(":")
+    z = {"z": get("source", "")} if get("source", "") else {}
+
+    def at(path: str, focus: str = "", anchor: str = "", **params) -> str:
+        q = {**params, **({"focus": focus} if focus else {})}
+        return f"{base}{path}" + (f"?{urlencode(q)}" if q else "") + (f"#{anchor}" if anchor else "")
+
+    if kind == "rate":
+        return at("/contracts", f"rate-{rest}", "settings")
+    if kind == "tabel":
+        return at("/contracts", f"tabel-{team_anchor(rest)}", "tabel")
+    if kind == "person":
+        key, _, fld = rest.partition(":")
+        return at("/contracts/person", f"f-{fld}" if fld else "", key=key)
+    if kind == "customer":
+        return at("/contracts", "f-c-name", "customer")
+    if kind == "card":
+        return at("/card/edit", anchor=rest)
+    if kind == "cell":
+        file, _, fld = rest.rpartition(":")
+        return at("/results", f"c-{team_anchor(file)}-{fld}", "points", **z)
+    if kind == "stages":
+        return at("/results", rest, "stages", **z)
+    if kind == "start":
+        section = {"first": "times", "order": "order", "publish": "publish"}.get(rest, "")
+        return at("/start", rest if rest == "first" else "", section, **z)
+    if kind == "preapp":
+        return at("/preapps/team", file=rest)
+    if kind == "adm":
+        file, _, fld = rest.partition("/")
+        return at("/admission", f"{team_anchor(file)}/{fld}", team_anchor(file))
+    if kind == "reentry":
+        return at("/preapps/edit", file=rest, reentry="1")
+    if kind == "equipment":
+        return at("/equipment", anchor=team_anchor(rest))
+    return ""
+

@@ -31,6 +31,7 @@ from st_secretary.web.common import (
     _fmt_date,
     _step_url,
     cannot_open_text,
+    fix_url,
     log,
     open_in_os,
     team_anchor,
@@ -82,7 +83,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                                  level_labels=LEVEL_LABELS, empty_zachet=empty_zachet(),
                                  ERROR=ERROR, WARNING=WARNING, CHECKED=CHECKED, FIXED=FIXED, INFO=INFO,
                                  issue_key=issue_key, status_label=STATUS_LABEL, CHECK=CHECK, FIX=FIX, DONE=DONE,
-                                 launcher=system.launcher(), console=system.console())
+                                 launcher=system.launcher(), console=system.console(), fix_url=fix_url)
 
     def page(request: Request, name: str, status_code: int = 200, background=None, **ctx):
         ctx = {"flash": _flash(request), "can_stop": app.state.shutdown is not None, **ctx}

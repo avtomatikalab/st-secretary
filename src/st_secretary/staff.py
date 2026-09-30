@@ -275,31 +275,36 @@ def check(team: list[Person], personal: dict[str, dict], customer: dict) -> list
         if p.outside:
             out.append(Issue(WARNING, f"{p.fio}: отмечены дни вне периода работы бригады "
                                       f"({', '.join(f'{d:%d.%m}' for d in p.outside)}) — они не учитываются",
-                             source=src, person=p.fio))
+                             source=src, person=p.fio, target=f"tabel:{p.key}"))
         if p.unpaid:
             continue
         if not p.days:
             out.append(Issue(WARNING, f"{p.fio}: не отмечено ни одного дня — в табель и договоры не попадёт; "
-                                      "если работает без оплаты, отметьте «без оплаты»", source=src, person=p.fio))
+                                      "если работает без оплаты, отметьте «без оплаты»", source=src, person=p.fio,
+                             target=f"tabel:{p.key}"))
             continue
         if p.rate is None:
             out.append(Issue(ERROR, f"{p.fio}: не задана ставка для «{p.role}, {p.cat}» — сумма не посчитается",
-                             source=src, person=p.fio))
+                             source=src, person=p.fio, target=f"rate:{p.rate_key}"))
         if role_genitive(p.role) is None:
             out.append(Issue(WARNING, f"{p.fio}: должность «{p.role}» программа не умеет склонять — в договоре она "
-                                      "будет как есть; проверьте фразу «в качестве …»", source=src, person=p.fio))
+                                      "будет как есть; проверьте фразу «в качестве …»", source=src, person=p.fio,
+                             target="card:gsk" if p.from_card else f"person:{p.key}:role"))
         pd = personal.get(p.key, {})
         for fld, why in personal_problems(pd):
             label = next(lbl for k, lbl, _ in PERSONAL_FIELDS if k == fld)
-            out.append(Issue(ERROR, f"{p.fio}: {label.lower()} — {why}", source=src, person=p.fio, field=fld))
+            out.append(Issue(ERROR, f"{p.fio}: {label.lower()} — {why}", source=src, person=p.fio, field=fld,
+                             target=f"person:{p.key}:{fld}"))
         miss = missing_personal(pd)
         if miss:
+            first = next(k for k in FOR_CONTRACT if not str(pd.get(k, "") or "").strip())
             out.append(Issue(WARNING, f"{p.fio}: для договора нет данных — {', '.join(m.lower() for m in miss)}; "
-                                      "в договоре останутся пустые строки", source=src, person=p.fio))
+                                      "в договоре останутся пустые строки", source=src, person=p.fio,
+                             target=f"person:{p.key}:{first}"))
     names = [p.key for p in team]
     for k in {k for k in names if names.count(k) > 1}:
-        out.append(Issue(ERROR, f"{k}: человек указан дважды", source=src))
+        out.append(Issue(ERROR, f"{k}: человек указан дважды", source=src, target="card:gsk"))
     if not customer.get("name") or not customer.get("head_fio"):
         out.append(Issue(WARNING, "не заполнены сведения о заказчике — в договорах останутся пустые места",
-                         source=src))
+                         source=src, target="customer"))
     return out

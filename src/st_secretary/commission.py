@@ -131,6 +131,7 @@ class TeamCheck:
     fee_method: str = ""
     reentries: list[dict] = field(default_factory=list)
     extra: list[str] = field(default_factory=list)  # что ещё мешает допуску (проверка снаряжения)
+    problem_targets: list[str] = field(default_factory=list)  # где исправить каждую из problems (Issue.target)
 
     @property
     def label(self) -> str:
@@ -208,7 +209,9 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
                       reentries=list(m.get("reentries", [])))
         t.fee_due = fee_due(t, comp)
         t.extra = list((extra or {}).get(file, []))
-        t.problems = _team_problems(t, comp) + (t.extra if team else [])
+        found = _team_problems(t, comp)
+        t.problems = [x for x, _ in found] + (t.extra if team else [])
+        t.problem_targets = [w for _, w in found] + ([f"equipment:{t.file}"] * len(t.extra) if team else [])
         if t.decision == REJECTED or (persons and all(p.status == REJECTED for p in persons)):
             t.status = REJECTED
         elif not t.problems:
@@ -217,24 +220,27 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
     return out
 
 
-def _team_problems(t: TeamCheck, comp: Competition) -> list[str]:
+def _team_problems(t: TeamCheck, comp: Competition) -> list[tuple[str, str]]:
     if t.team is None:
         return ["заявку не удалось прочитать — исправьте её или заполните в программе"]
-    problems = []
+    problems = []  # (текст, где исправить)
     if t.errors:
-        problems.append("ошибки в заявке команды: " + "; ".join(i.text for i in t.errors))
+        problems.append(("ошибки в заявке команды: " + "; ".join(i.text for i in t.errors), f"preapp:{t.file}"))
     if t.missing_team_docs and t.decision != ADMITTED:
-        problems.append("нет: " + ", ".join(d.short.lower() for d in t.missing_team_docs))
+        problems.append(("нет: " + ", ".join(d.short.lower() for d in t.missing_team_docs),
+                         f"adm:{t.file}/td-{t.missing_team_docs[0].key}"))
     waiting = [p for p in t.persons if p.status == PENDING]
     if waiting:
-        problems.append(f"участники ждут решения: {len(waiting)}")
+        problems.append((f"участники ждут решения: {len(waiting)}",
+                         f"adm:{t.file}/p-{t.persons.index(waiting[0])}-decision"))
     # после недопуска участников состав команды может перестать соответствовать Положению
     rejected = any(p.status == REJECTED for p in t.persons)
     for key, members in _by_zachet([p.entry for p in t.persons if p.status != REJECTED]).items():
         z = members[0].zachet
         if rejected and discipline_by_code(z.discipline_code).rank_format == "group" and z.team_size \
                 and len(members) < z.team_size:
-            problems.append(f"в зачёте {key} осталось {len(members)} чел., нужно {z.team_size} — нужна перезаявка")
+            problems.append((f"в зачёте {key} осталось {len(members)} чел., нужно {z.team_size} — нужна перезаявка",
+                             f"reentry:{t.file}"))
     return problems
 
 

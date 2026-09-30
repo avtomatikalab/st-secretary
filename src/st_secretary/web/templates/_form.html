@@ -56,11 +56,16 @@
 </div>
 {%- endmacro %}
 
-{% macro issue_list(issues) -%}
+{% macro issue_list(issues, base="") -%}
 <ul class="issues-simple">
-  {% for i in issues %}
-  <li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>
-    <span>{% if i.field %}<b>{{ i.field }}:</b> {% endif %}{{ i.text }}</span></li>
-  {% endfor %}
+  {% for i in issues %}{{ fix_item(i, base, i.field) }}{% endfor %}
 </ul>
+{%- endmacro %}
+
+{# Замечание в коротком списке: текст — ссылка туда, где исправлять, и кнопка «Исправить» (если есть куда). #}
+{% macro fix_item(i, base, lead="") -%}
+{% set url = fix_url(base, i) if base else "" %}
+<li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span>
+  <span>{% if lead %}<b>{{ lead }}:</b> {% endif %}{% if url %}<a class="issue-link js-fix" href="{{ url }}">{{ i.text }}</a>{% else %}{{ i.text }}{% endif %}</span>
+  {% if url and i.severity in (ERROR, WARNING) %}<a class="btn btn-ghost btn-small issue-fix js-fix" href="{{ url }}">Исправить</a>{% endif %}</li>
 {%- endmacro %}

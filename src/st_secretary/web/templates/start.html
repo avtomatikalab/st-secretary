@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
-{% from "_form.html" import issue_list %}
+{% from "_form.html" import issue_list with context %}
 {% block title %}Жеребьёвка и стартовые протоколы — СТ-Секретарь{% endblock %}
 {% block content %}
 <h1>Жеребьёвка и стартовые протоколы</h1>
@@ -26,7 +26,7 @@
   <div class="tile {% if sl.published and not sl.changed %}tile-fixed{% endif %}"><b>{{ pub_at.strftime("%H:%M") if pub_at else "нет" }}</b><span>опубликован</span></div>
 </div>
 
-{% if sl.issues %}<div class="panel">{{ issue_list(sl.issues) }}</div>{% endif %}
+{% if sl.issues %}<div class="panel">{{ issue_list(sl.issues, base) }}</div>{% endif %}
 {% if not_admitted %}<p class="hint">Не допущены — в протокол не входят: {{ not_admitted|join(", ") }}.</p>{% endif %}
 
 <section class="panel" id="draw">

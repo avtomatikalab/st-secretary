@@ -65,7 +65,8 @@
     </div>
 
     {% if t.problems and t.status != "rejected" %}
-    <ul class="adm-problems">{% for x in t.problems %}<li>{{ icon("alert", 16) }} {{ x }}</li>{% endfor %}</ul>
+    <ul class="adm-problems">{% for x in t.problems %}{% set url = fix_url(base, {"target": t.problem_targets[loop.index0] if loop.index0 < t.problem_targets|length else ""}) %}
+      <li>{{ icon("alert", 16) }} {% if url %}<a class="issue-link js-fix" href="{{ url }}">{{ x }}</a>{% else %}{{ x }}{% endif %}</li>{% endfor %}</ul>
     {% endif %}
 
     <div class="adm-foot">

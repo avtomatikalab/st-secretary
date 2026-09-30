@@ -227,7 +227,8 @@ def build(z, zdata: dict, teams: list, ranks: dict[str, Fraction | None] | None 
         late = [r.inp.team for r in rows if not r.drawn]
         if late:
             issues.append(Issue(WARNING, f"не было при жеребьёвке — поставлены в конец: {', '.join(late)}. "
-                                         "Проведите жеребьёвку заново или поставьте их вручную", source=z.key))
+                                         "Проведите жеребьёвку заново или поставьте их вручную", source=z.key,
+                                target="start:order"))
         if sl.out:
             issues.append(Issue(INFO, f"были при жеребьёвке, но сейчас не в зачёте (не допущены или перешли): "
                                       f"{', '.join(sl.out)} — убраны из протокола", source=z.key))
@@ -238,20 +239,22 @@ def build(z, zdata: dict, teams: list, ranks: dict[str, Fraction | None] | None 
     try:
         parse_hm(st["first"])
     except ValueError:
-        issues.append(Issue(WARNING, f"время первого старта «{st['first']}» — не время (нужно чч:мм)", source=z.key))
+        issues.append(Issue(WARNING, f"время первого старта «{st['first']}» — не время (нужно чч:мм)", source=z.key,
+                            target="start:first"))
     bad = [r.inp.team for r in rows if d.get("times", {}).get(r.inp.file) and not r.manual_time]
     if bad:
         issues.append(Issue(WARNING, f"время старта вписано не по форме чч:мм — не учтено: {', '.join(bad)}",
-                            source=z.key))
+                            source=z.key, target="start:order"))
     times = [r.time for r in rows if r.time is not None]
     iv = st["interval"].strip()
     if iv and iv != "0" and len(times) != len(set(times)):
         same = sorted({hm_text(t) for t in times if times.count(t) > 1})
-        issues.append(Issue(WARNING, f"одинаковое время старта у нескольких команд: {', '.join(same)}", source=z.key))
+        issues.append(Issue(WARNING, f"одинаковое время старта у нескольких команд: {', '.join(same)}", source=z.key,
+                            target="start:order"))
     if sl.published and sl.first_start:
         pub = datetime.fromisoformat(sl.published["at"])
         if (sl.first_start - pub).total_seconds() < 3600:
             issues.append(Issue(WARNING, f"стартовый протокол опубликован в {pub:%H:%M} — меньше чем за час до "
                                          f"старта ({sl.first_start:%H:%M}); по Правилам (п. 8.4) — не позднее чем "
-                                         "за час", source=z.key))
+                                         "за час", source=z.key, target="start:publish"))
     return sl

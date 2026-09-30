@@ -1,4 +1,5 @@
 {# Результаты зачёта в порядке протокола — обновляются после каждого ввода баллов. #}
+{% from "_form.html" import fix_item with context %}
 {% from "_icons.html" import icon %}
 <div class="panel" id="results-live" data-live-results>
   <h2>Результаты — {{ z.key }}</h2>
@@ -38,7 +39,7 @@
   {% endif %}
   {% if run.issues %}
   <ul class="issues-simple">
-    {% for i in run.issues %}<li class="sev-{{ i.severity }}"><span class="badge badge-{{ i.severity }}">{{ labels[i.severity] }}</span><span>{{ i.text }}</span></li>{% endfor %}
+    {% for i in run.issues %}{{ fix_item(i, base) }}{% endfor %}
   </ul>
   {% endif %}
 </div>

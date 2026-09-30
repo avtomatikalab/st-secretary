@@ -218,7 +218,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                         "declared": "заявленное время"}[field]
                 issues.append(Issue(ERROR, f"«{t.team}»: {what} «{d.get(field)}» — не время (нужно "
                                            f"{'чч:мм:сс' if field in ('start', 'finish') else 'мм:сс'})",
-                                    source=z.key, team=t.team))
+                                    source=z.key, team=t.team, target=f"cell:{t.file}:{field}"))
                 bad.append(field)
                 continue
             if field in ("start", "finish", "cutoffs"):
@@ -232,18 +232,19 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
         for sid in [b for b in bad if b in known]:
             s = next(s for s in stages if s.id == sid)
             issues.append(Issue(ERROR, f"«{t.team}», {s.title}: «{raw[sid]}» — не число и не «с» (снятие)",
-                                source=z.key, team=t.team))
+                                source=z.key, team=t.team, target=f"cell:{t.file}:{sid}"))
         if pts and not penalty_system:
             issues.append(Issue(ERROR, f"«{t.team}»: в бесштрафовой системе штрафных баллов нет — в клетках этапов "
                                        "только «с» (снятие); штрафное время — в колонке «Штраф. время»",
-                                source=z.key, team=t.team))
+                                source=z.key, team=t.team, target=f"cell:{t.file}:{next(iter(pts))}"))
             bad.append("points")
         if r.start is not None and r.finish is not None:
             finish = r.finish if r.finish >= r.start else r.finish + 86400  # финиш после полуночи
             r.distance_time = finish - r.start - r.cutoffs
             if r.distance_time <= 0:
                 issues.append(Issue(ERROR, f"«{t.team}»: время на дистанции получилось {clock_text(r.distance_time)} — "
-                                           "проверьте старт, финиш и отсечки", source=z.key, team=t.team))
+                                           "проверьте старт, финиш и отсечки", source=z.key, team=t.team,
+                                    target=f"cell:{t.file}:finish"))
                 r.distance_time = None
             elif kv is not None and r.distance_time > kv * 60 and status is Status.FINISHED:
                 r.status, r.auto_status = Status.OVER_TIME, True
@@ -298,15 +299,18 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     for r in ordered:
         if r.auto_status and r.status is Status.OVER_TIME:
             issues.append(Issue(WARNING, f"«{r.inp.team}»: время на дистанции {clock_text(r.distance_time)} больше КВ "
-                                         f"({kv} мин) — место не присуждается (п. 8.18)", source=z.key, team=r.inp.team))
+                                         f"({kv} мин) — место не присуждается (п. 8.18)", source=z.key, team=r.inp.team,
+                                target=f"cell:{r.inp.file}:finish"))
         elif r.auto_status and r.status is Status.REMOVED:
             why = "красная карточка — результат аннулирован (п. 10.4.4 а)" if r.red else \
                 f"снятий с этапов: {r.removals} — снятие с дистанции (п. 6.2.8 а)"
-            issues.append(Issue(WARNING, f"«{r.inp.team}»: {why}", source=z.key, team=r.inp.team))
+            issues.append(Issue(WARNING, f"«{r.inp.team}»: {why}", source=z.key, team=r.inp.team,
+                                target=f"cell:{r.inp.file}:status"))
     if kind in ("pedestrian", "nordic", "mountain") and okv is None and (
             any(r.red for r in rows) or any(r.no_tactics for r in rows)
             or (kind == "pedestrian" and st["removal"] == "okv" and any(r.removals for r in rows))):
-        issues.append(Issue(ERROR, "не задан КВ (ОКВ) дистанции — штрафное время по ОКВ не посчитать", source=z.key))
+        issues.append(Issue(ERROR, "не задан КВ (ОКВ) дистанции — штрафное время по ОКВ не посчитать", source=z.key,
+                            target="stages:f-kvd"))
 
     started = [r for r in ordered if r.status not in (Status.DNS, Status.OUT_OF_COMPETITION)]
     rank, norms = None, None
@@ -314,7 +318,8 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     try:
         norms = norm_edition(comp.norms_edition)
     except KeyError:
-        issues.append(Issue(ERROR, f"нет редакции норм «{comp.norms_edition}» — нормативы не считаются", source=z.key))
+        issues.append(Issue(ERROR, f"нет редакции норм «{comp.norms_edition}» — нормативы не считаются", source=z.key,
+                            target="card"))
     if norms and fmt:
         rank = qualification_rank([RankEntry(r.place, tuple(m.qual or Qual.BR for m in r.inp.members))
                                    for r in started], fmt, norms)
