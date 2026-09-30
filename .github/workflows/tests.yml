@@ -1,0 +1,29 @@
+# Тесты на Windows (переносная версия, ноутбуки секретариата) и macOS (разработка на MacBook) после каждой
+# отправки на GitHub. Реальных данных здесь нет: тесты — на выдуманных и обезличенных.
+name: Тесты
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: "3.12"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Библиотеки (по uv.lock)
+        run: uv sync --frozen --extra xls
+      - name: Тесты
+        run: uv run --frozen pytest -q -p no:warnings
+      - name: Проверка стиля
+        run: uv run --frozen ruff check src tests tools
