@@ -53,6 +53,10 @@
   .qhint { background: var(--warn-bg); color: var(--warn); padding: 10px 14px; font-weight: 600; font-size: .95rem;
            border-bottom: 1px solid var(--line); }
   .how { font-size: .9rem; color: var(--muted); margin: 2px 0 6px; } .how b { color: var(--text); }
+  .moved { font-size: .85rem; color: var(--accent); font-weight: 600; margin: 0 0 6px; }
+  .btn.off { opacity: .45; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+  .filters button .cnt { font-weight: 700; }
 </style>
 </head>
 <body>
@@ -75,12 +79,13 @@
     {% if info.stage.nv %}Вносите только <b>технический штраф</b> (премию — со знаком минус): временной штраф по НВ программа
     добавит сама.{% endif %} Нет штрафа — ничего не вводите: при «Убыла» запишется 0.</p>
   <div class="filters" role="group" aria-label="Какие команды показывать">
-    <button type="button" data-f="all" aria-pressed="true">Все</button>
-    <button type="button" data-f="wait" aria-pressed="false">Не было</button>
-    <button type="button" data-f="on" aria-pressed="false">На этапе</button>
-    <button type="button" data-f="done" aria-pressed="false">Прошли</button>
+    <button type="button" data-f="all" aria-pressed="true">Все <span class="cnt"></span></button>
+    <button type="button" data-f="wait" aria-pressed="false">Не было <span class="cnt"></span></button>
+    <button type="button" data-f="on" aria-pressed="false">На этапе <span class="cnt"></span></button>
+    <button type="button" data-f="done" aria-pressed="false">Прошли <span class="cnt"></span></button>
   </div>
   <div id="teams"></div>
+  <p class="empty" id="empty" hidden>Здесь пока никого нет.</p>
 </main>
 <script type="application/json" id="data">{{ info.payload|tojson }}</script>
 <script>
@@ -204,11 +209,14 @@
         if (done && pending().length) sync();  // поменяли, пока шёл запрос, — отправить сразу
       });
   }
+  var touched = "", touchedUntil = 0;  // карточка, с которой только что работали: не прятать её фильтром ~10 с
+  var STATE_NAME = { wait: "«Не было»", on: "«На этапе»", done: "«Прошли»" };
   function change(f, patch) {
+    touched = f; touchedUntil = Date.now() + 10000;
     var r = rec(f);
     Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     r.updated = Date.now();
-    save(); info.teams.forEach(function (t) { paint(t.file); }); updateHint(); sync();  // «этап занят» — от других команд
+    save(); info.teams.forEach(function (t) { paint(t.file); }); updateHint(); counts(); sync();  // «этап занят» — от других команд
   }
   function editTime(f, field, label) {
     var v = window.prompt(label + " (чч:мм:сс, пусто — стереть)", rec(f)[field]);
@@ -232,7 +240,7 @@
       '<button type="button" class="btn" data-act="leave"></button></div>' +
       '<div class="queue" hidden><button type="button" class="btn" data-act="queue">Прибыла — ждёт очереди' +
       '<small>этап занят: ожидание не войдёт во время на этапе</small></button></div>' +
-      '<div class="how" hidden></div>' +
+      '<div class="how" hidden></div><div class="moved" hidden></div>' +
       (info.stage.cutoffs ? '<div class="cut"><button type="button" class="btn" data-act="cut"></button>' +
         '<button type="button" class="cutsum" data-act="cutsum"></button></div>' : '') +
       '<div class="row"><div><label>' + (info.stage.auto ? "Техн. штраф" : "Баллы этапа") + '</label>' +
@@ -254,6 +262,7 @@
     c.querySelector('[data-act=leave]').addEventListener("click", function () {
       var r = rec(f);
       if (r.leave) { editTime(f, "leave", "Время убытия"); return; }
+      if (!r.arrive) { window.alert("Сначала отметьте «Прибыла»."); return; }
       var patch = { leave: clock(new Date()) };
       if (r.cut_on) {  // всё ещё «ждёт очереди»: забыли «Начала этап»? спросить, иначе время на этапе будет 0
         var prev = prevLeave(f, r.cut_on);
@@ -332,7 +341,11 @@
     var s = st.sent[f] || 0;
     c.querySelector(".sent").textContent = !r.updated ? "" : s >= r.updated ? "✓ на ноутбуке" : "ждёт отправки";
     c.dataset.state = stateOf(r);
-    c.hidden = filter !== "all" && filter !== c.dataset.state;
+    var keep = f === touched && Date.now() < touchedUntil && filter !== "all" && filter !== c.dataset.state;
+    c.hidden = filter !== "all" && filter !== c.dataset.state && !keep;
+    var mv = c.querySelector(".moved");
+    mv.hidden = !keep; mv.textContent = keep ? "Перешла в " + STATE_NAME[c.dataset.state] : "";
+    c.querySelector('[data-act=leave]').classList.toggle("off", !r.arrive);
     tick(c, r);
   }
   function tick(c, r) {
@@ -353,16 +366,31 @@
   }
   document.querySelectorAll(".filters button").forEach(function (b) {
     b.addEventListener("click", function () {
-      filter = b.dataset.f;
+      filter = b.dataset.f; touched = "";
       document.querySelectorAll(".filters button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
       info.teams.forEach(function (t) { paint(t.file); });
+      counts();
     });
   });
-  setInterval(function () { box.querySelectorAll(".team").forEach(function (c) { tick(c, rec(c.dataset.file)); }); }, 1000);
+  setInterval(function () {
+    box.querySelectorAll(".team").forEach(function (c) { tick(c, rec(c.dataset.file)); });
+    if (touched && Date.now() >= touchedUntil) { var t = touched; touched = ""; paint(t); counts(); }  // 10 с прошло
+  }, 1000);
+  // числа на фильтрах и «здесь пока никого нет»
+  function counts() {
+    var n = { all: 0, wait: 0, on: 0, done: 0 };
+    info.teams.forEach(function (t) { n.all++; n[stateOf(rec(t.file))]++; });
+    document.querySelectorAll(".filters button").forEach(function (b) { b.querySelector(".cnt").textContent = n[b.dataset.f]; });
+    document.getElementById("empty").hidden = !!box.querySelector(".team:not([hidden])");
+  }
+  box.addEventListener("click", function (e) {  // коснулись другой карточки — прежнюю можно убрать из фильтра
+    var c = e.target.closest(".team");
+    if (c && touched && c.dataset.file !== touched) { var t = touched; touched = ""; paint(t); counts(); }
+  }, true);
   setInterval(sync, 15000);
   window.addEventListener("online", sync);
   window.addEventListener("beforeunload", function (e) { if (pending().length) { e.preventDefault(); e.returnValue = ""; } });
-  updateHint(); save(); sync();
+  updateHint(); counts(); save(); sync();
 })();
 </script>
 {% endif %}

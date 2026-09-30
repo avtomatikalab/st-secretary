@@ -121,3 +121,11 @@ def test_phone_marks_sent_only_what_was_sent():
     assert "sentAt[r.file] = r.updated" in sync and "sentAt[f]" in sync
     assert "if (done && pending().length) sync();" in sync  # изменённое за время запроса — сразу вдогонку
     assert "(l.updated || 0) > have" in html  # при загрузке: своё новее ноутбука — отправить снова
+
+
+def test_leave_without_arrive_is_flagged():
+    """Правки.md, п. 13: «Убыла» без «Прибыла» на телефоне больше не нажать; если такая запись пришла — «проверить»."""
+    z = zdata()
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "0", "", "10:12:00", updated=1)], FILES, "т", "2025-09-21T10:13:00")
+    issues = js.judge_issues(z, stages_of(z), NAMES)
+    assert any("убытие (10:12:00) без прибытия" in i.text and i.target == "cell:Кедр.xlsx:s1" for i in issues)
