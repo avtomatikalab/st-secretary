@@ -71,6 +71,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     root = updates.portable_root()
     app.state.installer = updates.Installer(root) if root else None
     app.state.restart = False  # выключиться с кодом «перезапустить» (новая версия распакована)
+    app.state.journal = None  # журнал программы в файл (journal.py) — подключает cli.py
     run_lock = threading.RLock()  # Результаты_дистанции.json: пишут и страница секретаря, и телефоны судей
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
@@ -86,7 +87,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                                  launcher=system.launcher(), console=system.console(), fix_url=fix_url)
 
     def page(request: Request, name: str, status_code: int = 200, background=None, **ctx):
-        ctx = {"flash": _flash(request), "can_stop": app.state.shutdown is not None, **ctx}
+        ctx = {"flash": _flash(request), "can_stop": app.state.shutdown is not None,
+               "journal_on": app.state.journal is not None, **ctx}
         return templates.TemplateResponse(request, name, ctx, status_code=status_code, background=background)
 
     def folder(cid: str) -> CompFolder:

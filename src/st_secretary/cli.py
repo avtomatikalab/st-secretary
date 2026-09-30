@@ -239,13 +239,24 @@ def cmd_web(a) -> int:
         data = Path(a.data).resolve()
         data.mkdir(parents=True, exist_ok=True)
         port = _free_port(a.port)
+        from st_secretary.journal import Journal, folder_for
+
+        journal = Journal(folder_for(data)).start(данные=str(data), порт=port,
+                                                  переносная="да" if os.environ.get("ST_PORTABLE") else "нет")
+        stop_how = ["Ctrl+C или сигнал остановки"]
         # после обновления программу перезапускает файл запуска (.bat, .command, .sh): страница в браузере уже открыта и сама
         # перейдёт на новую версию — второй вкладки не нужно (если порт тот же)
         no_browser = a.no_browser or (bool(os.environ.get("ST_NO_BROWSER")) and port == a.port)
         url = f"http://{HOST}:{port}/"
         servers: list = []  # сервер создаётся после приложения, а кнопке «Выключить» нужен именно он
-        app = create_app(data, shutdown=lambda: setattr(servers[0], "should_exit", True), docs_dir=a.docs)
+        def shutdown():
+            stop_how[0] = "перезапуск для обновления" if getattr(app.state, "restart", False) else "кнопка «Выключить»"
+            servers[0].should_exit = True
+
+        app = create_app(data, shutdown=shutdown, docs_dir=a.docs)
+        app.state.journal = journal
         server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="warning"))
+        journal.attach_uvicorn()  # uvicorn.Config перенастраивает свои журналы — подключить файл после него
         servers.append(server)
         loading.text = "Запускаю сервер"
 
@@ -272,6 +283,7 @@ def cmd_web(a) -> int:
             app.state.update_state = "pending"
             threading.Thread(target=_check_updates, args=(app,), daemon=True).start()
         server.run()
+        journal.stop(stop_how[0])
     finally:
         loading.stop()
     print()
@@ -320,6 +332,9 @@ def main(argv=None) -> int:
               "Закройте его и запустите команду ещё раз.")
         return 1
     except Exception as e:
+        import logging
+
+        logging.getLogger("st_secretary").exception("Непредвиденная ошибка: %s", e)
         if os.environ.get("ST_DEBUG"):
             raise
         print(f"Непредвиденная ошибка: {e}\nДанные не изменены. Сообщите разработчикам текст ошибки и команду, "

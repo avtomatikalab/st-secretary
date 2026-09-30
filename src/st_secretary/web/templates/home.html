@@ -10,6 +10,17 @@
   <a class="btn btn-primary btn-big" href="/new">{{ icon("plus") }}Новое соревнование</a>
 </div>
 
+{% if crashed_before %}
+<div class="panel panel-warn">
+  <h2>{{ icon("alert") }} В прошлый раз программа закрылась неожиданно</h2>
+  <p>Данные сохранены — они записываются сразу. Чтобы разработчик понял, что случилось, скачайте журнал программы и
+    отправьте ему{% if crashed_at %} (прошлый запуск — {{ crashed_at.split(",")[0] }}){% endif %}.</p>
+  <div class="upd-actions">
+    <a class="btn btn-primary" href="/journal.zip">{{ icon("download") }}Скачать журнал</a>
+    <form method="post" action="/journal/hide"><button class="btn btn-ghost" type="submit">Понятно, скрыть</button></form>
+  </div>
+</div>
+{% endif %}
 <div data-update-banner="/update/banner"></div>
 
 {% if import_errors %}

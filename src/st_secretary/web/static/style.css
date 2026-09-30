@@ -656,3 +656,6 @@ tr.is-moved td { transition: background .6s; background: var(--primary-soft); }
 .is-target { outline: 3px solid #e0a100 !important; outline-offset: 2px; }
 tr.is-target > td { background: #fff4d4 !important; }
 
+/* Ссылка на журнал программы внизу страниц — мелко */
+.page-foot { margin: 32px 0 0; font-size: .78rem; text-align: right; }
+.page-foot a { color: var(--muted); }

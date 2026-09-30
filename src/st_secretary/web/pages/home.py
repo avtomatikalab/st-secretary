@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException
 
@@ -33,8 +33,10 @@ def register(app, cx) -> None:
         for f in store.all():
             ctx = comp_ctx(f)
             items.append({**ctx, "files": len(f.preapp_files())})
+        journal = app.state.journal
         return page(request, "home.html", status_code=status_code, items=items, data_dir=store.root,
-                    import_errors=import_errors)
+                    import_errors=import_errors, crashed_before=bool(journal and journal.crashed_before),
+                    crashed_at=journal.previous if journal else "")
 
     @app.get("/")
     def home(request: Request):
@@ -51,6 +53,22 @@ def register(app, cx) -> None:
             raise HTTPException(409, "Эту копию программы выключают там, где её запускали.")
         log.info("Выключение по кнопке на странице")
         return page(request, "stopped.html", stopped=True, background=BackgroundTask(app.state.shutdown))
+
+    @app.get("/journal.zip")
+    def journal_download():
+        """Журнал программы одним архивом — отправить разработчику, если программа закрылась неожиданно."""
+        journal = app.state.journal
+        if journal is None:
+            raise HTTPException(404)
+        name = f"СТ-Секретарь — журнал {app.state.clock():%Y-%m-%d %H-%M}.zip"
+        return Response(journal.zip_bytes(), media_type="application/zip",
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
+
+    @app.post("/journal/hide")
+    def journal_hide():
+        if app.state.journal is not None:
+            app.state.journal.crashed_before = False
+        return _redirect("/")
 
     @app.post("/open-data")
     def open_data(request: Request):
