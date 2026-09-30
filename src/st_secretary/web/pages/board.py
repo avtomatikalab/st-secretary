@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from st_secretary import judge_sync as js
 from st_secretary import psr_run as pr
+from st_secretary import stage_time as stt
 from st_secretary import start_list as sl
 from st_secretary import time_run as tr
 from st_secretary.disciplines import Status
@@ -125,11 +126,18 @@ def register(app, cx) -> None:
         f, comp, z, stage = found
         _, zdata, run = run_ctx(f, comp, z)
         log = zdata.get("judge", {}).get(stage.id, {})
+        auto = None  # ПСР, этап с НВ и ВШ: телефон показывает, из чего сложится итог (stage_time.py)
+        if stage.auto:
+            auto = {"nv": float(stage.nv_minutes * 60), "vsh": float(stage.time_max), "n": float(stage.vsh_points),
+                    "m": stage.vsh_step, "full": stt.full_intervals(zdata),
+                    "max": float(stage.max_penalty) if stage.max_penalty is not None else None}
         teams = [{"file": r.inp.file, "team": r.inp.team, "number": r.inp.number}
                  for r in sorted(run.rows, key=lambda r: r.start_order)]
-        return {"title": comp.title, "zachet": z.key, "stage": {"title": stage.title, "kv": stage.kv_minutes},
+        return {"title": comp.title, "zachet": z.key,
+                "stage": {"title": stage.title, "kv": stage.kv_minutes,
+                          "nv": pr.points_text(stage.nv_minutes) if stage.auto else ""},
                 "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams,
-                            "stage": {"kv": stage.kv_minutes, "cutoffs": tr.is_time_discipline(z)},
+                            "stage": {"kv": stage.kv_minutes, "cutoffs": True, "auto": auto},
                             "records": {file: {**rec, "file": file} for file, rec in log.items()}}}
 
     def judge_receive(token: str, payload: dict) -> dict | None:
@@ -143,8 +151,9 @@ def register(app, cx) -> None:
         now = app.state.clock()
         out = {}
         mark = "с" if tr.is_time_discipline(z) else ""  # спелео: снятие с этапа — «с» в клетке этапа
-        _save_zachet(f, z.key, lambda zdata: out.update(js.merge(zdata, stage.id, records, files, device,
-                                                                 now.isoformat(timespec="seconds"), mark)))
+        _save_zachet(f, z.key, lambda zdata: out.update(js.merge(
+            zdata, stage.id, records, files, device, now.isoformat(timespec="seconds"), mark, stage=stage,
+            distance_cutoffs=tr.is_time_discipline(z))))
         return {"saved": out.get("saved", []), "time": f"{now:%H:%M:%S}"}
 
     app.state.board = BoardServer(create_board_app(board_list, board_data, judge_page, judge_receive), host=board_host)

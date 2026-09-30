@@ -63,24 +63,46 @@ class Stage:
     id: str
     tour: str
     name: str
-    max_penalty: Fraction | None = None  # МШ этапа — для фактически пройденного класса
-    kv_minutes: int | None = None  # КВ этапа — таймер у судьи на телефоне
+    max_penalty: Fraction | None = None  # МШ этапа (задан или ТШ + ВШ) — снятие с этапа, фактический класс
+    kv_minutes: int | None = None  # КВ этапа — таймер у судьи на телефоне; сверх КВ — снятие с этапа (МШ)
+    # временной штраф (stage_time.py): НВ, ВШ и правило «vsh_points балл(ов) за каждые vsh_step с сверх НВ»
+    nv_minutes: Fraction | None = None
+    tech_max: Fraction | None = None  # ТШ — наибольший технический штраф
+    time_max: Fraction | None = None  # ВШ — наибольший временной штраф
+    vsh_points: Fraction = Fraction(1)
+    vsh_step: int = 30
 
     @property
     def title(self) -> str:
         return f"{self.tour} · {self.name}" if self.tour else self.name
 
+    @property
+    def auto(self) -> bool:
+        """Итог этапа считает программа: техштраф судьи + ВШ по времени на этапе (заданы НВ и ВШ)."""
+        return self.nv_minutes is not None and self.time_max is not None
+
+
+def _num(v) -> Fraction | None:
+    try:
+        return parse_points(v)
+    except ValueError:
+        return None
+
 
 def stages_of(zdata: dict) -> list[Stage]:
     out = []
     for s in zdata.get("stages", []):
-        try:
-            mx = parse_points(s.get("max"))
-        except ValueError:
-            mx = None
+        mx, tsh, vsh = _num(s.get("max")), _num(s.get("tsh")), _num(s.get("vsh"))
+        if mx is None and tsh is not None and vsh is not None:
+            mx = tsh + vsh  # МШ = ТШ + ВШ (Правила, дистанции комбинированные, п. 1.5)
         kv = str(s.get("kv", "")).strip()
+        nv = _num(s.get("nv"))
+        n, step = _num(s.get("vsh_n")), str(s.get("vsh_m", "")).strip()
         out.append(Stage(str(s["id"]), str(s.get("tour", "")).strip(), str(s.get("name", "")).strip(), mx,
-                         int(kv) if kv.isdigit() and int(kv) > 0 else None))
+                         int(kv) if kv.isdigit() and int(kv) > 0 else None,
+                         nv if nv is not None and nv >= 0 else None, tsh, vsh,
+                         n if n is not None and n > 0 else Fraction(1),
+                         int(step) if step.isdigit() and int(step) > 0 else 30))
     return out
 
 

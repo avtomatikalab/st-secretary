@@ -16,6 +16,7 @@ from starlette.exceptions import HTTPException
 
 from st_secretary import judge_sync as js
 from st_secretary import psr_run as pr
+from st_secretary import stage_time as stt
 from st_secretary import time_run as tr
 from st_secretary import units as un
 from st_secretary.disciplines import Status
@@ -67,10 +68,12 @@ def register(app, cx) -> None:
                     "mountain": (("declared", "Заявл. время"), ("no_tactics", "ТЗ"))}
 
     def results_parts(f: CompFolder, z, zdata: dict, run) -> dict:
+        stage_by = {s.id: s for s in run.stages}
         return {"base": _base(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text, "ck": tr.clock_text,
                 "tod": tr.time_of_day_text, "extra_fields": EXTRA_FIELDS.get(run.profile, ()),
                 "res": lambda r: pr.result_text(run, r), "is_time": run.kind == "time",
-                "from_phone": lambda sid, file: js.from_phone(zdata, sid, file),
+                "from_phone": lambda sid, file: js.from_phone(zdata, sid, file, stage_by.get(sid)),
+                "stage_score": lambda s, file: js.stage_score_text(zdata, s, file),
                 "grid": sorted(run.rows, key=lambda r: r.start_order), "status_label": pr.STATUS_LABEL,
                 "status_short": pr.STATUS_SHORT, "statuses": list(pr.STATUS_LABEL), "FINISHED": Status.FINISHED,
                 "zq": urlencode({"z": z.key}), "pct": lambda x: f"{float(x):.2f}".replace(".", ",") if x is not None else ""}
@@ -116,10 +119,18 @@ def register(app, cx) -> None:
                         n += 1
                     sid = f"s{n}"
                     used.add(sid)
-                stages.append({"id": sid, "tour": " ".join(str(form.get(f"st-{i}-tour", "")).split()), "name": name,
-                               "max": str(form.get(f"st-{i}-max", "")).strip(),
-                               "kv": str(form.get(f"st-{i}-kv", "")).strip()})
+                row = {"id": sid, "tour": " ".join(str(form.get(f"st-{i}-tour", "")).split()), "name": name,
+                       "max": str(form.get(f"st-{i}-max", "")).strip(), "kv": str(form.get(f"st-{i}-kv", "")).strip()}
+                for k in ("nv", "tsh", "vsh", "vsh_n", "vsh_m"):  # ПСР: временной штраф по НВ (stage_time.py)
+                    v = str(form.get(f"st-{i}-{k}", "")).strip()
+                    if v:
+                        row[k] = v
+                stages.append(row)
             zdata["stages"] = stages
+            if "vsh_round" in form:
+                zdata["vsh_round"] = "down" if form.get("vsh_round") == "down" else "up"
+            for s in pr.stages_of(zdata):  # НВ, ВШ или правило поменяли — итоги этапов по записям судей заново
+                stt.refresh(zdata, s)
             zdata["distance"] = {k: str(form.get(k, "")).strip() for k in ("km", "modes", "kv_hours")}
             zdata["tie"] = "start" if form.get("tie") == "start" else "same"
             for k in ("spp", "expected", "kv", "cutoff_pairs"):  # по времени: эквивалент балла, расчётное время, КВ, отсечки SI

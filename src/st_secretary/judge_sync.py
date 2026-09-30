@@ -10,8 +10,11 @@
 - если секретарь уже вписал другое (например, после протеста), таблица не меняется, а на странице результатов
   появляется расхождение «судья прислал 20, в таблице 25» — решает человек;
 - снятие с этапа не меняет статус команды на дистанции (в ПСР это штраф этапа), а видно секретарю;
-- отсечки (спелео, пешеходные): судья включает и выключает секундомер отсечки на телефоне; сумма отсечек со всех
-  этапов попадает в колонку «Отсечки», если секретарь не вписал туда своё (тогда — расхождение, как с баллами).
+- отсечки: судья включает и выключает секундомер отсечки на телефоне (команда ждёт очереди на занятый этап);
+  в спелео и пешеходных сумма отсечек со всех этапов попадает в колонку «Отсечки», если секретарь не вписал туда
+  своё (тогда — расхождение, как с баллами); в ПСР отсечки только уменьшают время на этапе;
+- ПСР, этап с НВ и ВШ (stage_time.py): судья вносит техштраф, итог этапа = техштраф + ВШ по времени на этапе
+  (сверх КВ или снята — МШ) считает программа и пишет в таблицу по тем же правилам.
 
 Ссылки — по случайному коду на этап: без кода с телефона ничего не изменить; код можно отозвать.
 """
@@ -22,8 +25,9 @@ import secrets
 from dataclasses import dataclass
 from fractions import Fraction
 
+from st_secretary import stage_time as stt
 from st_secretary.issues import INFO, WARNING, Issue
-from st_secretary.psr_run import Stage, parse_points
+from st_secretary.psr_run import Stage, parse_points, points_text
 from st_secretary.time_run import duration_text, parse_duration
 
 _ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # без похожих друг на друга символов (l/1, o/0)
@@ -87,9 +91,11 @@ class Record:
 
 
 def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], device: str, received: str,
-          removal_mark: str = "") -> dict:
+          removal_mark: str = "", stage: Stage | None = None, distance_cutoffs: bool = True) -> dict:
     """Присланное с телефона → журнал этапа и таблица баллов. Возвращает {"saved": [файлы], "conflicts": n}.
-    removal_mark — чем в таблице отмечается снятие с этапа («с» у спелео); пусто — снятие в таблицу не идёт (ПСР)."""
+    removal_mark — чем в таблице отмечается снятие с этапа («с» у спелео); пусто — снятие в таблицу не идёт (ПСР).
+    stage с НВ и ВШ — в таблицу идёт итог техштраф + ВШ (stage_time); distance_cutoffs — отсечки этапов
+    складываются в колонку «Отсечки» дистанции (спелео, пешеходные; в ПСР — нет)."""
     log = zdata.setdefault("judge", {}).setdefault(sid, {})
     teams = zdata.setdefault("teams", {})
     saved, conflicts = [], 0
@@ -107,8 +113,11 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
                          "reason": rec.reason, "note": rec.note, "updated": rec.updated, "device": device,
                          "received": received, "cutoff": rec.cutoff, "cut_on": rec.cut_on}
         saved.append(rec.file)
-        if not merge_cutoffs(zdata, rec.file):
+        if distance_cutoffs and not merge_cutoffs(zdata, rec.file):
             conflicts += 1
+        if stage is not None and stage.auto:  # ПСР: итог этапа по НВ/КВ считает программа
+            conflicts += stt.refresh(zdata, stage, [rec.file])
+            continue
         if removal_mark and not rec.points:  # спелео: снятие с этапа — «с» в клетке этапа (или снять отметку)
             if rec.removed and cell in ("", before, removal_mark):
                 pts_cell[sid] = removal_mark
@@ -182,7 +191,12 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
             cell = str(teams.get(file, {}).get("points", {}).get(sid, "")).strip()
             got = str(rec.get("points", "")).strip()
             when = str(rec.get("received", ""))[11:16]
-            if got:
+            if st.auto:  # итог этапа — по техштрафу и времени; судья мог прислать только часть
+                sc = stt.score(st, rec, stt.full_intervals(zdata))
+                if sc.total is not None and cell and not _same(cell, points_text(sc.total)):
+                    out.append(Issue(WARNING, f"«{team}», {st.title}: с телефона судьи {sc.text} ({when}), в таблице "
+                                              f"{cell} — проверьте", team=team))
+            elif got:
                 try:
                     parse_points(got)
                 except ValueError:
@@ -219,11 +233,23 @@ def stage_summary(zdata: dict, sid: str, total_teams: int) -> dict:
             "of": total_teams, "last": last}
 
 
-def from_phone(zdata: dict, sid: str, file: str) -> bool:
-    """Клетка таблицы — из телефона судьи (то же значение, что в журнале этапа). sid «cutoffs» — сумма отсечек."""
+def from_phone(zdata: dict, sid: str, file: str, stage: Stage | None = None) -> bool:
+    """Клетка таблицы — из телефона судьи (то же значение, что в журнале этапа; этап с НВ — итог программы по
+    записи судьи). sid «cutoffs» — сумма отсечек."""
     if sid == "cutoffs":
         t = zdata.get("teams", {}).get(file, {})
         return bool(t.get("cutoffs")) and t.get("cutoffs") == t.get("cutoffs_phone")
     rec = zdata.get("judge", {}).get(sid, {}).get(file)
     cell = str(zdata.get("teams", {}).get(file, {}).get("points", {}).get(sid, "")).strip()
+    if rec and cell and stage is not None and stage.auto:
+        sc = stt.score(stage, rec, stt.full_intervals(zdata))
+        return sc.total is not None and _same(cell, points_text(sc.total))
     return bool(rec and cell and _same(cell, str(rec.get("points", ""))))
+
+
+def stage_score_text(zdata: dict, stage: Stage, file: str) -> str:
+    """Из чего сложился итог этапа с НВ: «тех. 10 + время 4 = 14 (на этапе 7:12)» — по записи судьи."""
+    rec = zdata.get("judge", {}).get(stage.id, {}).get(file)
+    if not stage.auto or rec is None:
+        return ""
+    return stt.score(stage, rec, stt.full_intervals(zdata)).text

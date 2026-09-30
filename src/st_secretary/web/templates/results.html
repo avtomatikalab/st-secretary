@@ -1,12 +1,23 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 
-{% macro stage_row(i, s) -%}
+{% macro stage_row(i, s, psr=false) -%}
 <tr data-row>
   <td><input type="text" name="st-{{ i }}-tour" value="{{ s.tour }}" placeholder="Тур 1" aria-label="Тур"><input type="hidden" name="st-{{ i }}-id" value="{{ s.id }}"></td>
   <td><input type="text" name="st-{{ i }}-name" value="{{ s.name }}" placeholder="Название этапа" aria-label="Название этапа"></td>
-  <td><input type="text" inputmode="decimal" name="st-{{ i }}-max" value="{{ s.max or '' }}" aria-label="МШ этапа"></td>
+  {% if psr %}
+  <td><input type="text" inputmode="decimal" name="st-{{ i }}-nv" value="{{ s.nv or '' }}" aria-label="НВ этапа, минут"></td>
+  {% endif %}
   <td><input type="text" inputmode="numeric" name="st-{{ i }}-kv" value="{{ s.kv or '' }}" aria-label="КВ этапа, минут"></td>
+  {% if psr %}
+  <td><input type="text" inputmode="decimal" name="st-{{ i }}-tsh" value="{{ s.tsh or '' }}" aria-label="ТШ этапа"></td>
+  <td><input type="text" inputmode="decimal" name="st-{{ i }}-vsh" value="{{ s.vsh or '' }}" aria-label="ВШ этапа"></td>
+  {% endif %}
+  <td><input type="text" inputmode="decimal" name="st-{{ i }}-max" value="{{ s.max or '' }}" aria-label="МШ этапа"{% if psr %} placeholder="ТШ+ВШ"{% endif %}></td>
+  {% if psr %}
+  <td class="res-rule"><input type="text" inputmode="decimal" name="st-{{ i }}-vsh_n" value="{{ s.vsh_n or '' }}" placeholder="1" aria-label="ВШ: баллов">
+    <span>за</span><input type="text" inputmode="numeric" name="st-{{ i }}-vsh_m" value="{{ s.vsh_m or '' }}" placeholder="30" aria-label="ВШ: за каждые секунд сверх НВ"><span>с</span></td>
+  {% endif %}
   <td class="cell-action"><button type="button" class="icon-btn" data-remove-row data-confirm="Убрать этап? Внесённые по нему баллы перестанут учитываться." title="Убрать" aria-label="Убрать">×</button></td>
 </tr>
 {%- endmacro %}
@@ -41,8 +52,13 @@
 
 <details class="panel howto" id="stages"{% if not run.stages %} open{% endif %}>
   <summary>Этапы дистанции {{ z.key }}{% if run.stages %} — {{ run.stages|length }}{% endif %}</summary>
-  <p class="muted">Этапы по порядку, с туром. МШ (максимальный штраф этапа) нужен только для фактически пройденного класса,
-    КВ этапа — для таймера на телефоне судьи; их можно не заполнять. Бонусы и премии — отдельным этапом (тур «Бонус»).</p>
+  <p class="muted">Этапы по порядку, с туром. МШ (максимальный штраф этапа) нужен для фактически пройденного класса,
+    КВ этапа — для таймера на телефоне судьи; их можно не заполнять. Бонусы и премии — отдельным этапом (тур «Бонус»).
+    {% if not is_time %}<b>Временной штраф считает программа</b>, если у этапа заданы НВ и ВШ: судья вносит только
+    технический штраф, а время на этапе (убытие − прибытие − ожидание очереди) программа берёт с телефона судьи и
+    добавляет ВШ — по правилу «баллов за каждые … с сверх НВ» (по умолчанию 1 балл за 30 с), не больше ВШ. Сверх КВ
+    или снята с этапа — МШ (по умолчанию ТШ + ВШ). Итог, вписанный в таблицу вручную (протест), программа не
+    затирает. Правила, дистанции комбинированные, п. 1.5; формула ВШ — из Условий.{% endif %}</p>
   <form method="post" action="{{ base }}/results/import?{{ zq }}" enctype="multipart/form-data" class="res-import"{% if run.stages %} data-confirm="Заменить этапы и баллы зачёта {{ z.key }} данными из рабочей книги?"{% endif %}>
     <label class="btn">{{ icon("upload", 18) }}Загрузить этапы и баллы из СЕКРЕТАРЬ_ST (.xls)
       <input type="file" name="book" accept=".xls" class="visually-hidden" data-autosubmit></label>
@@ -51,10 +67,18 @@
   <form method="post" action="{{ base }}/results/stages?{{ zq }}" data-guard>
     <div class="table-wrap">
     <table class="tbl form-tbl res-stages">
+      {% if is_time %}
       <colgroup><col class="c-tour"><col><col class="c-max"><col class="c-max"><col class="c-act"></colgroup>
-      <thead><tr><th>Тур</th><th>Этап</th><th>МШ</th><th>КВ, мин</th><th></th></tr></thead>
+      <thead><tr><th>Тур</th><th>Этап</th><th>КВ, мин</th><th>МШ</th><th></th></tr></thead>
+      {% else %}
+      <colgroup><col class="c-tour"><col><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-rule"><col class="c-act"></colgroup>
+      <thead><tr><th>Тур</th><th>Этап</th><th title="Нормативное время: до него временного штрафа нет">НВ, мин</th>
+        <th title="Контрольное время: сверх него — снятие с этапа, МШ">КВ, мин</th><th title="Наибольший технический штраф">ТШ</th>
+        <th title="Наибольший временной штраф">ВШ</th><th title="Максимальный штраф этапа; пусто — ТШ + ВШ">МШ</th>
+        <th title="Временной штраф: сколько баллов за каждые сколько секунд сверх НВ">ВШ: балл за … с</th><th></th></tr></thead>
+      {% endif %}
       <tbody id="res-stages" data-next="{{ zdata.get('stages', [])|length }}">
-        {% for s in zdata.get("stages", []) %}{{ stage_row(loop.index0, s) }}{% endfor %}
+        {% for s in zdata.get("stages", []) %}{{ stage_row(loop.index0, s, not is_time) }}{% endfor %}
       </tbody>
     </table>
     </div>
@@ -115,13 +139,16 @@
       <div class="field span-3"><label for="f-tie">Равенство баллов</label>
         <select id="f-tie" name="tie"><option value="same">одинаковое место (п. 8.18)</option>
           <option value="start"{% if zdata.get("tie") == "start" %} selected{% endif %}>выше стартовавший раньше</option></select></div>
+      <div class="field span-6"><label for="f-vr">Временной штраф: неполный интервал сверх НВ</label>
+        <select id="f-vr" name="vsh_round"><option value="up">считать за полный (7 с сверх НВ — уже штраф)</option>
+          <option value="down"{% if zdata.get("vsh_round") == "down" %} selected{% endif %}>не считать (штраф — за каждые полные … с)</option></select></div>
     </div>
     <p class="hint">Километраж, виды туризма и КВ — для фактически пройденного класса (часть 4, п. 4.3 и табл. 3); считается,
       когда у всех этапов задан МШ. Правило равенства — из Положения или Условий (часть 4, п. 6.1.2).</p>
     {% endif %}
     <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить этапы</button>
   </form>
-  <template id="tpl-stage">{{ stage_row("__i__", {"id": "", "tour": run.tours[-1] if run.tours else "Тур 1", "name": "", "max": "", "kv": ""}) }}</template>
+  <template id="tpl-stage">{{ stage_row("__i__", {"id": "", "tour": run.tours[-1] if run.tours else "Тур 1", "name": "", "max": "", "kv": ""}, not is_time) }}</template>
 </details>
 
 {% if not run.rows %}
@@ -152,7 +179,7 @@
         {% for fld, lbl in extra_fields %}<th rowspan="2">{{ lbl }}</th>{% endfor %}{% endif %}
         {% for t in run.tours %}<th colspan="{{ run.stages|selectattr('tour', 'equalto', t)|list|length }}" class="pts-tour">{{ t }}</th>{% endfor %}
         <th rowspan="2" class="pts-total">{% if is_time %}Результат{% else %}Итого{% endif %}</th><th rowspan="2" class="pts-place">Место</th><th rowspan="2">Статус</th></tr>
-      <tr>{% for s in run.stages %}<th class="pts-stage" title="{{ s.title }}{% if s.max_penalty is not none %} · МШ {{ pt(s.max_penalty) }}{% endif %}"><span>{{ s.name }}</span></th>{% endfor %}</tr>
+      <tr>{% for s in run.stages %}<th class="pts-stage" title="{{ s.title }}{% if s.auto %} · НВ {{ pt(s.nv_minutes) }} мин{% if s.kv_minutes %}, КВ {{ s.kv_minutes }} мин{% endif %}, ВШ {{ pt(s.vsh_points) }} за {{ s.vsh_step }} с, не больше {{ pt(s.time_max) }}{% endif %}{% if s.max_penalty is not none %} · МШ {{ pt(s.max_penalty) }}{% endif %}"><span>{{ s.name }}</span>{% if s.auto %}<small class="pts-auto">+ВШ</small>{% endif %}</th>{% endfor %}</tr>
     </thead>
     <tbody>
     {% for r in grid %}{% set i = loop.index0 %}
@@ -165,7 +192,7 @@
       <td class="pts-cell"><input type="text" inputmode="{{ 'text' if flag else 'numeric' }}" autocomplete="off" name="p-{{ i }}-{{ fld }}" value="{{ d.get(fld, '') }}" data-stage="{{ fld }}" class="{{ 'pts-flag' if flag else 'pts-time' }}{% if fld in r.bad %} is-invalid{% endif %}{% if fld == 'cutoffs' and from_phone('cutoffs', r.inp.file) %} pts-phone{% endif %}" aria-label="{{ r.inp.team }}: {{ lbl }}{% if fld == 'start' and r.planned_start %} (по стартовому протоколу {{ tod(r.start) }}){% endif %}"
         placeholder="{{ tod(r.start) if fld == 'start' and r.planned_start else ('чч:мм:сс' if fld in ('start', 'finish') else ('' if flag else 'мм:сс')) }}"{% if fld == 'start' and r.planned_start %} title="Время старта по стартовому протоколу — впишите, если команда стартовала в другое время"{% endif %}></td>
       {% endfor %}{% endif %}
-      {% for s in run.stages %}{% set ph = from_phone(s.id, r.inp.file) %}<td class="pts-cell"><input type="text" inputmode="decimal" autocomplete="off" name="p-{{ i }}-{{ s.id }}" value="{{ r.raw.get(s.id, '') }}" data-stage="{{ s.id }}" class="{% if s.id in r.bad %}is-invalid{% endif %}{% if ph %} pts-phone{% endif %}" aria-label="{{ r.inp.team }}: {{ s.title }}{% if ph %} (с телефона судьи){% endif %}"{% if ph %} title="С телефона судьи этапа"{% endif %}></td>{% endfor %}
+      {% for s in run.stages %}{% set ph = from_phone(s.id, r.inp.file) %}{% set how = stage_score(s, r.inp.file) %}<td class="pts-cell"><input type="text" inputmode="decimal" autocomplete="off" name="p-{{ i }}-{{ s.id }}" value="{{ r.raw.get(s.id, '') }}" data-stage="{{ s.id }}" class="{% if s.id in r.bad %}is-invalid{% endif %}{% if ph %} pts-phone{% endif %}" aria-label="{{ r.inp.team }}: {{ s.title }}{% if ph %} (с телефона судьи){% endif %}{% if how %}: {{ how }}{% endif %}"{% if how %} title="С телефона судьи: {{ how }}"{% elif ph %} title="С телефона судьи этапа"{% endif %}></td>{% endfor %}
       <td class="pts-total" data-total>{% if is_time %}{{ res(r) if r.status == FINISHED else "" }}{% else %}{{ pt(r.total) }}{% endif %}</td>
       <td class="pts-place" data-place>{{ r.place or status_short[r.status] or "—" }}</td>
       {% set saved_status = zdata.get("teams", {}).get(r.inp.file, {}).get("status") or (r.status.value if not r.auto_status else "finished") %}

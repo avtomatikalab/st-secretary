@@ -526,6 +526,9 @@ a.chip { text-decoration: none; } a.chip::before { display: none; }  /* зачё
 .res-import { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 12px; }
 .res-stages { table-layout: fixed; min-width: 560px; }
 .res-stages .c-tour { width: 130px; } .res-stages .c-max { width: 90px; } .res-stages .c-act { width: 46px; }
+.res-stages .c-rule { width: 150px; }
+.res-rule { white-space: nowrap; } .res-rule input { width: 48px; display: inline-block; } .res-rule span { margin: 0 4px; color: var(--muted); }
+.pts-auto { display: block; font-size: .7rem; color: var(--primary); font-weight: 600; }
 .pts-wrap { max-height: 72vh; overflow: auto; }
 .pts-grid { font-size: .85rem; border-collapse: separate; border-spacing: 0; }
 .pts-grid th, .pts-grid td { padding: 3px 4px; }

@@ -48,6 +48,8 @@
   .cut .btn.on { background: var(--warn-bg, #fff4d4); border-color: #b7791f; color: var(--text); }
   .cutsum { font-size: .95rem; min-width: 7em; text-align: right; background: none; border: 0; color: var(--accent);
             text-decoration: underline; font: inherit; padding: 8px 0; }
+  .queue { margin: -2px 0 10px; } .queue .btn { background: var(--warn-bg); border-color: #b7791f; }
+  .how { font-size: .9rem; color: var(--muted); margin: 2px 0 6px; } .how b { color: var(--text); }
 </style>
 </head>
 <body>
@@ -58,13 +60,16 @@
 {% else %}
 <header>
   <h1>{{ info.stage.title }}</h1>
-  <div class="sub">{{ info.title }} · зачёт {{ info.zachet }}{% if info.stage.kv %} · КВ этапа {{ info.stage.kv }} мин{% endif %}</div>
+  <div class="sub">{{ info.title }} · зачёт {{ info.zachet }}{% if info.stage.nv %} · НВ {{ info.stage.nv }} мин{% endif %}{% if info.stage.kv %} · КВ этапа {{ info.stage.kv }} мин{% endif %}</div>
 </header>
 <div id="status" class="ok" role="status" aria-live="polite">Загружаю…</div>
 <main>
   <p class="note">Всё записанное хранится в телефоне и уходит на ноутбук секретаря само, когда телефон в Wi-Fi.
     <b>Не закрывайте эту вкладку на дистанции</b>: без связи страница заново не откроется (записи при этом не пропадут).
-    Время прибытия и убытия — по часам телефона; чтобы поправить время, нажмите на него.</p>
+    Время прибытия и убытия — по часам телефона; чтобы поправить время, нажмите на него. Если этап занят, у подошедшей
+    команды — «ждёт очереди»: время ожидания не входит во время на этапе.
+    {% if info.stage.nv %}Вносите только <b>технический штраф</b> (премию — со знаком минус): временной штраф по НВ программа
+    добавит сама.{% endif %} Нет штрафа — ничего не вводите: при «Убыла» запишется 0.</p>
   <div class="filters" role="group" aria-label="Какие команды показывать">
     <button type="button" data-f="all" aria-pressed="true">Все</button>
     <button type="button" data-f="wait" aria-pressed="false">Не было</button>
@@ -99,6 +104,33 @@
   function pending() { return Object.keys(st.records).map(function (f) { return st.records[f]; })
     .filter(function (r) { return (st.sent[r.file] || 0) < (r.updated || 0); }); }
   function stateOf(r) { return r.leave || r.removed || r.points ? "done" : r.arrive ? "on" : "wait"; }
+  function nowSecs() { var n = new Date(); return n.getHours() * 3600 + n.getMinutes() * 60 + n.getSeconds(); }
+  function since(t) { var d = nowSecs() - secs(t); return d < 0 ? d + 86400 : d; }
+  function onStage(r) { return r.arrive && !r.leave && !r.removed && !r.cut_on; }  // проходит этап сейчас
+  function busyFor(f) {  // этап занят другой командой — подошедшей предложить «ждёт очереди»
+    return Object.keys(st.records).some(function (g) { return g !== f && onStage(st.records[g]); });
+  }
+  function stageSecs(r) {  // время на этапе: убытие (или сейчас) − прибытие − отсечки (ожидание очереди)
+    var a = secs(r.arrive); if (a === null) return null;
+    var l = secs(r.leave), spent = (l === null ? nowSecs() : l) - a; if (spent < 0) spent += 86400;
+    spent -= durSecs(r.cutoff) || 0;
+    if (r.cut_on && l === null) spent -= since(r.cut_on);
+    return Math.max(0, spent);
+  }
+  function fmtPts(x) { return (Math.round(x * 100) / 100).toString().replace(".", ","); }
+  function howText(r) {  // ПСР, этап с НВ: из чего сложится итог — как посчитает программа (stage_time.py)
+    var a = info.stage.auto; if (!a) return "";
+    var t = stageSecs(r), over = t !== null && info.stage.kv && t > info.stage.kv * 60;
+    var mx = a.max === null ? "не задан" : fmtPts(a.max);
+    if (r.removed) return "Снята с этапа — <b>МШ " + mx + "</b>";
+    if (over && r.leave) return "Превышено КВ — <b>МШ " + mx + "</b>";
+    if (!r.leave || t === null) return "";
+    var tech = r.points === "" ? 0 : parseFloat(String(r.points).replace(",", ".").replace("−", "-"));
+    if (isNaN(tech)) return "";
+    var ov = t - a.nv, k = ov <= 0 ? 0 : (a.full ? Math.ceil(ov / a.m) : Math.floor(ov / a.m));
+    var vsh = Math.min(a.vsh, k * a.n);
+    return "Тех. " + fmtPts(tech) + " + время " + fmtPts(vsh) + " = <b>" + fmtPts(tech + vsh) + "</b> (на этапе " + dur(t) + ")";
+  }
   function durSecs(t) { var m = /^(?:(\d+):)?(\d{1,3}):(\d{2})$/.exec((t || "").trim());
     return m ? (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) : null; }
   function isNum(v) { return v === "" || /^[-+−]?\d+([.,]\d+)?$/.test(v.replace(/\s/g, "")); }
@@ -131,7 +163,7 @@
     var r = rec(f);
     Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     r.updated = Date.now();
-    save(); paint(f); sync();
+    save(); info.teams.forEach(function (t) { paint(t.file); }); sync();  // «этап занят» зависит от других команд
   }
   function editTime(f, field, label) {
     var v = window.prompt(label + " (чч:мм:сс, пусто — стереть)", rec(f)[field]);
@@ -149,9 +181,13 @@
       '<div class="top"><div><span class="num"></span><span class="name"></span></div><span class="timer"></span></div>' +
       '<div class="times"><button type="button" class="btn go" data-act="arrive"></button>' +
       '<button type="button" class="btn" data-act="leave"></button></div>' +
+      '<div class="queue" hidden><button type="button" class="btn" data-act="queue">Прибыла — ждёт очереди' +
+      '<small>этап занят: ожидание не войдёт во время на этапе</small></button></div>' +
+      '<div class="how" hidden></div>' +
       (info.stage.cutoffs ? '<div class="cut"><button type="button" class="btn" data-act="cut"></button>' +
         '<button type="button" class="cutsum" data-act="cutsum"></button></div>' : '') +
-      '<div class="row"><div><label>Баллы этапа</label><input type="text" class="pts" inputmode="decimal" autocomplete="off"></div>' +
+      '<div class="row"><div><label>' + (info.stage.auto ? "Техн. штраф" : "Баллы этапа") + '</label>' +
+      '<input type="text" class="pts" inputmode="decimal" autocomplete="off"></div>' +
       '<label class="check"><input type="checkbox" class="rm"> Снята с этапа</label></div>' +
       '<div class="why" hidden><label>Причина снятия</label><input type="text" class="reason"></div>' +
       '<label>Заметка</label><input type="text" class="memo" placeholder="например: взяли подсказку">' +
@@ -167,14 +203,21 @@
       if (rec(f).arrive) editTime(f, "arrive", "Время прибытия"); else change(f, { arrive: clock(new Date()) });
     });
     c.querySelector('[data-act=leave]').addEventListener("click", function () {
-      if (rec(f).leave) editTime(f, "leave", "Время убытия"); else change(f, { leave: clock(new Date()) });
+      var r = rec(f);
+      if (r.leave) { editTime(f, "leave", "Время убытия"); return; }
+      var patch = { leave: clock(new Date()) };
+      if (r.cut_on) { patch.cut_on = ""; patch.cutoff = dur((durSecs(r.cutoff) || 0) + since(r.cut_on)); }
+      if (r.points === "" && !r.removed) patch.points = "0";  // нет штрафа — 0 (п. 4 правок): судья не вводит каждый раз
+      change(f, patch);
+    });
+    c.querySelector('[data-act=queue]').addEventListener("click", function () {  // этап занят: пришла и ждёт
+      var now = clock(new Date()); change(f, { arrive: now, cut_on: now });
     });
     if (info.stage.cutoffs) {
-      c.querySelector('[data-act=cut]').addEventListener("click", function () {  // отсечка: пуск / стоп
+      c.querySelector('[data-act=cut]').addEventListener("click", function () {  // отсечка: пуск / стоп («начала этап»)
         var r = rec(f), now = clock(new Date());
         if (!r.cut_on) { change(f, { cut_on: now }); return; }
-        var spent = secs(now) - secs(r.cut_on); if (spent < 0) spent += 86400;
-        change(f, { cut_on: "", cutoff: dur((durSecs(r.cutoff) || 0) + spent) });
+        change(f, { cut_on: "", cutoff: dur((durSecs(r.cutoff) || 0) + since(r.cut_on)) });
       });
       c.querySelector('[data-act=cutsum]').addEventListener("click", function () {
         var v = window.prompt("Отсечки на этапе всего, мм:сс (пусто — стереть)", rec(f).cutoff || "");
@@ -196,15 +239,19 @@
     var c = box.querySelector('[data-file="' + (window.CSS && CSS.escape ? CSS.escape(f) : f) + '"]');
     if (!c) return;
     var r = rec(f);
-    c.querySelector('[data-act=arrive]').innerHTML = r.arrive ? "Прибыла<small>" + r.arrive + " — изменить</small>" : "Прибыла — сейчас";
+    var busy = !r.arrive && busyFor(f);
+    c.querySelector('[data-act=arrive]').innerHTML = r.arrive ? "Прибыла<small>" + r.arrive + " — изменить</small>"
+      : busy ? "Прибыла — начинает этап" : "Прибыла — сейчас";
+    c.querySelector(".queue").hidden = !busy;
     c.querySelector('[data-act=leave]').innerHTML = r.leave ? "Убыла<small>" + r.leave + " — изменить</small>" : "Убыла — сейчас";
     c.querySelector('[data-act=arrive]').classList.toggle("go", !r.arrive);
     c.querySelector('[data-act=leave]').classList.toggle("go", !!r.arrive && !r.leave);
     var pts = c.querySelector(".pts");
     if (document.activeElement !== pts) { pts.value = r.points || ""; pts.classList.toggle("bad", !isNum(pts.value)); }
+    pts.placeholder = r.arrive && !r.removed ? "0" : "";  // без штрафа — 0, запишется при «Убыла»
     if (info.stage.cutoffs) {
       var cb = c.querySelector('[data-act=cut]');
-      cb.textContent = r.cut_on ? "Отсечка — стоп" : "Отсечка — пуск";
+      cb.textContent = r.cut_on ? (r.leave ? "Отсечка — стоп" : "Начала этап — стоп ожидания") : "Отсечка — пуск";
       cb.classList.toggle("on", !!r.cut_on);
       c.querySelector('[data-act=cutsum]').textContent = "отсечки: " + (r.cutoff || "0:00");
     }
@@ -212,6 +259,8 @@
     c.querySelector(".why").hidden = !r.removed;
     var reason = c.querySelector(".reason"); if (document.activeElement !== reason) reason.value = r.reason || "";
     var memo = c.querySelector(".memo"); if (document.activeElement !== memo) memo.value = r.note || "";
+    var how = c.querySelector(".how"), ht = howText(r);
+    how.hidden = !ht; how.innerHTML = ht;
     var s = st.sent[f] || 0;
     c.querySelector(".sent").textContent = !r.updated ? "" : s >= r.updated ? "✓ на ноутбуке" : "ждёт отправки";
     c.dataset.state = stateOf(r);
@@ -220,15 +269,14 @@
   }
   function tick(c, r) {
     var cb = c.querySelector('[data-act=cut]');
-    if (cb && r.cut_on) {  // идёт отсечка — на кнопке сколько прошло
-      var n0 = new Date(), sp = n0.getHours() * 3600 + n0.getMinutes() * 60 + n0.getSeconds() - secs(r.cut_on);
-      cb.textContent = "Отсечка — стоп (" + dur(sp < 0 ? sp + 86400 : sp) + ")";
+    if (cb && r.cut_on) {  // идёт отсечка (ожидание очереди) — на кнопке сколько прошло
+      cb.textContent = (r.leave ? "Отсечка — стоп (" : "Начала этап — стоп ожидания (") + dur(since(r.cut_on)) + ")";
     }
-    var el = c.querySelector(".timer"), a = secs(r.arrive), l = secs(r.leave);
-    if (a === null) { el.textContent = ""; el.classList.remove("over"); return; }
-    var now = new Date(), cur = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    var spent = (l === null ? cur : l) - a; if (spent < 0) spent += 86400;
-    el.textContent = (l === null ? "на этапе " : "на этапе было ") + dur(spent);
+    var el = c.querySelector(".timer"), spent = stageSecs(r);
+    if (spent === null) { el.textContent = ""; el.classList.remove("over"); return; }
+    // время на этапе — за вычетом ожидания очереди (отсечек); КВ — по нему же
+    el.textContent = (r.cut_on && !r.leave ? "ждёт " + dur(since(r.cut_on)) + " · " : "") +
+      (r.leave ? "на этапе было " : "на этапе ") + dur(spent);
     el.classList.toggle("over", !!info.stage.kv && spent > info.stage.kv * 60);
   }
   document.querySelectorAll(".filters button").forEach(function (b) {
