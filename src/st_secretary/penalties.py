@@ -24,6 +24,10 @@ from pathlib import Path
 
 BUILTIN = {"pedestrian": "Пешеходные (Правила, таблица 11)", "speleo": "Спелео (Правила, часть 8, приложение 2)"}
 CHOICES = {"auto": "по дисциплине", **BUILTIN, "custom": "своя таблица из Excel", "none": "без таблицы"}
+# Как говорят судьи → слова таблицы (поиск на телефоне ищет и так, и так). Дополняется у зачёта (zdata["pen_jargon"]).
+JARGON = [("замуфт", "защёлк"), ("муфт", "защёлк"), ("не закрыт", "защёлк"), ("открыт карабин", "защёлк"),
+          ("уронил", "потер"), ("уронила", "потер"), ("потерял", "потер"), ("упал", "падени"), ("перчат", "рукавиц"),
+          ("без каски", "каск"), ("самострах", "самостраховк"), ("вышел за", "ограничени")]
 MAX_ROWS = 1000
 
 
@@ -51,6 +55,17 @@ class PenaltyTable:
         """Для телефона судьи: таблица целиком (работает без связи)."""
         return {"key": self.key, "title": self.title, "source": self.source, "systems": self.systems,
                 "rows": [{k: v for k, v in asdict(r).items() if v not in ("", None, False)} for r in self.rows]}
+
+
+def jargon(zdata: dict) -> list[tuple[str, str]]:
+    """Словарь для поиска: свой у зачёта (строки «слова судьи = слова таблицы») и встроенный."""
+    own = []
+    for line in str(zdata.get("pen_jargon", "")).splitlines():
+        a, _, b = line.partition("=")
+        a, b = " ".join(a.lower().replace("ё", "е").split()), " ".join(b.lower().replace("ё", "е").split())
+        if a and b:
+            own.append((a, b))
+    return own + [(a, b.replace("ё", "е")) for a, b in JARGON]
 
 
 def builtin(key: str) -> PenaltyTable:

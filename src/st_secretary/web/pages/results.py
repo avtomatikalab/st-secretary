@@ -76,6 +76,7 @@ def register(app, cx) -> None:
                 "stage_score": lambda s, file: js.stage_score_text(zdata, s, file),
                 "removal": lambda s, file: stt.removal(zdata, s, file),
                 "judge_who": lambda sid, file: js.who(zdata.get("judge", {}).get(sid, {}).get(file, {})),
+                "pen_text": lambda sid, file: js.pen_text(js.pens_of(zdata, sid, file)),
                 "grid": sorted(run.rows, key=lambda r: r.start_order), "status_label": pr.STATUS_LABEL,
                 "status_short": pr.STATUS_SHORT, "statuses": list(pr.STATUS_LABEL), "FINISHED": Status.FINISHED,
                 "zq": urlencode({"z": z.key}), "pct": lambda x: f"{float(x):.2f}".replace(".", ",") if x is not None else ""}

@@ -125,6 +125,9 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         cells = [t.raw.get(s.id, "") if timed else  # «с» — снятие
                  f"{points_text(t.points.get(s.id))} {t.marks[s.id]}" if s.id in t.marks else points_text(t.points.get(s.id))
                  for s in run.stages]
+        if run.show_codes:  # номера пунктов таблицы штрафов у баллов — по желанию (настройка зачёта)
+            cells = [f"{c} ({t.codes[s.id]})" if s.id in t.codes and c != "" else c for c, s in zip(cells, run.stages,
+                                                                                                    strict=True)]
         values = [t.place or "—", t.inp.number or "", t.inp.team] + cells + [result_text(run, t)]
         for c, v in enumerate(values, start=1):
             cell = st.cell(i, c, v)
@@ -134,7 +137,8 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     st.row_dimensions[4].height = 120
     for c in range(4, len(heads) + 1):
         marked = 4 <= c < 4 + len(run.stages) and any(run.stages[c - 4].id in t.marks for t in run.rows)
-        st.column_dimensions[get_column_letter(c)].width = 13 if marked else 5
+        coded = run.show_codes and 4 <= c < 4 + len(run.stages) and any(run.stages[c - 4].id in t.codes for t in run.rows)
+        st.column_dimensions[get_column_letter(c)].width = 16 if coded else 13 if marked else 5
     if any(t.marks for t in run.rows):
         st.cell(5 + len(run.rows) + 1, 1, "«снята» — команда снята с этапа, «сверх КВ» — превышено КВ этапа: "
                                           "в клетке МШ этапа.").font = Font(size=9, italic=True)

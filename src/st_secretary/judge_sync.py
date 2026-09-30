@@ -22,6 +22,11 @@
 один раз, для всех этапов на этом телефоне. Имя и номер приходят с каждой отправкой и пишутся в журнал этапа рядом
 с записью; по этапу — кто и когда был на связи (если судьи сменились — видны оба). Хранится только в данных
 соревнования на ноутбуке; в личные данные судьи (для договоров) номер сам не записывается.
+
+Штрафы по пунктам таблицы (Правки, п. 16): судья выбирает пункт таблицы штрафов (сколько раз, кому, комментарий) —
+баллы этапа складываются сами; запись хранит расшифровку («п. 1 ×2 = 2, п. 3 = 1 → 3»). Штраф своими словами без
+пункта — «пункт не выбран»: секретарь или главный судья сопоставляет пункт на ноутбуке (pen_map, по коду штрафа —
+переживает повторные присылки). Итог, вписанный судьёй руками поверх пунктов, — «без расшифровки».
 """
 
 from __future__ import annotations
@@ -82,6 +87,8 @@ class Record:
     cutoff: str = ""  # сумма отсечек на этапе, «м:сс» (секундомер на телефоне)
     cut_on: str = ""  # отсечка идёт с этого времени (часы телефона) — ещё не остановлена
     started: str = ""  # «Начала этап» после ожидания очереди (= убытию — ожидание закрыли вместе с убытием)
+    pens: tuple = ()  # штрафы по пунктам таблицы: {id, code, title, v (баллы за раз), pts, n, who, note}
+    pmanual: bool = False  # баллы вписаны руками поверх пунктов — «без расшифровки»
 
     @classmethod
     def from_json(cls, d: dict) -> Record:
@@ -92,9 +99,24 @@ class Record:
             updated = int(d.get("updated", 0))
         except (TypeError, ValueError):
             updated = 0
+        def pen(p) -> dict:
+            try:
+                v = float(p.get("v")) if p.get("v") not in (None, "") else None
+            except (TypeError, ValueError):
+                v = None
+            try:
+                n = max(1, min(99, int(p.get("n") or 1)))
+            except (TypeError, ValueError):
+                n = 1
+            return {"id": clip(p.get("id"), 40), "code": clip(p.get("code"), 20), "title": clip(p.get("title"), 300),
+                    "v": v, "pts": clip(p.get("pts"), 60), "n": n, "who": clip(p.get("who"), 60),
+                    "note": clip(p.get("note"), 300)}
+
+        pens = tuple(pen(p) for p in (d.get("pens") or [])[:50] if isinstance(p, dict))
         return cls(clip(d.get("file"), 300), clip(d.get("points"), 20), clip(d.get("arrive"), 8), clip(d.get("leave"), 8),
                    bool(d.get("removed")), clip(d.get("reason")), clip(d.get("note"), 500), updated,
-                   clip(d.get("cutoff"), 12), clip(d.get("cut_on"), 8), clip(d.get("started"), 8))
+                   clip(d.get("cutoff"), 12), clip(d.get("cut_on"), 8), clip(d.get("started"), 8), pens,
+                   bool(d.get("pmanual")))
 
 
 def judge_of(d) -> dict:
@@ -114,6 +136,58 @@ def stage_judges(zdata: dict, sid: str) -> list[dict]:
     """Судьи, присылавшие с этапа (по телефонам): ФИО, телефон, когда последний раз на связи — свежие первыми."""
     return sorted(zdata.get("judge_who", {}).get(sid, {}).values(), key=lambda w: str(w.get("last", "")),
                   reverse=True)
+
+
+def pens_of(zdata: dict, sid: str, file: str) -> list[dict]:
+    """Штрафы по пунктам у команды на этапе — с учётом сопоставленного секретарём пункта (pen_map)."""
+    rec = zdata.get("judge", {}).get(sid, {}).get(file, {})
+    mapped = zdata.get("pen_map", {}).get(sid, {}).get(file, {})
+    out = []
+    for p in rec.get("pens", []):
+        m = mapped.get(p.get("id", "")) if not p.get("code") else None
+        out.append({**p, **m, "mapped": True} if m else dict(p))
+    return out
+
+
+def _num(x: float) -> str:
+    return points_text(Fraction(x).limit_denominator(1000))
+
+
+def pen_text(pens: list[dict]) -> str:
+    """«п. 1 ×2 = 2, п. 3 = 1 → 3» — из чего сложились баллы; штраф без пункта — «без пункта: «текст»»."""
+    parts, total = [], 0.0
+    for p in pens:
+        if not p.get("code"):
+            parts.append(f"без пункта: «{p.get('title', '')}»")
+            continue
+        n = int(p.get("n") or 1)
+        if p.get("v") is None:
+            parts.append(f"п. {p['code']}" + (f" ×{n}" if n > 1 else "") + (f" ({p['pts']})" if p.get("pts") else ""))
+            continue
+        total += p["v"] * n
+        parts.append(f"п. {p['code']}" + (f" ×{n}" if n > 1 else "") + f" = {_num(p['v'] * n)}")
+    return ", ".join(parts) + (f" → {_num(total)}" if any(p.get("code") and p.get("v") is not None for p in pens)
+                               else "")
+
+
+def pen_codes(pens: list[dict]) -> str:
+    """Для протокола: «п. 1×2, 3»."""
+    codes = [p["code"] + (f"×{p['n']}" if int(p.get("n") or 1) > 1 else "") for p in pens if p.get("code")]
+    return "п. " + ", ".join(codes) if codes else ""
+
+
+def pen_sum(pens: list[dict]) -> float | None:
+    vals = [p["v"] * int(p.get("n") or 1) for p in pens if p.get("code") and p.get("v") is not None]
+    return sum(vals) if vals else None
+
+
+def map_pen(zdata: dict, sid: str, file: str, pen_id: str, row) -> None:
+    """Секретарь (главный судья) сопоставил штраф без пункта с пунктом таблицы; None — отменить."""
+    m = zdata.setdefault("pen_map", {}).setdefault(sid, {}).setdefault(file, {})
+    if row is None:
+        m.pop(pen_id, None)
+    else:
+        m[pen_id] = {"code": row.code, "title": row.title, "v": row.value, "pts": row.points}
 
 
 def phone_same(a: str, b: str) -> bool:
@@ -153,7 +227,8 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
         log[rec.file] = {"points": rec.points, "arrive": rec.arrive, "leave": rec.leave, "removed": rec.removed,
                          "reason": rec.reason, "note": rec.note, "updated": rec.updated, "device": device,
                          "received": received, "cutoff": rec.cutoff, "cut_on": rec.cut_on, "started": rec.started,
-                         "judge": judge.get("fio", ""), "judge_phone": judge.get("phone", "")}
+                         "judge": judge.get("fio", ""), "judge_phone": judge.get("phone", ""),
+                         "pens": [dict(p) for p in rec.pens], "pmanual": rec.pmanual}
         saved.append(rec.file)
         if distance_cutoffs and stt.subtract_wait(zdata) and not merge_cutoffs(zdata, rec.file):
             conflicts += 1
@@ -272,6 +347,19 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
             wait = stt.waiting_check(rec, stt.subtract_wait(zdata))
             if wait:
                 out.append(Issue(WARNING, f"«{team}», {st.title}: {wait}", team=team, target=f"cell:{file}:{sid}"))
+            pens = pens_of(zdata, sid, file)
+            for p in pens:
+                if not p.get("code"):
+                    out.append(Issue(WARNING, f"«{team}», {st.title}: штраф без пункта таблицы — «{p.get('title', '')}»"
+                                              f" — сопоставьте пункт в журнале этапа", team=team, target=f"judgelog:{sid}"))
+            s = pen_sum(pens)
+            if not st.auto and s is not None and cell and any(p.get("mapped") for p in pens) and not _same(cell, _num(s)):
+                out.append(Issue(WARNING, f"«{team}», {st.title}: с сопоставленными пунктами штраф {_num(s)}, в таблице "
+                                          f"{cell} — проверьте", team=team, target=f"cell:{file}:{sid}"))
+            if pens and rec.get("pmanual"):
+                s = pen_sum(pens)
+                out.append(Issue(INFO, f"«{team}», {st.title}: судья вписал итог руками ({rec.get('points')}) — без "
+                                       f"расшифровки" + (f" (по пунктам — {_num(s)})" if s is not None else ""), team=team))
             if rec.get("removed"):
                 why = f": {rec['reason']}" if rec.get("reason") else ""
                 off = " — отметку снял секретарь" if stt.cancelled(zdata, sid, file) else ""

@@ -254,6 +254,8 @@ def _flash(request: Request) -> dict | None:
                                 "открытии ссылки этапа."),
         "penalty_loaded": ("ok", f"Своя таблица штрафов загружена: {q.get('n', '')} строк. Она выбрана для зачёта."),
         "penalty_bad": ("err", f"Таблицу штрафов загрузить не удалось: {q.get('why', '')}."),
+        "pen_code_saved": ("ok", "Пункт таблицы сопоставлен — баллы по нему видны в журнале этапа."),
+        "pen_code_bad": ("err", f"Пункта «{q.get('code', '')}» в таблице штрафов зачёта нет."),
         "board_on": ("ok", "Табло включено для этого соревнования."),
         "board_off": ("ok", "Табло для этого соревнования выключено — его результатов на табло не видно."),
         "board_started": ("ok", "Табло раздаётся по Wi-Fi — адрес и QR-код ниже. Если Windows спросит разрешение "
@@ -340,6 +342,8 @@ def fix_url(base: str, i) -> str:
         return at("/results", f"c-{team_anchor(file)}-{fld}", "points", **z)
     if kind == "stages":
         return at("/results", rest, "stages", **z)
+    if kind == "judgelog":  # журнал этапа на странице «Телефоны судей этапов»
+        return at("/judges", "", f"log-{rest}", **z)
     if kind == "start":
         section = {"first": "times", "order": "order", "publish": "publish"}.get(rest, "")
         return at("/start", rest if rest == "first" else "", section, **z)

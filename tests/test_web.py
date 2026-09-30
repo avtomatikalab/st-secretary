@@ -1492,3 +1492,41 @@ def test_penalty_table_choose_print_and_phone(client, tmp_path, psr_card):
     r = client.post(base(f) + "/judges/penalties" + q, data={"do": "upload"},
                     files={"file": ("x.xlsx", b"nope", XLSX)}, follow_redirects=False)
     assert "penalty_bad" in r.headers["location"]
+
+
+def test_judge_penalty_items_journal_mapping_and_protocol(client, tmp_path, psr_card, opened):
+    """Правки.md, п. 16: в журнале этапа — пункты таблицы с расшифровкой; «без пункта» сопоставляется; в протоколе
+    (по желанию) — номера пунктов у баллов; на телефон приходит словарь слов судей."""
+    import json
+
+    from openpyxl import load_workbook
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    q = "?z=М/Ж_3"
+    client.post(base(f) + "/results/stages" + q, data={"st-0-tour": "Тур 1", "st-0-name": "Узлы"})
+    client.post(base(f) + "/judges/link" + q, data={"stage": "s1"})
+    client.post(base(f) + "/judges/penalties" + q, data={"table": "pedestrian", "protocol_codes": "1",
+                                                         "jargon": "полез не туда = опоры\nбез знака"})
+    token = js_token(f)
+    phone = TestClient(client.app.state.board.app)
+    html = phone.get(f"/j/{token}").text
+    data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', html, re.DOTALL).group(1))
+    assert ["полез не туда", "опоры"] in data["penalties"]["jargon"] and ["замуфт", "защелк"] in data["penalties"]["jargon"]
+    pens = [{"id": "a", "code": "1", "title": "Не заблокирована защёлка карабина", "v": 1, "pts": "1 балл", "n": 2},
+            {"id": "c", "code": "", "title": "полез не туда", "v": None, "n": 1}]
+    phone.post(f"/j/{token}/sync", json={"device": "т-1", "records": [
+        {"file": "Кедр.xlsx", "points": "2", "pens": pens, "updated": 1}]})
+    page = client.get(base(f) + "/judges" + q).text
+    assert 'id="log-s1"' in page and "п. 1 ×2 = 2, без пункта: «полез не туда» → 2" in page and "Сопоставить" in page
+    r = client.post(base(f) + "/judges/pen-code" + q, data={"sid": "s1", "file": "Кедр.xlsx", "id": "c", "code": "99"},
+                    follow_redirects=False)
+    assert "pen_code_bad" in r.headers["location"]
+    client.post(base(f) + "/judges/pen-code" + q, data={"sid": "s1", "file": "Кедр.xlsx", "id": "c", "code": "10.1"})
+    page = client.get(base(f) + "/judges" + q).text
+    assert "пункт сопоставлен на ноутбуке" in page and "→ 12" in page
+    results = client.get(base(f) + "/results" + q).text
+    assert "п. 1 ×2 = 2, п. 10.1 = 10 → 12" in results
+    client.post(base(f) + "/results/publish" + q)
+    cells = [c for row in load_workbook(opened[-1])["По этапам"].iter_rows(values_only=True) for c in row if c]
+    assert "2 (п. 1×2, 10.1)" in cells

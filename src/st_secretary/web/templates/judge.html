@@ -90,6 +90,17 @@
   .pr .nop { display: block; font-size: .85rem; color: var(--muted); }
   .pr .pn { font-size: .82rem; color: var(--muted); margin-top: 4px; }
   .pen-more { text-align: center; color: var(--muted); font-size: .85rem; padding: 10px; }
+  .pen-free { display: block; margin: 8px 12px 16px; width: calc(100% - 24px); }
+  .pen.pick .pr { cursor: pointer; } .pen.pick .pr:active { background: var(--ok-bg); }
+  .addpen { margin: 8px 0 4px; border-style: dashed; }
+  .pens { margin: 6px 0 0; } .pen-line { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center;
+    border-top: 1px solid var(--line); padding: 6px 0; font-size: .9rem; }
+  .pen-t small { display: block; color: var(--muted); } .pen-ctl { display: flex; gap: 4px; align-items: center; }
+  .pen-ctl button { min-width: 38px; min-height: 38px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--text); font: inherit; font-weight: 700; }
+  .pen-ctl .n { min-width: 28px; text-align: center; font-weight: 700; }
+  .pen-sum { font-size: .88rem; color: var(--muted); margin: 4px 0 0; } .pen-sum b { color: var(--text); }
+  .pen-sum button { background: none; border: 0; color: var(--accent); text-decoration: underline; font: inherit; }
   .who .btn { margin-top: 10px; } .who .later { width: 100%; background: none; border: 0; color: var(--muted);
     font: inherit; padding: 10px; text-decoration: underline; }
 </style>
@@ -153,6 +164,7 @@
 (function () {
   "use strict";
   var info = JSON.parse(document.getElementById("data").textContent);
+  var PEN = info.penalties || null, pickFor = null;  // таблица штрафов; для какой команды выбирается пункт
   var KEY = "st-judge:" + info.token, busy = false, filter = "all", lastError = "";
   // кто судит — один раз на телефоне, для всех этапов (не по коду ссылки, как записи этапа)
   var ME_KEY = "st-judge-me", me = null;
@@ -179,7 +191,7 @@
   function secs(t) { var m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t || ""); return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0)) : null; }
   function dur(s) { s = Math.max(0, Math.round(s)); var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
     return (h ? h + ":" + pad(m) : m) + ":" + pad(s % 60); }
-  function rec(f) { return st.records[f] || (st.records[f] = { file: f, points: "", arrive: "", leave: "", removed: false, reason: "", note: "", updated: 0, cutoff: "", cut_on: "", started: "" }); }
+  function rec(f) { return st.records[f] || (st.records[f] = { file: f, points: "", arrive: "", leave: "", removed: false, reason: "", note: "", updated: 0, cutoff: "", cut_on: "", started: "", pens: [], pmanual: false }); }
   function pending() { return Object.keys(st.records).map(function (f) { return st.records[f]; })
     .filter(function (r) { return (st.sent[r.file] || 0) < (r.updated || 0); }); }
   function stateOf(r) { return r.leave || r.removed || r.points ? "done" : r.arrive ? "on" : "wait"; }
@@ -277,6 +289,88 @@
         if (done && pending().length) sync();  // поменяли, пока шёл запрос, — отправить сразу
       });
   }
+  // --- Штрафы по пунктам таблицы: баллы складываются сами (п. 16 правок); итог руками — «без расшифровки»
+  var openPen = function () {};
+  function penSum(ps) {
+    var s = null;
+    (ps || []).forEach(function (p) { if (p.code && p.v !== null && p.v !== undefined) s = (s || 0) + p.v * (p.n || 1); });
+    return s;
+  }
+  function penLine(ps) {
+    var parts = [], s = penSum(ps);
+    ps.forEach(function (p) {
+      var n = p.n > 1 ? " ×" + p.n : "";
+      if (!p.code) parts.push("без пункта: «" + p.title + "»");
+      else if (p.v === null || p.v === undefined) parts.push("п. " + p.code + n + (p.pts ? " (" + p.pts + ")" : ""));
+      else parts.push("п. " + p.code + n + " = " + fmtPts(p.v * (p.n || 1)));
+    });
+    return parts.join(", ") + (s === null ? "" : " → " + (info.stage.auto ? "ТШ " : "") + fmtPts(s));
+  }
+  function withPens(r, ps) {  // баллы по пунктам, если судья не вписал итог руками
+    var patch = { pens: ps }, s = penSum(ps);
+    if (!r.pmanual) patch.points = s === null ? (ps.length ? r.points : "") : fmtPts(s);
+    return patch;
+  }
+  function addPen(f, row, text) {
+    var r = rec(f), ps = (r.pens || []).slice();
+    ps.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), code: row ? row.code : "",
+              title: row ? row.title : text, v: row && row.value !== undefined ? row.value : null,
+              pts: row ? row.points || "" : "", n: 1, who: "", note: "" });
+    var patch = withPens(r, ps);
+    if (row && /^снятие/i.test(row.points || "") && !/дистанци/i.test(row.points) && !r.removed) {  // снятие с этапа
+      patch.removed = true; if (!r.reason) patch.reason = "п. " + row.code + " " + row.title;
+    }
+    change(f, patch);
+  }
+  function penAct(f, act, id) {
+    var r = rec(f), ps = (r.pens || []).map(function (p) { return Object.assign({}, p); });
+    if (act === "reset") { var s = penSum(ps); change(f, { pmanual: false, points: s === null ? r.points : fmtPts(s) }); return; }
+    var p = ps.filter(function (x) { return x.id === id; })[0];
+    if (!p) return;
+    if (act === "inc") p.n = Math.min(99, (p.n || 1) + 1);
+    if (act === "dec") { if ((p.n || 1) > 1) p.n -= 1; else act = "del"; }
+    if (act === "del") {
+      if (!window.confirm("Убрать штраф «" + (p.code ? "п. " + p.code : p.title) + "»?")) return;
+      ps = ps.filter(function (x) { return x.id !== id; });
+    }
+    if (act === "note") {
+      var v = window.prompt("Кому и комментарий (например: участник №2, муфта на перилах не закручена)", p.note || "");
+      if (v === null) return;
+      p.note = v.trim();
+    }
+    change(f, withPens(r, ps));
+  }
+  function paintPens(c, r) {
+    var pl = c.querySelector(".pens"); if (!pl) return;
+    var ps = r.pens || [];
+    pl.textContent = "";
+    ps.forEach(function (p) {
+      var d = document.createElement("div"); d.className = "pen-line";
+      var t = document.createElement("div"); t.className = "pen-t";
+      t.textContent = (p.code ? "п. " + p.code + " " : "без пункта: ") + p.title + (p.pts ? " — " + p.pts : "");
+      if (p.note) { var nn = document.createElement("small"); nn.textContent = p.note; t.appendChild(nn); }
+      d.appendChild(t);
+      var ctl = document.createElement("div"); ctl.className = "pen-ctl";
+      [["dec", "−", "меньше раз"], ["n"], ["inc", "+", "ещё раз"], ["note", "✎", "кому и комментарий"], ["del", "✕", "убрать"]]
+        .forEach(function (a) {
+          if (a[0] === "n") { var n = document.createElement("span"); n.className = "n"; n.textContent = "×" + (p.n || 1); ctl.appendChild(n); return; }
+          var b = document.createElement("button"); b.type = "button"; b.dataset.pen = a[0]; b.dataset.id = p.id;
+          b.textContent = a[1]; b.setAttribute("aria-label", a[2]); ctl.appendChild(b);
+        });
+      d.appendChild(ctl); pl.appendChild(d);
+    });
+    if (ps.length) {
+      var sm = document.createElement("div"); sm.className = "pen-sum";
+      sm.appendChild(document.createTextNode(penLine(ps)));
+      if (r.pmanual) {
+        var m = document.createElement("b"); m.textContent = " · итог вписан руками: " + (r.points || "—") + " (без расшифровки) ";
+        sm.appendChild(m);
+        var rb = document.createElement("button"); rb.type = "button"; rb.dataset.pen = "reset"; rb.textContent = "по пунктам";
+        sm.appendChild(rb);
+      }
+      pl.appendChild(sm);
+    }
+  }
   var touched = "", touchedUntil = 0;  // карточка, с которой только что работали: не прятать её фильтром ~10 с
   var STATE_NAME = { wait: "«Не было»", on: "«На этапе»", done: "«Прошли»" };
   function change(f, patch) {
@@ -315,6 +409,7 @@
       '<div class="row"><div><label>' + (info.stage.auto ? "Техн. штраф" : "Баллы этапа") + '</label>' +
       '<input type="text" class="pts" inputmode="decimal" autocomplete="off"></div>' +
       '<label class="check"><input type="checkbox" class="rm"> Снята с этапа</label></div>' +
+      (PEN ? '<div class="pens"></div><button type="button" class="btn addpen" data-act="pen">+ Штраф по таблице</button>' : '') +
       '<div class="why" hidden><label>Причина снятия</label><input type="text" class="reason"></div>' +
       '<label>Заметка</label><input type="text" class="memo" placeholder="например: взяли подсказку">' +
       '<div class="sent"></div>';
@@ -375,7 +470,17 @@
     }
     var pts = c.querySelector(".pts");
     pts.addEventListener("input", function () { pts.classList.toggle("bad", !isNum(pts.value)); });
-    pts.addEventListener("change", function () { change(f, { points: pts.value.trim() }); });
+    pts.addEventListener("change", function () {
+      var r = rec(f), v = pts.value.trim(), patch = { points: v };
+      if ((r.pens || []).length) { var s = penSum(r.pens); patch.pmanual = !(s !== null && v === fmtPts(s)); }  // руками — без расшифровки
+      change(f, patch);
+    });
+    if (PEN) {
+      c.querySelector('[data-act=pen]').addEventListener("click", function () { openPen(f); });
+      c.querySelector(".pens").addEventListener("click", function (e) {
+        var b = e.target.closest("[data-pen]"); if (b) penAct(f, b.dataset.pen, b.dataset.id);
+      });
+    }
     c.querySelector(".rm").addEventListener("change", function (e) { change(f, { removed: e.target.checked }); });
     c.querySelector(".reason").addEventListener("change", function (e) { change(f, { reason: e.target.value.trim() }); });
     c.querySelector(".memo").addEventListener("change", function (e) { change(f, { note: e.target.value.trim() }); });
@@ -412,6 +517,7 @@
     var memo = c.querySelector(".memo"); if (document.activeElement !== memo) memo.value = r.note || "";
     var how = c.querySelector(".how"), ht = howText(r);
     how.hidden = !ht; how.innerHTML = ht;
+    paintPens(c, r);
     var s = st.sent[f] || 0;
     c.querySelector(".sent").textContent = !r.updated ? "" : s >= r.updated ? "✓ на ноутбуке" : "ждёт отправки";
     c.dataset.state = stateOf(r);
@@ -544,8 +650,8 @@
   if (info.contacts) st.contacts = info.contacts;  // свежее с ноутбука при открытии страницы
   renderContacts();
 
-  // --- Таблица штрафов: поиск по словам (все слова, «ё» = «е») и по номеру пункта; работает без связи
-  var PEN = info.penalties;
+  // --- Таблица штрафов: поиск по словам (все слова, «ё» = «е»; и по словарю слов судей) и по номеру пункта;
+  //     работает без связи. «+ Штраф» у команды открывает её для выбора пункта.
   if (PEN) {
     var penBox = document.getElementById("pen"), penQ = document.getElementById("pen-q");
     var penList = document.getElementById("pen-list");
@@ -554,10 +660,17 @@
     PEN.rows.forEach(function (r) { r.hay = low([r.code, r.section, r.title, r.note].join(" ")); });
     var renderPen = function () {
       var q = low(penQ.value).trim(), num = /^\d+(\.\d+)*\.?$/.test(q), words = q.split(/[\s,;]+/).filter(Boolean);
+      var alts = [words];  // как сказал судья и то же словами таблицы
+      (PEN.jargon || []).forEach(function (j) {
+        if (j[0].indexOf(" ") >= 0 ? q.indexOf(j[0]) >= 0 : words.some(function (w) { return w.indexOf(j[0]) >= 0; })) {
+          alts.push((j[0].indexOf(" ") >= 0 ? q.replace(j[0], j[1]).split(/[\s,;]+/) :
+            words.map(function (w) { return w.indexOf(j[0]) >= 0 ? j[1] : w; })).filter(Boolean));
+        }
+      });
       var hits = PEN.rows.filter(function (r) {
         if (!q) return true;
         if (num) return r.code === q.replace(/\.$/, "") || r.code.indexOf(q.replace(/\.$/, "") + ".") === 0;
-        return words.every(function (w) { return r.hay.indexOf(w) >= 0; });
+        return alts.some(function (ws) { return ws.every(function (w) { return r.hay.indexOf(w) >= 0; }); });
       });
       penList.textContent = "";
       hits.slice(0, 80).forEach(function (r) {
@@ -568,8 +681,15 @@
         if (r.points) { var p = document.createElement("span"); p.className = "pts"; p.textContent = (PEN.systems ? "штрафная: " : "") + r.points; d.appendChild(p); }
         if (PEN.systems && r.nopenalty) { var n = document.createElement("span"); n.className = "nop"; n.textContent = "бесштрафовая: " + r.nopenalty; d.appendChild(n); }
         if (r.note) { var e = document.createElement("div"); e.className = "pn"; e.textContent = r.note; d.appendChild(e); }
+        if (pickFor && (r.points || !r.group)) d.addEventListener("click", function () { addPen(pickFor, r, ""); closePen(); });
         penList.appendChild(d);
       });
+      if (pickFor && q && !num) {  // нет в таблице — записать своими словами: главный судья сопоставит пункт
+        var fb = document.createElement("button"); fb.type = "button"; fb.className = "btn pen-free";
+        fb.textContent = "Нет в таблице — записать «" + penQ.value.trim() + "» без пункта";
+        fb.addEventListener("click", function () { addPen(pickFor, null, penQ.value.trim()); closePen(); });
+        penList.appendChild(fb);
+      }
       if (!hits.length || hits.length > 80) {
         var m = document.createElement("div"); m.className = "pen-more";
         m.textContent = hits.length ? "Показаны первые 80 из " + hits.length + " — уточните поиск." : "Ничего не нашлось — попробуйте другое слово или номер пункта.";
@@ -577,10 +697,17 @@
       }
     };
     penQ.addEventListener("input", renderPen);
-    document.getElementById("pen-open").addEventListener("click", function () {
+    var srcText = document.getElementById("pen-src").textContent;
+    var openPenFor = function (f) {
+      pickFor = f || null; penBox.classList.toggle("pick", !!pickFor); penQ.value = "";
+      document.getElementById("pen-src").textContent = pickFor ? "Штраф для «" + teamName(pickFor) + "»: найдите пункт и "
+        + "нажмите на него" : srcText;
       penBox.hidden = false; renderPen(); penQ.focus();
-    });
-    document.getElementById("pen-close").addEventListener("click", function () { penBox.hidden = true; });
+    };
+    var closePen = function () { penBox.hidden = true; pickFor = null; };
+    openPen = openPenFor;
+    document.getElementById("pen-open").addEventListener("click", function () { openPenFor(null); });
+    document.getElementById("pen-close").addEventListener("click", closePen);
   }
 
   updateHint(); counts(); save(); sync();

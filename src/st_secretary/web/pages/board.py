@@ -171,7 +171,7 @@ def register(app, cx) -> None:
                           "wait_cut": stt.subtract_wait(zdata)},
                 "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams, "zachet": z.key,
                             "judges": judge_people(f, comp), "contacts": contacts(f, comp), "stage_id": stage.id,
-                            "penalties": penalty.payload() if penalty else None,
+                            "penalties": {**penalty.payload(), "jargon": pen.jargon(zdata)} if penalty else None,
                             "stage": {"kv": stage.kv_minutes, "cutoffs": True, "auto": auto,
                                       "wait_cut": stt.subtract_wait(zdata)},
                             "records": {file: {**rec, "file": file} for file, rec in log.items()}}}
@@ -218,7 +218,8 @@ def register(app, cx) -> None:
                 judges.append({**w, "key": key if key in staff_keys else "", "known": known,
                                "differs": key in staff_keys and bool(w.get("phone"))
                                and not js.phone_same(w.get("phone", ""), known)})
-            log = sorted(((names.get(file, file), rec) for file, rec in zdata.get("judge", {}).get(s.id, {}).items()),
+            log = sorted(((names.get(file, file), {**rec, "file": file, "pens": js.pens_of(zdata, s.id, file)})
+                          for file, rec in zdata.get("judge", {}).get(s.id, {}).items()),
                          key=lambda x: str(x[1].get("received", "")), reverse=True)
             stages.append({"s": s, "token": t, "link": link, "sum": js.stage_summary(zdata, s.id, len(run.rows)),
                            "judges": judges, "log": log})
@@ -226,7 +227,9 @@ def register(app, cx) -> None:
                     running=srv.running, urls=urls, error=srv.error, zq=urlencode({"z": zz.key}), run=run,
                     penalty_table=pen.table_for(zz, zdata), penalty_choice=pen.choice(zdata),
                     penalty_default=pen.default_key(zz), penalty_choices=pen.CHOICES,
-                    penalty_custom=zdata.get("penalty_custom"),
+                    penalty_custom=zdata.get("penalty_custom"), pen_text=js.pen_text,
+                    protocol_codes=bool(zdata.get("protocol_codes")), pen_jargon=zdata.get("pen_jargon", ""),
+                    jargon_builtin=pen.JARGON,
                     now_day=app.state.clock().date().isoformat(),
                     **comp_ctx(f))
 
@@ -271,8 +274,27 @@ def register(app, cx) -> None:
             _save_zachet(f, zz.key, lambda zd: zd.update(penalty_custom=custom, penalty_table="custom"))
             return _redirect(_with_done(back, "penalty_loaded", n=str(len(rows))))
         c = str(form.get("table", "auto"))
-        _save_zachet(f, zz.key, lambda zd: zd.update(penalty_table=c if c in pen.CHOICES else "auto"))
+        jar = "\n".join(line.strip() for line in str(form.get("jargon", "")).splitlines() if "=" in line)[:5000]
+        _save_zachet(f, zz.key, lambda zd: zd.update(penalty_table=c if c in pen.CHOICES else "auto",
+                                                     protocol_codes=bool(form.get("protocol_codes")), pen_jargon=jar))
         return _redirect(_with_done(back, "penalty_saved"))
+
+    @app.post("/c/{cid}/judges/pen-code")
+    async def judges_pen_code(request: Request, cid: str, z: str = ""):
+        """Штраф, записанный судьёй своими словами, — сопоставить с пунктом таблицы штрафов (или отменить)."""
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        form = await request.form()
+        sid, file, pid = (str(form.get(k, "")) for k in ("sid", "file", "id"))
+        code = str(form.get("code", "")).strip().rstrip(".")
+        back = f"{_base(f)}/judges?{urlencode({'z': zz.key})}#log-{sid}"
+        zdata = f.run_data().get("zachety", {}).get(zz.key, {})
+        table = pen.table_for(zz, zdata)
+        row = next((r for r in table.rows if r.code == code), None) if table and code else None
+        if code and row is None:
+            return _redirect(_with_done(back, "pen_code_bad", code=code))
+        _save_zachet(f, zz.key, lambda zd: js.map_pen(zd, sid, file, pid, row))
+        return _redirect(_with_done(back, "pen_code_saved"))
 
     def need_penalties(f: CompFolder, z: str):
         comp = need_comp(f)

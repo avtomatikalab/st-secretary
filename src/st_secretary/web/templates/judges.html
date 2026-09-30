@@ -71,10 +71,15 @@
           <button class="btn btn-ghost btn-small" type="submit">Отозвать</button></form>{% endif %}
       </td>
     </tr>
-    {% if x.log %}<tr class="jd-logrow"><td colspan="6"><details class="jd-log"><summary>Журнал этапа: кто что прислал ({{ x.log|length }})</summary>
+    {% if x.log %}<tr class="jd-logrow" id="log-{{ x.s.id }}"><td colspan="6"><details class="jd-log"{% if x.log|selectattr("pens")|list %} open{% endif %}><summary>Журнал этапа: кто что прислал ({{ x.log|length }})</summary>
       <table class="tbl"><thead><tr><th>Команда</th><th>Прибыла</th><th>Убыла</th><th>Баллы</th><th>Судья</th><th>Пришло</th></tr></thead><tbody>
       {% for team, rec in x.log %}<tr><td>{{ team }}</td><td>{{ rec.arrive or "—" }}</td><td>{{ rec.leave or "—" }}</td>
-        <td>{{ rec.points or "—" }}{% if rec.removed %} · снята{% if rec.reason %}: {{ rec.reason }}{% endif %}{% endif %}{% if rec.note %}<span class="adm-sub">{{ rec.note }}</span>{% endif %}</td>
+        <td>{{ rec.points or "—" }}{% if rec.removed %} · снята{% if rec.reason %}: {{ rec.reason }}{% endif %}{% endif %}{% if rec.note %}<span class="adm-sub">{{ rec.note }}</span>{% endif %}
+          {% if rec.pens %}<span class="adm-sub">{{ pen_text(rec.pens) }}{% if rec.pmanual %} · итог вписан руками — без расшифровки{% endif %}</span>
+          <ul class="jd-pens">{% for p in rec.pens %}<li>{% if p.code %}<b>п. {{ p.code }}</b> {{ p.title }}{% if p.n > 1 %} ×{{ p.n }}{% endif %} — {{ p.pts }}{% if p.mapped %} <span class="muted">(пункт сопоставлен на ноутбуке)</span>{% endif %}{% else %}<span class="text-warn">без пункта:</span> «{{ p.title }}»
+            <form method="post" action="{{ base }}/judges/pen-code?{{ zq }}" class="jd-map"><input type="hidden" name="sid" value="{{ x.s.id }}"><input type="hidden" name="file" value="{{ rec.file }}"><input type="hidden" name="id" value="{{ p.id }}">
+              <input type="text" name="code" placeholder="№ пункта" aria-label="Номер пункта таблицы штрафов" class="st-num"><button class="btn btn-small" type="submit">Сопоставить</button></form>{% endif %}
+            {% if p.who %}<span class="adm-sub">кому: {{ p.who }}</span>{% endif %}{% if p.note %}<span class="adm-sub">{{ p.note }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}</td>
         <td>{{ rec.judge or "не указан" }}{% if rec.judge_phone %} <a class="jd-tel" href="tel:{{ rec.judge_phone|replace(' ', '')|replace('-', '') }}">{{ rec.judge_phone }}</a>{% endif %}</td>
         <td>{{ rec.received[11:16] }}</td></tr>{% endfor %}
       </tbody></table></details></td></tr>{% endif %}
@@ -101,6 +106,12 @@
       <option value="{{ k }}"{% if k == penalty_choice %} selected{% endif %}>{% if k == "auto" %}по дисциплине — {{ penalty_choices[penalty_default] if penalty_default else "в Правилах нет (ПСР, горные: таблица в Условиях)" }}{% elif k == "custom" %}своя: {{ penalty_custom.source }}{% else %}{{ label }}{% endif %}</option>
       {% endif %}{% endfor %}
     </select>
+    <label class="check"><input type="checkbox" name="protocol_codes" value="1"{% if protocol_codes %} checked{% endif %}>
+      в протоколе результатов (лист «По этапам») — номера пунктов у баллов</label>
+    <details class="pen-jargon"><summary>Слова судей для поиска («не замуфтован» → «защёлка карабина»)</summary>
+      <p class="hint">Судья ищет пункт своими словами — программа ищет и по словам таблицы. По строке: «как говорят судьи =
+        слова из таблицы». Уже есть: {% for a, b_ in jargon_builtin %}«{{ a }}» → «{{ b_ }}»{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+      <textarea name="jargon" rows="3" placeholder="не закручена муфта = защёлка карабина">{{ pen_jargon }}</textarea></details>
     <button class="btn" type="submit">{{ icon("check", 18) }}Сохранить</button>
   </form>
   {% if penalty_table %}

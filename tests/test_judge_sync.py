@@ -148,3 +148,41 @@ def test_judge_name_and_phone_go_to_stage_journal():
     js.merge(z, "s1", [js.Record("Кедр.xlsx", "7", updated=3)], {"Кедр.xlsx"}, "т-3", "2026-10-03T12:05:00")
     assert js.who(z["judge"]["s1"]["Кедр.xlsx"]) == "" and len(js.stage_judges(z, "s1")) == 2  # судья не указан
     assert js.phone_same("+7 913 123-45-67", "89131234567") and not js.phone_same("+7 913 123-45-67", "")
+
+
+PENS = [{"id": "a", "code": "1", "title": "Не заблокирована защёлка карабина", "v": 1, "pts": "1 балл", "n": 2},
+        {"id": "b", "code": "4", "title": "Работа без рукавиц или перчаток", "v": 3, "pts": "3 балла", "n": 1,
+         "note": "участник №2"},
+        {"id": "c", "code": "", "title": "полез не по своей нитке", "v": None, "n": 1}]
+
+
+def test_penalties_by_table_items_breakdown_and_unmatched():
+    """Правки.md, п. 16: штрафы по пунктам таблицы — расшифровка «п. 1 ×2 = 2, п. 4 = 3 → 5»; штраф своими словами —
+    «без пункта», секретарь сопоставляет пункт (остаётся и после повторной присылки); итог руками — без расшифровки."""
+    from st_secretary import penalties as pen
+
+    z = {"stages": [{"id": "s1", "name": "Навесная переправа"}], "teams": {}}
+
+    def send(points, updated, pmanual=False):
+        js.merge(z, "s1", [js.Record.from_json({"file": "Кедр.xlsx", "points": points, "pens": PENS, "updated": updated,
+                                                "pmanual": pmanual})], {"Кедр.xlsx"}, "т", f"2026-10-03T10:0{updated}:00")
+
+    send("5", 1)
+    got = js.pens_of(z, "s1", "Кедр.xlsx")
+    assert js.pen_text(got) == "п. 1 ×2 = 2, п. 4 = 3, без пункта: «полез не по своей нитке» → 5"
+    assert js.pen_codes(got) == "п. 1×2, 4" and js.pen_sum(got) == 5 and got[1]["note"] == "участник №2"
+    issues = js.judge_issues(z, stages_of(z), {"Кедр.xlsx": "Кедр"})
+    assert any("без пункта таблицы — «полез не по своей нитке»" in i.text and i.target == "judgelog:s1" for i in issues)
+
+    row = next(r for r in pen.builtin("pedestrian").rows if r.code == "10.1")
+    js.map_pen(z, "s1", "Кедр.xlsx", "c", row)
+    send("5", 2)  # телефон прислал запись ещё раз — сопоставление секретаря остаётся
+    got = js.pens_of(z, "s1", "Кедр.xlsx")
+    assert got[2]["code"] == "10.1" and got[2]["mapped"] and js.pen_text(got).endswith("п. 10.1 = 10 → 15")
+    assert not any("без пункта" in i.text for i in js.judge_issues(z, stages_of(z), {"Кедр.xlsx": "Кедр"}))
+
+    send("7", 3, pmanual=True)
+    issues = js.judge_issues(z, stages_of(z), {"Кедр.xlsx": "Кедр"})
+    assert any("вписал итог руками (7) — без расшифровки (по пунктам — 15)" in i.text for i in issues)
+    bad = js.Record.from_json({"file": "x", "pens": [{"code": "1" * 50, "v": "abc", "n": 1000}] * 60})
+    assert len(bad.pens) == 50 and bad.pens[0]["v"] is None and bad.pens[0]["n"] == 99 and len(bad.pens[0]["code"]) == 20

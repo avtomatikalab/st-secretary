@@ -153,6 +153,7 @@ class TeamResult:
     distance_time: Fraction | None = None  # время на дистанции (финиш − старт − отсечки), с
     removals: int = 0  # снятий с этапов
     marks: dict = field(default_factory=dict)  # ПСР: этап → «снята» / «сверх КВ» (в клетке МШ, stage_time.marks)
+    codes: dict = field(default_factory=dict)  # этап → «п. 1×2, 3» — пункты таблицы штрафов от судьи (для протокола)
     chip: str = ""
     auto_status: bool = False  # статус поставлен программой (превышено КВ)
     planned_start: bool = False  # старт не вписан — взят из стартового протокола
@@ -178,6 +179,7 @@ class ZachetRun:
     seconds_per_point: int | None = None  # для «time»
     scoring: str = "points"  # чем выражен результат: "points" (ПСР, горные) или "time" (спелео, пешеходные, СХ)
     unit: str = "team"  # кто получает место: "team", "pair" (связка), "person" (личная)
+    show_codes: bool = False  # в протоколе «По этапам» — номера пунктов таблицы штрафов (настройка зачёта)
     profile: str = "psr"  # psr, speleo, pedestrian, nordic, mountain
     system: str = "penalty"  # штрафная или бесштрафовая система оценки нарушений
 
@@ -203,7 +205,8 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     stages = stages_of(zdata)
     known = {s.id for s in stages}
     stored = zdata.get("teams", {})
-    from st_secretary import stage_time as stt  # stage_time сам берёт Stage отсюда
+    from st_secretary import judge_sync as js  # оба берут Stage отсюда
+    from st_secretary import stage_time as stt
 
     issues: list[Issue] = []
     rows: list[TeamResult] = []
@@ -223,6 +226,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
         status = _status(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
         r = TeamResult(t, i, pts, raw, bad, status, str(d.get("note", "")))
         r.marks = stt.marks(zdata, stages, t.file, raw)
+        r.codes = {s.id: c for s in stages if (c := js.pen_codes(js.pens_of(zdata, s.id, t.file)))}
         r.total = sum(pts.values(), Fraction(0))
         r.tours = {tour: sum((pts.get(s.id, Fraction(0)) for s in stages if s.tour == tour), Fraction(0))
                    for tour in tours_of(stages)}
@@ -269,6 +273,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
 
     # процент от победителя и норматив
     run = ZachetRun(z, stages, ordered, rank, issues, unit=unit_kind(fmt))
+    run.show_codes = bool(zdata.get("protocol_codes"))
     placed = [r for r in ordered if r.place is not None]
     if placed:
         run.winner = placed[0].total
