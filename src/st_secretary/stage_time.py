@@ -111,12 +111,14 @@ def waiting_check(rec: dict, subtract_wait: bool = True) -> str:
     return ""
 
 
-def score(stage: Stage, rec: dict, full_intervals: bool = True, subtract_wait: bool = True) -> StageScore:
-    """Итог этапа из записи судьи: снята или сверх КВ — МШ; иначе техштраф + ВШ по времени на этапе."""
+def score(stage: Stage, rec: dict, full_intervals: bool = True, subtract_wait: bool = True,
+          keep: bool = False) -> StageScore:
+    """Итог этапа из записи судьи: снята или сверх КВ — МШ; иначе техштраф + ВШ по времени на этапе.
+    keep — секретарь снял отметку «снята» / «сверх КВ»: итог по техштрафу и времени, как у прошедшей этап."""
     secs = stage_seconds(rec, subtract_wait)
     mx = stage.max_penalty
     over_kv = secs is not None and stage.kv_minutes is not None and secs > stage.kv_minutes * 60
-    if rec.get("removed") or over_kv:
+    if not keep and (rec.get("removed") or over_kv):
         why = "снята с этапа" if rec.get("removed") else f"превышено КВ ({duration_text(Fraction(secs or 0))})"
         return StageScore(mx, f"{why} — МШ {points_text(mx)}" if mx is not None else f"{why} — МШ этапа не задан",
                           secs)
@@ -136,9 +138,65 @@ def score(stage: Stage, rec: dict, full_intervals: bool = True, subtract_wait: b
                              f"(на этапе {duration_text(Fraction(secs))})", secs, waiting_check(rec, subtract_wait))
 
 
-def score_for(zdata: dict, stage: Stage, rec: dict) -> StageScore:
-    """Итог этапа по настройкам зачёта (неполный интервал ВШ, вычитать ли ожидание очереди)."""
-    return score(stage, rec, full_intervals(zdata), subtract_wait(zdata))
+def score_for(zdata: dict, stage: Stage, rec: dict, file: str = "") -> StageScore:
+    """Итог этапа по настройкам зачёта (неполный интервал ВШ, вычитать ли ожидание очереди) и отметке секретаря."""
+    return score(stage, rec, full_intervals(zdata), subtract_wait(zdata), cancelled(zdata, stage.id, file))
+
+
+@dataclass
+class Removal:
+    """Снятие с этапа по записи судьи: kind — «снята» (судья отметил) или «сверх КВ»; why — причина или время на
+    этапе; cancelled — отметку снял секретарь (итог этапа — по техштрафу и времени)."""
+    kind: str
+    why: str
+    cancelled: bool
+
+
+def cancelled(zdata: dict, sid: str, file: str) -> bool:
+    """Секретарь снял отметку «снята» / «сверх КВ» у команды на этапе."""
+    return bool(file) and sid in zdata.get("teams", {}).get(file, {}).get("unremoved", [])
+
+
+def removal(zdata: dict, stage: Stage, file: str) -> Removal | None:
+    """Снята ли команда с этапа по записи судьи (сама отметка или время на этапе сверх КВ); None — нет."""
+    rec = zdata.get("judge", {}).get(stage.id, {}).get(file)
+    if not rec:
+        return None
+    if rec.get("removed"):
+        return Removal("снята", str(rec.get("reason") or "").strip(), cancelled(zdata, stage.id, file))
+    if stage.auto and stage.kv_minutes is not None:
+        secs = stage_seconds(rec, subtract_wait(zdata))
+        if secs is not None and secs > stage.kv_minutes * 60:
+            return Removal("сверх КВ", f"на этапе {duration_text(Fraction(secs))} при КВ {stage.kv_minutes} мин",
+                           cancelled(zdata, stage.id, file))
+    return None
+
+
+def marks(zdata: dict, stages: list[Stage], file: str, raw: dict) -> dict[str, str]:
+    """Отметки «снята» / «сверх КВ» для таблицы и протоколов: у этапов, где судья снял команду (или время сверх КВ),
+    отметку не снял секретарь, а в клетке — МШ этапа."""
+    out = {}
+    for s in stages:
+        rm = removal(zdata, s, file)
+        if rm and not rm.cancelled and s.max_penalty is not None and same_points(str(raw.get(s.id, "")),
+                                                                              points_text(s.max_penalty)):
+            out[s.id] = rm.kind
+    return out
+
+
+def toggle_mark(zdata: dict, stage: Stage, file: str) -> bool:
+    """Секретарь снимает (или возвращает) отметку «снята» / «сверх КВ»; итог этапа — заново. True — отметка снята."""
+    t = zdata.setdefault("teams", {}).setdefault(file, {})
+    off = [x for x in t.get("unremoved", []) if x != stage.id]
+    now_off = stage.id not in t.get("unremoved", [])
+    if now_off:
+        off.append(stage.id)
+    if off:
+        t["unremoved"] = off
+    else:
+        t.pop("unremoved", None)
+    refresh(zdata, stage, [file])
+    return now_off
 
 
 def same_points(a: str, b: str) -> bool:
@@ -164,12 +222,13 @@ def refresh(zdata: dict, stage: Stage, files: list[str] | None = None) -> int:
         rec = log.get(file)
         if rec is None:
             continue
-        sc = score_for(zdata, stage, rec)
+        sc = score_for(zdata, stage, rec, file)
         t = teams.setdefault(file, {})
         cell = str(t.get("points", {}).get(stage.id, "")).strip()
         prev = str(t.get("auto", {}).get(stage.id, "")).strip()
         if sc.total is None:
-            if sc.check and prev and cell == prev:  # время стало с ошибкой — прежний итог программы убрать
+            # время стало с ошибкой или секретарь снял отметку «снята» — прежний итог программы (МШ) убрать
+            if (sc.check or cancelled(zdata, stage.id, file)) and prev and cell == prev:
                 t.get("points", {}).pop(stage.id, None)
                 t.get("auto", {}).pop(stage.id, None)
             continue

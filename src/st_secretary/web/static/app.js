@@ -210,7 +210,10 @@
         .catch(function () { if (note) note.textContent = "Не сохранилось — нажмите «Сохранить»"; });
     }
     form.addEventListener("change", save);
-    form.addEventListener("submit", function (e) { e.preventDefault(); save(); });
+    form.addEventListener("submit", function (e) {
+      if (e.submitter && e.submitter.hasAttribute("formaction")) return;  // «снята ✕» — своя отправка, со страницей
+      e.preventDefault(); save();
+    });
     form.addEventListener("keydown", function (e) {
       if (e.key !== "Enter" || !e.target.matches("input[data-stage]")) return;
       e.preventDefault();

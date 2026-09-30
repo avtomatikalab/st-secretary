@@ -43,9 +43,11 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     tours = [] if timed else run.tours
     middle = ["Время на дистанции", "Штраф, баллы", "Снятий"] if timed else tours
     show_class = any(r.actual_class for r in run.rows)
+    show_marks = not timed and any(r.marks for r in run.rows)  # ПСР: сняты с этапов (МШ) — отметка в протоколе
     person = run.unit == "person"  # личная дисциплина: место у спортсмена
     who = ["Участник", "Команда", "Территория", "Разряд"] if person else ["Команда", "Территория", "Состав (разряд)"]
     head = (["Место", "№"] + who + middle
+            + (["Снятия с этапов"] if show_marks else [])
             + ["Результат", "% от победителя", "Выполнен разряд"] + (["Факт. класс"] if show_class else []))
     width = len(head)
 
@@ -78,11 +80,13 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         mid = ([clock_text(t.distance_time), points_text(sum(t.points.values())) if t.points else "", t.removals or ""]
                if timed else [points_text(t.tours.get(x)) for x in tours])
         values = ([t.place or "—", t.inp.number or ""] + who_values + mid
+                  + ([mark_text(run, t)] if show_marks else [])
                   + [result, _pct(t.percent), t.norm or ""] + ([t.actual_class or ""] if show_class else []))
+        res_col = 3 + len(who) + len(middle) + (1 if show_marks else 0)
         for c, v in enumerate(values, start=1):
             cell = ws.cell(r, c, v)
-            cell.border, cell.font = BOX, Font(size=10, bold=(c == 1 or c == 3 + len(who) + len(middle)))
-            cell.alignment = WRAP if 3 <= c < 3 + len(who) else CENTER
+            cell.border, cell.font = BOX, Font(size=10, bold=(c in (1, res_col)))
+            cell.alignment = WRAP if 3 <= c < 3 + len(who) or (show_marks and c == res_col - 1) else CENTER
         r += 1
     r += 1
     notes = []
@@ -103,7 +107,7 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         ws.cell(r, 1, f"{role} ________________ / {o.signature if o else ' ' * 30} /").font = Font(size=11)
         r += 2
     for c, w in enumerate([7, 6] + ([28, 20, 16, 8] if person else [22, 16, 46]) + [10 if timed else 8] * len(middle)
-                          + [11, 10, 10] + ([8] if show_class else []), start=1):
+                          + ([22] if show_marks else []) + [11, 10, 10] + ([8] if show_class else []), start=1):
         ws.column_dimensions[get_column_letter(c)].width = w
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
@@ -118,7 +122,9 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         cell.font, cell.fill, cell.border = Font(bold=True, size=9), HEAD, BOX
         cell.alignment = Alignment(horizontal="center", vertical="bottom", wrap_text=True, text_rotation=90 if c > 3 else 0)
     for i, t in enumerate(run.rows, start=5):
-        cells = [t.raw.get(s.id, "") if timed else points_text(t.points.get(s.id)) for s in run.stages]  # «с» — снятие
+        cells = [t.raw.get(s.id, "") if timed else  # «с» — снятие
+                 f"{points_text(t.points.get(s.id))} {t.marks[s.id]}" if s.id in t.marks else points_text(t.points.get(s.id))
+                 for s in run.stages]
         values = [t.place or "—", t.inp.number or "", t.inp.team] + cells + [result_text(run, t)]
         for c, v in enumerate(values, start=1):
             cell = st.cell(i, c, v)
@@ -127,13 +133,23 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     st.column_dimensions["C"].width = 22
     st.row_dimensions[4].height = 120
     for c in range(4, len(heads) + 1):
-        st.column_dimensions[get_column_letter(c)].width = 5
+        marked = 4 <= c < 4 + len(run.stages) and any(run.stages[c - 4].id in t.marks for t in run.rows)
+        st.column_dimensions[get_column_letter(c)].width = 13 if marked else 5
+    if any(t.marks for t in run.rows):
+        st.cell(5 + len(run.rows) + 1, 1, "«снята» — команда снята с этапа, «сверх КВ» — превышено КВ этапа: "
+                                          "в клетке МШ этапа.").font = Font(size=9, italic=True)
     st.page_setup.orientation = "landscape"
     st.page_setup.fitToWidth, st.page_setup.fitToHeight = 1, 0
     st.sheet_properties.pageSetUpPr.fitToPage = True
     path = Path(path)
     wb.save(path)
     return path
+
+
+def mark_text(run: ZachetRun, t) -> str:
+    """ПСР: с каких этапов команда снята (в клетке МШ) — «Узлы; Бивак (сверх КВ)»."""
+    return "; ".join(s.name + ("" if t.marks[s.id] == "снята" else f" ({t.marks[s.id]})")
+                     for s in run.stages if s.id in t.marks)
 
 
 def awards_rows(run: ZachetRun, source: str) -> dict:

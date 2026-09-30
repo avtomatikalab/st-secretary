@@ -23,7 +23,7 @@ from st_secretary.disciplines import Status
 from st_secretary.exporters import results_protocol as rp
 from st_secretary.importers.si_reader import read_si_reader
 from st_secretary.reference import discipline_by_code
-from st_secretary.web.common import PROTEST_DECISIONS, XLSX, _base, _parse_dt, _redirect, _with_done
+from st_secretary.web.common import PROTEST_DECISIONS, XLSX, _base, _parse_dt, _redirect, _with_done, team_anchor
 from st_secretary.web.store import CompFolder, safe_name
 
 
@@ -74,6 +74,7 @@ def register(app, cx) -> None:
                 "res": lambda r: pr.result_text(run, r), "is_time": run.kind == "time",
                 "from_phone": lambda sid, file: js.from_phone(zdata, sid, file, stage_by.get(sid)),
                 "stage_score": lambda s, file: js.stage_score_text(zdata, s, file),
+                "removal": lambda s, file: stt.removal(zdata, s, file),
                 "grid": sorted(run.rows, key=lambda r: r.start_order), "status_label": pr.STATUS_LABEL,
                 "status_short": pr.STATUS_SHORT, "statuses": list(pr.STATUS_LABEL), "FINISHED": Status.FINISHED,
                 "zq": urlencode({"z": z.key}), "pct": lambda x: f"{float(x):.2f}".replace(".", ",") if x is not None else ""}
@@ -194,6 +195,22 @@ def register(app, cx) -> None:
         _save_zachet(f, zz.key, lambda zdata: out.update(tr.apply_si(zdata, cards, teams)))
         return _redirect(_with_done(back, "si_done", n=str(len(cards)), t=str(out["teams"]),
                                     unknown=", ".join(out["unknown"])[:600], replaced=", ".join(out["replaced"])[:600]))
+
+    @app.post("/c/{cid}/results/unmark")
+    def results_unmark(cid: str, z: str = "", file: str = "", sid: str = ""):
+        """Отметка «снята» / «сверх КВ» у команды на этапе: секретарь снимает её (МШ уходит, итог этапа — по
+        техштрафу и времени) или возвращает (МШ)."""
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+
+        def update(zdata):
+            stage = next((s for s in pr.stages_of(zdata) if s.id == sid), None)
+            if stage is not None and file:
+                stt.toggle_mark(zdata, stage, file)
+
+        _save_zachet(f, zz.key, update)
+        q = {"z": zz.key, "done": "run_saved", "focus": f"c-{team_anchor(file)}-{sid}"}
+        return _redirect(f"{_base(f)}/results?{urlencode(q)}#points")
 
     @app.post("/c/{cid}/results/points")
     async def results_points(request: Request, cid: str, z: str = ""):

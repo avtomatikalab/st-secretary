@@ -172,3 +172,48 @@ def test_waiting_not_subtracted_not_in_distance_cutoffs():
     z["wait_cut"] = "no"
     js.refresh_cutoffs(z)
     assert "cutoffs" not in z["teams"]["Кедр.xlsx"] and z["teams"]["Сосна.xlsx"]["cutoffs"] == "5:00"
+
+
+def test_removed_mark_stays_visible_and_can_be_cancelled():
+    """Правки.md, п. 5 (ответ 2): снята с этапа → МШ, но отметка «снята» видна; сверх КВ — «сверх КВ»; секретарь
+    снимает отметку — МШ уходит, итог этапа считается заново по техштрафу и времени."""
+    z = zdata()
+    stage = stages_of(z)[0]
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "10", "10:00:00", "10:07:12", removed=True, reason="опасная страховка",
+                                 updated=1),
+                       js.Record("Сосна.xlsx", "0", "10:10:00", "10:21:00", updated=1)],
+             FILES, "телефон", "2026-10-03T10:30:00", stage=stage, distance_cutoffs=False)
+    teams = z["teams"]
+    assert teams["Кедр.xlsx"]["points"]["s1"] == "30" and teams["Сосна.xlsx"]["points"]["s1"] == "30"  # МШ
+    assert stt.marks(z, [stage], "Кедр.xlsx", teams["Кедр.xlsx"]["points"]) == {"s1": "снята"}
+    assert stt.marks(z, [stage], "Сосна.xlsx", teams["Сосна.xlsx"]["points"]) == {"s1": "сверх КВ"}
+    rm = stt.removal(z, stage, "Кедр.xlsx")
+    assert rm.why == "опасная страховка" and not rm.cancelled
+    assert "11:00 при КВ 10 мин" in stt.removal(z, stage, "Сосна.xlsx").why
+
+    assert stt.toggle_mark(z, stage, "Кедр.xlsx")  # секретарь снял отметку «снята»
+    assert teams["Кедр.xlsx"]["points"]["s1"] == "15"  # тех. 10 + время 5 (7:12 на этапе) — как у прошедшей этап
+    assert stt.marks(z, [stage], "Кедр.xlsx", teams["Кедр.xlsx"]["points"]) == {}
+    issues = js.judge_issues(z, stages_of(z), {"Кедр.xlsx": "Кедр"})
+    assert any("отметил снятие" in i.text and "отметку снял секретарь" in i.text for i in issues)
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "10", "10:00:00", "10:07:12", removed=True, reason="опасная страховка",
+                                 note="судья поправил заметку", updated=2)],
+             FILES, "телефон", "2026-10-03T10:40:00", stage=stage, distance_cutoffs=False)
+    assert teams["Кедр.xlsx"]["points"]["s1"] == "15"  # то же снятие с телефона — решение секретаря в силе
+    assert not stt.toggle_mark(z, stage, "Кедр.xlsx")  # вернул отметку — снова МШ
+    assert teams["Кедр.xlsx"]["points"]["s1"] == "30" and "unremoved" not in teams["Кедр.xlsx"]
+
+    stt.toggle_mark(z, stage, "Кедр.xlsx")
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "10", "10:00:00", "10:07:12", updated=3)], FILES, "телефон",
+             "2026-10-03T10:41:00", stage=stage, distance_cutoffs=False)  # судья убрал снятие…
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "10", "10:00:00", "10:07:12", removed=True, updated=4)], FILES,
+             "телефон", "2026-10-03T10:42:00", stage=stage, distance_cutoffs=False)  # …и снял снова — новое снятие
+    assert teams["Кедр.xlsx"]["points"]["s1"] == "30" and stt.marks(z, [stage], "Кедр.xlsx", teams["Кедр.xlsx"]["points"])
+
+    removed_no_time = {"removed": True}  # снята, времени убытия нет: отметку сняли — клетка пустая, не МШ
+    z2 = zdata()
+    js.merge(z2, "s1", [js.Record("Кедр.xlsx", "", "10:00:00", **removed_no_time, updated=1)], FILES, "т",
+             "2026-10-03T10:30:00", stage=stages_of(z2)[0], distance_cutoffs=False)
+    assert z2["teams"]["Кедр.xlsx"]["points"]["s1"] == "30"
+    stt.toggle_mark(z2, stages_of(z2)[0], "Кедр.xlsx")
+    assert "s1" not in z2["teams"]["Кедр.xlsx"]["points"]

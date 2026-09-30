@@ -152,6 +152,7 @@ class TeamResult:
     cutoffs: Fraction = Fraction(0)  # сумма отсечек, с
     distance_time: Fraction | None = None  # время на дистанции (финиш − старт − отсечки), с
     removals: int = 0  # снятий с этапов
+    marks: dict = field(default_factory=dict)  # ПСР: этап → «снята» / «сверх КВ» (в клетке МШ, stage_time.marks)
     chip: str = ""
     auto_status: bool = False  # статус поставлен программой (превышено КВ)
     planned_start: bool = False  # старт не вписан — взят из стартового протокола
@@ -202,6 +203,8 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     stages = stages_of(zdata)
     known = {s.id for s in stages}
     stored = zdata.get("teams", {})
+    from st_secretary import stage_time as stt  # stage_time сам берёт Stage отсюда
+
     issues: list[Issue] = []
     rows: list[TeamResult] = []
 
@@ -219,6 +222,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 pts[sid] = x
         status = _status(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
         r = TeamResult(t, i, pts, raw, bad, status, str(d.get("note", "")))
+        r.marks = stt.marks(zdata, stages, t.file, raw)
         r.total = sum(pts.values(), Fraction(0))
         r.tours = {tour: sum((pts.get(s.id, Fraction(0)) for s in stages if s.tour == tour), Fraction(0))
                    for tour in tours_of(stages)}

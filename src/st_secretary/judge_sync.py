@@ -108,6 +108,10 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
         if prev and prev.get("device") == device and int(prev.get("updated", 0)) > rec.updated:
             saved.append(rec.file)  # пришла более старая версия с того же телефона — уже есть новее
             continue
+        if rec.removed and not prev.get("removed"):  # судья снова снял команду — прежняя отметка секретаря не в силе
+            un = teams.get(rec.file, {}).get("unremoved", [])
+            if sid in un:
+                un.remove(sid)
         pts_cell = teams.setdefault(rec.file, {}).setdefault("points", {})
         cell = str(pts_cell.get(sid, "")).strip()
         before = str(prev.get("points", "")).strip()
@@ -209,7 +213,7 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
             got = str(rec.get("points", "")).strip()
             when = str(rec.get("received", ""))[11:16]
             if st.auto:  # итог этапа — по техштрафу и времени; судья мог прислать только часть
-                sc = stt.score_for(zdata, st, rec)
+                sc = stt.score_for(zdata, st, rec, file)
                 if sc.total is not None and cell and not _same(cell, points_text(sc.total)):
                     out.append(Issue(WARNING, f"«{team}», {st.title}: с телефона судьи {sc.text} ({when}), в таблице "
                                               f"{cell} — проверьте", team=team, target=f"cell:{file}:{sid}"))
@@ -234,7 +238,8 @@ def judge_issues(zdata: dict, stages: list[Stage], team_names: dict[str, str]) -
                 out.append(Issue(WARNING, f"«{team}», {st.title}: {wait}", team=team, target=f"cell:{file}:{sid}"))
             if rec.get("removed"):
                 why = f": {rec['reason']}" if rec.get("reason") else ""
-                out.append(Issue(INFO, f"«{team}», {st.title}: судья этапа отметил снятие с этапа{why}", team=team))
+                off = " — отметку снял секретарь" if stt.cancelled(zdata, sid, file) else ""
+                out.append(Issue(INFO, f"«{team}», {st.title}: судья этапа отметил снятие с этапа{why}{off}", team=team))
     for file, t in teams.items() if stt.subtract_wait(zdata) else ():  # не вычитается — сверять нечего
         total = phone_cutoffs(zdata, file)
         cell = str(t.get("cutoffs", "")).strip()
@@ -269,7 +274,7 @@ def from_phone(zdata: dict, sid: str, file: str, stage: Stage | None = None) -> 
     rec = zdata.get("judge", {}).get(sid, {}).get(file)
     cell = str(zdata.get("teams", {}).get(file, {}).get("points", {}).get(sid, "")).strip()
     if rec and cell and stage is not None and stage.auto:
-        sc = stt.score_for(zdata, stage, rec)
+        sc = stt.score_for(zdata, stage, rec, file)
         return sc.total is not None and _same(cell, points_text(sc.total))
     return bool(rec and cell and _same(cell, str(rec.get("points", ""))))
 
@@ -279,4 +284,4 @@ def stage_score_text(zdata: dict, stage: Stage, file: str) -> str:
     rec = zdata.get("judge", {}).get(stage.id, {}).get(file)
     if not stage.auto or rec is None:
         return ""
-    return stt.score_for(zdata, stage, rec).text
+    return stt.score_for(zdata, stage, rec, file).text

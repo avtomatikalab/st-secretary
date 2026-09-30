@@ -1297,3 +1297,36 @@ def test_wait_cut_setting_on_results_page_and_phone(client, tmp_path, psr_card):
     assert z["wait_cut"] == "no" and z["teams"]["Кедр.xlsx"]["points"]["s1"] == "15"
     html = phone.get(f"/j/{token}").text
     assert '"wait_cut": false' in html and "ожидание не вычитается" in html
+
+
+def test_removed_mark_in_table_protocol_and_unmark(client, tmp_path, psr_card, opened):
+    """Правки.md, п. 5 (ответ 2): снята → в клетке МШ и отметка «снята ✕» (причина в подсказке), в протоколе
+    результатов и на листе «По этапам» — «снята»; секретарь снимает отметку — итог этапа заново."""
+    from openpyxl import load_workbook
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    q = "?z=М/Ж_3"
+    client.post(base(f) + "/results/stages" + q, data={
+        "st-0-tour": "Тур 1", "st-0-name": "Узлы", "st-0-nv": "5", "st-0-kv": "10", "st-0-tsh": "20", "st-0-vsh": "10"})
+    client.post(base(f) + "/judges/link" + q, data={"stage": "s1"})
+    phone = TestClient(client.app.state.board.app)
+    phone.post(f"/j/{js_token(f)}/sync", json={"device": "т-1", "records": [
+        {"file": "Кедр.xlsx", "points": "10", "arrive": "10:00:00", "leave": "10:07:12", "removed": True,
+         "reason": "опасная страховка", "updated": 1}]})
+    page = client.get(base(f) + "/results" + q).text
+    assert 'class="pts-mark"' in page and "снята ✕" in page and "опасная страховка" in page
+    assert "pts-removed" in page and "Узлы — снята с этапа" in page  # и в таблице результатов под командой
+    client.post(base(f) + "/results/publish" + q)
+    wb = load_workbook(opened[-1])
+    cells = [c for row in wb["Протокол"].iter_rows(values_only=True) for c in row if c]
+    assert "Снятия с этапов" in cells and "Узлы" in cells
+    stage_cells = [c for row in wb["По этапам"].iter_rows(values_only=True) for c in row if c]
+    assert "30 снята" in stage_cells
+
+    r = client.post(base(f) + "/results/unmark" + q + "&file=" + quote("Кедр.xlsx") + "&sid=s1", follow_redirects=False)
+    assert r.status_code == 303 and "focus=c-t-" in r.headers["location"]
+    z = f.run_data()["zachety"]["М/Ж_3"]
+    assert z["teams"]["Кедр.xlsx"]["points"]["s1"] == "15" and z["teams"]["Кедр.xlsx"]["unremoved"] == ["s1"]
+    page = client.get(base(f) + "/results" + q).text
+    assert "↺ снята" in page and "pts-removed" not in page

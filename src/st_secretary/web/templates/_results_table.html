@@ -22,7 +22,8 @@
     <tr class="{% if r.place in (1, 2, 3) %}zres-medal zres-{{ r.place }}{% endif %}{% if r.status != FINISHED %} res-out{% endif %}">
       <td class="zres-place">{{ r.place or "—" }}</td>
       <td>{{ r.inp.number or "—" }}</td>
-      <td><b>{{ r.inp.team }}</b><span class="adm-sub">{% if r.inp.club and r.inp.club != r.inp.team %}{{ r.inp.club }} · {% endif %}{{ r.inp.territory }}</span></td>
+      <td><b>{{ r.inp.team }}</b><span class="adm-sub">{% if r.inp.club and r.inp.club != r.inp.team %}{{ r.inp.club }} · {% endif %}{{ r.inp.territory }}</span>
+        {%- if r.marks %}<span class="adm-sub text-warn">{% for s in run.stages if s.id in r.marks %}{{ s.name }} — {{ "снята с этапа" if r.marks[s.id] == "снята" else "сверх КВ" }}{% if not loop.last %}; {% endif %}{% endfor %}</span>{% endif %}</td>
       <td class="zres-members">{% if run.unit == "person" %}{{ r.inp.members[0].qual_label or "б/р" }}{% else %}{% for m in r.inp.members %}{{ m.fio }}{% if m.qual_label %} ({{ m.qual_label }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</td>
       {% if is_time %}<td class="res-num">{{ ck(r.distance_time) }}</td><td class="res-num">{{ pt(r.points.values()|sum) if r.points else "" }}</td>
       <td class="res-num">{{ r.removals or "" }}</td>
