@@ -3,8 +3,8 @@
 
 {% macro stage_row(i, s, psr=false) -%}
 <tr data-row>
-  <td><input type="text" name="st-{{ i }}-tour" value="{{ s.tour }}" placeholder="Тур 1" aria-label="Тур"><input type="hidden" name="st-{{ i }}-id" value="{{ s.id }}"></td>
-  <td><input type="text" name="st-{{ i }}-name" value="{{ s.name }}" placeholder="Название этапа" aria-label="Название этапа"></td>
+  <td class="st-fix1"><input type="text" name="st-{{ i }}-tour" value="{{ s.tour }}" placeholder="Тур 1" aria-label="Тур"><input type="hidden" name="st-{{ i }}-id" value="{{ s.id }}"></td>
+  <td class="st-fix2"><textarea name="st-{{ i }}-name" rows="1" class="st-name" data-autosize placeholder="Название этапа" aria-label="Название этапа">{{ s.name }}</textarea></td>
   {% if psr %}
   <td><input type="text" inputmode="decimal" name="st-{{ i }}-nv" value="{{ s.nv or '' }}" aria-label="НВ этапа, минут"></td>
   {% endif %}
@@ -66,13 +66,13 @@
   </form>
   <form method="post" action="{{ base }}/results/stages?{{ zq }}" data-guard>
     <div class="table-wrap">
-    <table class="tbl form-tbl res-stages">
+    <table class="tbl form-tbl res-stages{% if not is_time %} res-stages-psr{% endif %}">
       {% if is_time %}
-      <colgroup><col class="c-tour"><col><col class="c-max"><col class="c-max"><col class="c-act"></colgroup>
-      <thead><tr><th>Тур</th><th>Этап</th><th>КВ, мин</th><th>МШ</th><th></th></tr></thead>
+      <colgroup><col class="c-tour"><col class="c-name"><col class="c-max"><col class="c-max"><col class="c-act"></colgroup>
+      <thead><tr><th class="st-fix1">Тур</th><th class="st-fix2">Этап</th><th>КВ, мин</th><th>МШ</th><th></th></tr></thead>
       {% else %}
-      <colgroup><col class="c-tour"><col><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-rule"><col class="c-act"></colgroup>
-      <thead><tr><th>Тур</th><th>Этап</th><th title="Нормативное время: до него временного штрафа нет">НВ, мин</th>
+      <colgroup><col class="c-tour"><col class="c-name"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-rule"><col class="c-act"></colgroup>
+      <thead><tr><th class="st-fix1">Тур</th><th class="st-fix2">Этап</th><th title="Нормативное время: до него временного штрафа нет">НВ, мин</th>
         <th title="Контрольное время: сверх него — снятие с этапа, МШ">КВ, мин</th><th title="Наибольший технический штраф">ТШ</th>
         <th title="Наибольший временной штраф">ВШ</th><th title="Максимальный штраф этапа; пусто — ТШ + ВШ">МШ</th>
         <th title="Временной штраф: сколько баллов за каждые сколько секунд сверх НВ">ВШ: балл за … с</th><th></th></tr></thead>

@@ -524,10 +524,16 @@ input.mk-fixed, select.mk-fixed { border: 2px solid #7cc190; }
 .chip.is-active { background: var(--primary); border-color: var(--primary); color: #fff; }
 a.chip { text-decoration: none; } a.chip::before { display: none; }  /* зачёты — вкладки, не галочки */
 .res-import { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 12px; }
-.res-stages { table-layout: fixed; min-width: 560px; }
-.res-stages .c-tour { width: 130px; } .res-stages .c-max { width: 90px; } .res-stages .c-act { width: 46px; }
-.res-stages .c-rule { width: 150px; }
-.res-rule { white-space: nowrap; } .res-rule input { width: 48px; display: inline-block; } .res-rule span { margin: 0 4px; color: var(--muted); }
+/* Этапы дистанции: у названия этапа — не меньше 280 px и весь остаток ширины; числа — узкие; не помещается —
+   таблица прокручивается вбок (.table-wrap), а «Тур» и «Этап» остаются на месте */
+.res-stages { table-layout: fixed; width: 100%; min-width: 566px; }
+.res-stages-psr { min-width: 912px; }
+.res-stages .c-tour { width: 100px; } .res-stages .c-name { width: auto; }
+.res-stages .c-max { width: 70px; } .res-stages .c-act { width: 46px; } .res-stages .c-rule { width: 136px; }
+.res-stages .st-fix1, .res-stages .st-fix2 { position: sticky; z-index: 1; background: var(--surface); }
+.res-stages textarea.st-name { resize: none; overflow: hidden; min-height: 0; line-height: 1.3; }
+.res-stages .st-fix1 { left: 0; } .res-stages .st-fix2 { left: 100px; box-shadow: 6px 0 6px -6px rgba(0, 0, 0, .25); }
+.res-rule { white-space: nowrap; } .res-rule input { width: 40px; display: inline-block; padding-left: 4px; padding-right: 4px; } .res-rule span { margin: 0 4px; color: var(--muted); }
 .pts-auto { display: block; font-size: .7rem; color: var(--primary); font-weight: 600; }
 .pts-wrap { max-height: 72vh; overflow: auto; }
 .pts-grid { font-size: .85rem; border-collapse: separate; border-spacing: 0; }

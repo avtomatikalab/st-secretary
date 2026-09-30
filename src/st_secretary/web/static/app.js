@@ -41,6 +41,7 @@
       var i = Number(box.dataset.next || 0);
       box.dataset.next = i + 1;
       box.insertAdjacentHTML("beforeend", tpl.innerHTML.replace(/__i__/g, String(i)));
+      box.lastElementChild.querySelectorAll("textarea[data-autosize]").forEach(function (t) { t.style.height = "auto"; });
       var first = box.lastElementChild && box.lastElementChild.querySelector("input:not([type=hidden]), select");
       if (first) first.focus();
       markDirty();
@@ -315,6 +316,19 @@
       document.querySelectorAll('[data-sev="' + chip.dataset.filter + '"]').forEach(function (el) { el.hidden = !on; });
     });
   });
+
+  // --- Поле, которое растёт по тексту (длинное название этапа переносится, а не обрезается).
+  function fitHeight(el) {
+    if (!el.offsetParent) return;  // в свёрнутом разделе высоту не посчитать — пересчитаем при раскрытии
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + 2 + "px";
+  }
+  document.querySelectorAll("textarea[data-autosize]").forEach(fitHeight);
+  document.addEventListener("input", function (e) { if (e.target.matches("textarea[data-autosize]")) fitHeight(e.target); });
+  document.addEventListener("toggle", function (e) {
+    if (e.target.open) e.target.querySelectorAll("textarea[data-autosize]").forEach(fitHeight);
+  }, true);
+  window.addEventListener("resize", function () { document.querySelectorAll("textarea[data-autosize]").forEach(fitHeight); });
 
   // --- «Исправить» у замечания: перейти прямо к полю (?focus=имя или id; «блок/поле» — поле внутри блока с этим id),
   // раскрыть свёрнутые разделы, прокрутить, поставить курсор и подсветить. На той же странице — без перезагрузки.

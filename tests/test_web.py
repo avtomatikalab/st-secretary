@@ -1221,3 +1221,35 @@ def test_start_order_drag_markup(client):
     assert 'data-reorder data-first="10:00" data-interval="3"' in html
     assert html.count("data-drag") == html.count('name="pos-') > 0 and "data-time" in html
     assert "стрелками" in html and "Перетащите команду" in html
+
+
+def test_rename_stage_keeps_points_judge_log_and_link(client, tmp_path, psr_card):
+    """Правки.md, п. 5 (переделать): название этапа можно менять — баллы, журнал судьи и ссылка привязаны к id этапа;
+    на телефоне судьи — новое название. В «Этапах дистанции» название — поле, которое растёт по тексту."""
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    q = "?z=М/Ж_3"
+    stages = {"st-0-tour": "Тур 1", "st-0-name": "Узлы", "st-0-nv": "5", "st-0-kv": "10", "st-0-tsh": "20",
+              "st-0-vsh": "10", "st-1-tour": "Тур 1", "st-1-name": "Бивак"}
+    client.post(base(f) + "/results/stages" + q, data=stages)
+    client.post(base(f) + "/judges/link" + q, data={"stage": "s1"})
+    token = next(iter(f.run_data()["judge_links"]))
+    phone = TestClient(client.app.state.board.app)
+    phone.post(f"/j/{token}/sync", json={"device": "т-1", "records": [
+        {"file": "Кедр.xlsx", "points": "10", "arrive": "10:00:00", "leave": "10:07:12", "updated": 1}]})
+    z = f.run_data()["zachety"]["М/Ж_3"]
+    assert z["teams"]["Кедр.xlsx"]["points"]["s1"] == "15"
+
+    ids = {"st-0-id": "s1", "st-1-id": "s2"}
+    client.post(base(f) + "/results/stages" + q, data={**stages, **ids, "st-0-name": "Транспортировка пострадавшего"})
+    z = f.run_data()["zachety"]["М/Ж_3"]
+    assert [s["name"] for s in z["stages"]] == ["Транспортировка пострадавшего", "Бивак"]
+    assert z["teams"]["Кедр.xlsx"]["points"]["s1"] == "15" and "Кедр.xlsx" in z["judge"]["s1"]
+    assert js_token(f) == token and "Тур 1 · Транспортировка пострадавшего" in phone.get(f"/j/{token}").text
+    page = client.get(base(f) + "/results" + q).text
+    assert '<textarea name="st-0-name" rows="1" class="st-name" data-autosize' in page
+    assert "res-stages res-stages-psr" in page and 'class="c-name"' in page
+
+
+def js_token(f) -> str:
+    return next(iter(f.run_data()["judge_links"]))
