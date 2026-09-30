@@ -1,6 +1,10 @@
 """Переносная версия для Windows: один архив — распаковал, дважды щёлкнул, работает. Без uv и без интернета.
 
-    uv run python tools/build_portable.py            → dist/СТ-Секретарь-<версия>-windows.zip
+    uv run python tools/build_portable.py            → dist/st-secretary-<версия>-windows.zip
+                                                       (+ dist/st-secretary-manual-<версия>.pdf)
+
+Имена файлов в dist — латиницей: это файлы выпуска на GitHub, а GitHub заменяет кириллицу в именах файлов.
+Внутри архива названия русские.
 
 Внутри архива:
     СТ-Секретарь/
@@ -209,13 +213,15 @@ def build(out_dir: Path) -> Path:
             shutil.copy(manual, top / manual.name)
 
         out_dir.mkdir(parents=True, exist_ok=True)
-        dest = out_dir / f"{NAME}-{ver}-windows.zip"  # на GitHub — st-secretary-<версия>-windows.zip (латиница)
+        dest = out_dir / f"st-secretary-{ver}-windows.zip"  # файл выпуска на GitHub: имя латиницей
         tmp = dest.with_suffix(".part")
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             for p in sorted(top.rglob("*")):
                 if p.is_file():
                     z.write(p, p.relative_to(work).as_posix())
         tmp.replace(dest)
+        if manual.is_file():
+            shutil.copy(manual, out_dir / f"st-secretary-manual-{ver}.pdf")
         files = sum(1 for p in top.rglob("*") if p.is_file())
         size = sum(p.stat().st_size for p in top.rglob("*") if p.is_file())
         print(f"Готово: {dest} — {dest.stat().st_size / 2**20:.1f} МБ (распакованная {size / 2**20:.0f} МБ, "
