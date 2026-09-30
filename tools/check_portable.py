@@ -140,9 +140,8 @@ def main() -> None:
                    "ST_INSTALL_NO_START": "1", "HOME": str(work / "home")}
             (work / "home").mkdir()
             for attempt in ("установка", "обновление"):
-                r = subprocess.run(["sh", str(ROOT / "tools" / "install.sh")], env=env, capture_output=True, text=True,
-                                   check=False)
-                print(r.stdout, r.stderr)
+                r = subprocess.run(["sh", str(ROOT / "tools" / "install.sh")], env=env, capture_output=True, check=False)
+                print(r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace"))
                 if r.returncode != 0:
                     fail(f"install.sh ({attempt}) завершился с кодом {r.returncode}")
             python_in(dest)

@@ -75,16 +75,16 @@ def test_versions_compare_as_numbers():
 
 
 def test_release_from_github_answer():
-    rel = updates.from_api(api_answer())
+    rel = updates.from_api(api_answer(), "-windows.zip")  # тесты идут и на macOS, и в Linux
     assert rel.version == "9.0.0" and rel.notes == "Что нового" and rel.published.year == 2026
     assert rel.asset_url.endswith("st-secretary-9.0.0-windows.zip") and rel.asset_size == 123
     assert rel.sha256 == "a" * 64 and rel.installable
     assert updates.from_api(api_answer(prerelease=True) | {"prerelease": True}) is None
     assert updates.from_api(api_answer() | {"draft": True}) is None
-    assert not updates.from_api(api_answer(digest="")).installable  # без контрольной суммы — только ссылка
+    assert not updates.from_api(api_answer(digest=""), "-windows.zip").installable  # без контрольной суммы — только ссылка
     other = api_answer()
     other["assets"][1]["browser_download_url"] = "https://example.com/st-secretary-9.0.0-windows.zip"
-    assert not updates.from_api(other).installable  # скачивать можно только из выпусков проекта
+    assert not updates.from_api(other, "-windows.zip").installable  # скачивать можно только из выпусков проекта
 
 
 def test_check_offers_only_newer_and_is_silent_offline():
