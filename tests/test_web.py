@@ -1530,3 +1530,30 @@ def test_judge_penalty_items_journal_mapping_and_protocol(client, tmp_path, psr_
     client.post(base(f) + "/results/publish" + q)
     cells = [c for row in load_workbook(opened[-1])["По этапам"].iter_rows(values_only=True) for c in row if c]
     assert "2 (п. 1×2, 10.1)" in cells
+
+
+def test_unofficial_card_remembers_own_values_on_this_computer(client, psr_card):
+    """Правки.md, п. 17: свои группы, названия зачётов и дисциплины неофициальных соревнований запоминаются на этом
+    компьютере (рядом с личными данными, не в папке соревнования) и подсказываются в карточке; лишнее — убрать."""
+    from dataclasses import replace
+
+    from st_secretary.competition import Zachet
+
+    store = client.app.state.store
+    f = store.create(psr_card)
+    form = FormFields(client.get(base(f) + "/card/edit").text, "cardform").fields
+    form |= {"unofficial": "1", "z-1-group": "СЕМЬИ", "z-1-distance_class": "0", "z-1-name": "Семейные команды",
+             "z-1-discipline_text": "Полоса препятствий", "z-1-result": "time", "z-1-unit": "team"}
+    r = client.post(base(f) + "/card/edit", data=form, follow_redirects=False)
+    assert r.status_code == 303 and "done=saved" in r.headers["location"]
+    own = store.own_values()
+    assert own == {"groups": ["СЕМЬИ"], "names": ["Семейные команды"],
+                   "disciplines": [{"name": "Полоса препятствий", "result": "time", "unit": "team"}]}
+    assert store.own_values_path.parent == store.docs_root and not (f.path / store.own_values_path.name).exists()
+    page = client.get(base(f) + "/card/edit").text
+    assert '<option value="СЕМЬИ" label="своя группа (неофициальные)">' in page and 'data-result="time"' in page
+    assert f.load().zachety[1].key == "Семейные команды"
+    client.post(base(f) + "/card/forget", data={"kind": "disciplines", "value": "Полоса препятствий"})
+    assert store.own_values()["disciplines"] == [] and store.own_values()["groups"] == ["СЕМЬИ"]
+    store.remember_own(replace(psr_card, zachety=[Zachet("НОВЫЕ", 1, "0840161811Я")]))  # официальные — не запоминаем
+    assert "НОВЫЕ" not in store.own_values()["groups"]

@@ -145,7 +145,21 @@
   <form id="open-card-form" method="post" action="{{ base }}/open/card"></form>
 
   <datalist id="dl-roles">{% for r in ch.roles %}<option value="{{ r }}">{% endfor %}</datalist>
-  <datalist id="dl-groups">{% for g in ch.groups %}<option value="{{ g }}">{% endfor %}</datalist>
+  <datalist id="dl-groups">{% for g in ch.groups %}<option value="{{ g }}">{% endfor %}{% for g in own.groups if own %}<option value="{{ g }}" label="своя группа (неофициальные)">{% endfor %}</datalist>
+  <datalist id="dl-znames">{% for n in own.names if own %}<option value="{{ n }}">{% endfor %}</datalist>
+  <datalist id="dl-disc">{% for d in own.disciplines if own %}<option value="{{ d.name }}" data-result="{{ d.result }}" data-unit="{{ d.unit }}" label="{{ result_kinds.get(d.result, '') }}, {{ unit_kinds.get(d.unit, '') }}">{% endfor %}</datalist>
+  {% if own and (own.groups or own.names or own.disciplines) %}
+  <details class="panel own-values{% if not form.main.unofficial %} own-hidden{% endif %}" id="own-values">
+    <summary>Свои значения неофициальных соревнований — запомнены на этом компьютере</summary>
+    <p class="muted">Появляются в подсказках полей «Группа», «Своё название зачёта», «Своя дисциплина». Лишнее — убрать.</p>
+    {% for kind, label in (("groups", "Группы"), ("names", "Названия зачётов"), ("disciplines", "Дисциплины")) if own[kind] %}
+    <p><b>{{ label }}:</b> {% for x in own[kind] %}{% set v = x.name if kind == "disciplines" else x %}
+      <form method="post" action="{{ base }}/card/forget" class="own-chip"><input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="value" value="{{ v }}">
+        <span>{{ v }}{% if kind == "disciplines" %} <span class="muted">({{ result_kinds.get(x.result, "") }}, {{ unit_kinds.get(x.unit, "") }})</span>{% endif %}</span>
+        <button type="submit" class="icon-btn" title="Убрать из подсказок" aria-label="Убрать «{{ v }}» из подсказок">×</button></form>{% endfor %}</p>
+    {% endfor %}
+  </details>
+  {% endif %}
   <template id="tpl-official">{{ official_row("__i__", {"role": "", "fio": "", "category": "", "territory": ""}, {}, ch) }}</template>
   <template id="tpl-zachet">{{ zachet_block("__i__", empty_zachet, {}, ch) }}</template>
 {% endif %}

@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException
 from st_secretary import backup as bk
 from st_secretary.issues import ERROR, FIXED, WARNING
 from st_secretary.web.common import _base, _redirect, _with_done
-from st_secretary.web.forms import card_to_form, choices, form_from_data, form_to_card
+from st_secretary.web.forms import GROUP_SUGGESTIONS, card_to_form, choices, form_from_data, form_to_card
 from st_secretary.web.review import DONE
 from st_secretary.web.steps import BY_SLUG
 
@@ -89,7 +89,7 @@ def register(app, cx) -> None:
         if ctx["comp"] is None:  # файл не читается — исправлять в Excel, форма пустой не открывается
             return _redirect(f"{_base(f)}/card")
         return page(request, "card.html", active="card", form=card_to_form(ctx["comp"]), errors={}, ch=choices(),
-                    issues=ctx["comp"].check(), card_version=f.version(), **ctx)
+                    issues=ctx["comp"].check(), card_version=f.version(), own=store.own_values(), **ctx)
 
     @app.post("/c/{cid}/card/edit")
     async def card_save(request: Request, cid: str):
@@ -103,6 +103,7 @@ def register(app, cx) -> None:
         if comp is not None and not conflict:
             try:
                 f.save(comp)
+                store.remember_own(comp, GROUP_SUGGESTIONS)  # неофициальные: свои значения — в подсказки
                 return _redirect(f"{_base(f)}/card?done=saved")
             except PermissionError:
                 save_error = ("Файл карточки сейчас открыт в Excel, поэтому сохранить не получилось. Закройте его "
@@ -110,7 +111,15 @@ def register(app, cx) -> None:
         ctx = comp_ctx(f)
         return page(request, "card.html", status_code=422 if errors else 409, active="card", form=form,
                     errors=errors, ch=choices(), issues=[], card_version=sent_version, conflict=conflict,
-                    save_error=save_error, **ctx)
+                    save_error=save_error, own=store.own_values(), **ctx)
+
+    @app.post("/c/{cid}/card/forget")
+    async def card_forget(request: Request, cid: str):
+        """Убрать своё значение из подсказок (запомнено на этом компьютере)."""
+        f = folder(cid)
+        form = await request.form()
+        store.forget_own(str(form.get("kind", "")), str(form.get("value", "")))
+        return _redirect(f"{_base(f)}/card/edit#own-values")
 
     # ------------------------------------------------------------ шаги в разработке
 

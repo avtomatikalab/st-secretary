@@ -333,7 +333,21 @@
 
   // --- Карточка: галочка «Неофициальные соревнования» показывает поля своих зачётов и дисциплин
   document.querySelectorAll("[data-unofficial]").forEach(function (cb) {
-    cb.addEventListener("change", function () { cb.form.classList.toggle("is-unofficial", cb.checked); });
+    cb.addEventListener("change", function () {
+      cb.form.classList.toggle("is-unofficial", cb.checked);
+      var own = document.getElementById("own-values"); if (own) own.classList.toggle("own-hidden", !cb.checked);
+    });
+  });
+  // своя дисциплина из запомненных — подставить её вид результата и состав
+  document.addEventListener("change", function (e) {
+    if (!e.target.matches || !e.target.matches('input[name$="-discipline_text"]')) return;
+    var opt = Array.prototype.filter.call(document.querySelectorAll("#dl-disc option"),
+      function (o) { return o.value === e.target.value.trim(); })[0];
+    var block = e.target.closest(".zachet");
+    if (!opt || !block) return;
+    [["result", opt.dataset.result], ["unit", opt.dataset.unit]].forEach(function (p) {
+      var sel = block.querySelector('select[name$="-' + p[0] + '"]'); if (sel && !sel.value) sel.value = p[1];
+    });
   });
 
   // --- Значки «Проверить» / «Ошибка» нажимаются: фильтр замечаний (?only=), фильтр заявок (?show=),

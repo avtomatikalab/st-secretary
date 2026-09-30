@@ -704,4 +704,7 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 #cardform:not(.is-unofficial) .z-unof, #cardform:not(.is-unofficial) .z-unof-note { display: none; }
 .z-unof { margin: 0; padding: 0; }
 .card-unof { margin-top: 12px; align-items: flex-start; }
+.own-values form.own-chip { display: inline-flex; align-items: center; gap: 2px; margin: 2px 8px 2px 0;
+  padding: 0 0 0 8px; border: 1px solid var(--line); border-radius: 999px; }
+.own-values.own-hidden { display: none; }
 

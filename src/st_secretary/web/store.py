@@ -66,6 +66,9 @@ RUN = "Результаты_дистанции.json"  # этапы, баллы �
 PROTOCOLS_DIR = "Протоколы"  # предварительные и официальные протоколы результатов
 CONTRACT_TEMPLATE = "Шаблон договора.docx"
 PERSONAL = "Судьи и персонал — личные данные.json"
+# Свои группы, дисциплины и названия зачётов неофициальных соревнований — подсказки в карточке (решение 038)
+OWN_VALUES = "Свои значения (неофициальные).json"
+OWN_KINDS = ("groups", "names", "disciplines")
 CONTRACTS_DIR = "Договоры и табель"
 # Сканы и фото документов участников (паспорта, полисы, справки): только на этом компьютере и не в облачной
 # папке — поэтому отдельно от данных соревнования (их часто держат на Google Диске или передают на флешке).
@@ -448,6 +451,58 @@ class Store:
         except (OSError, ValueError):
             return {}
         return data if isinstance(data, dict) else {}
+
+    @property
+    def own_values_path(self) -> Path:
+        return self.docs_root / OWN_VALUES
+
+    def own_values(self) -> dict:
+        """Запомненное на этом компьютере: {"groups": […], "names": […], "disciplines": [{name, result, unit}]}."""
+        try:
+            data = json.loads(self.own_values_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        data = data if isinstance(data, dict) else {}
+        out = {k: [x for x in data.get(k, []) if isinstance(x, str) and x] for k in ("groups", "names")}
+        out["disciplines"] = [d for d in data.get("disciplines", []) if isinstance(d, dict) and d.get("name")]
+        return out
+
+    def _save_own(self, data: dict) -> None:
+        self.docs_root.mkdir(parents=True, exist_ok=True)
+        tmp = self.docs_root / f"~{OWN_VALUES}"
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.own_values_path)
+
+    def remember_own(self, comp: Competition, known_groups=()) -> None:
+        """Карточку неофициальных соревнований сохранили — запомнить свои группы, названия зачётов, дисциплины."""
+        if not comp.unofficial:
+            return
+        data = self.own_values()
+        known = {g.upper() for g in known_groups}
+        changed = False
+        for z in comp.zachety:
+            if z.group and z.group.upper() not in known and z.group not in data["groups"]:
+                data["groups"].append(z.group)
+                changed = True
+            if z.name and z.name not in data["names"]:
+                data["names"].append(z.name)
+                changed = True
+            if z.is_custom:
+                d = {"name": z.discipline_text, "result": z.result, "unit": z.unit}
+                old = next((x for x in data["disciplines"] if x["name"] == z.discipline_text), None)
+                if old != d:
+                    data["disciplines"] = [x for x in data["disciplines"] if x["name"] != z.discipline_text] + [d]
+                    changed = True
+        if changed:
+            self._save_own({k: v[-200:] for k, v in data.items()})
+
+    def forget_own(self, kind: str, value: str) -> None:
+        """Убрать лишнее из запомненного."""
+        if kind not in OWN_KINDS:
+            return
+        data = self.own_values()
+        data[kind] = [x for x in data[kind] if (x.get("name") if isinstance(x, dict) else x) != value]
+        self._save_own(data)
 
     def save_personal(self, key: str, values: dict) -> None:
         data = self.personal()
