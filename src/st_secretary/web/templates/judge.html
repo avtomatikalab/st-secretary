@@ -94,6 +94,12 @@
     var s = info.records[f], l = st.records[f];
     if (!l || (l.updated || 0) < (s.updated || 0)) { st.records[f] = s; st.sent[f] = s.updated || 0; }
   });
+  // своё более новое, чем на ноутбуке, — не дошло (например, отмечено «отправлено» по ошибке прежней версии
+  // страницы): отправить снова. Запись, которой на ноутбуке нет совсем, — тоже.
+  Object.keys(st.records).forEach(function (f) {
+    var l = st.records[f], s = info.records[f], have = s ? (s.updated || 0) : 0;
+    if ((l.updated || 0) > have && (st.sent[f] || 0) >= (l.updated || 0)) st.sent[f] = have;
+  });
   function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { lastError = "память телефона переполнена"; } }
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function clock(d) { return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()); }
@@ -146,18 +152,23 @@
     status();
     if (busy || !list.length) return;
     busy = true;
-    fetch(info.sync_url, { method: "POST", headers: { "Content-Type": "application/json" },
-                           body: JSON.stringify({ device: device, records: list }) })
+    // что именно уходит: пока идёт запрос, судья может ещё поменять запись — отправленной считать только эту версию
+    var body = JSON.stringify({ device: device, records: list }), sentAt = {}, done = false;
+    list.forEach(function (r) { sentAt[r.file] = r.updated || 0; });
+    fetch(info.sync_url, { method: "POST", headers: { "Content-Type": "application/json" }, body: body })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (x) {
         if (x.ok && x.j.ok) {
-          list.forEach(function (r) { st.sent[r.file] = r.updated; });
-          st.lastSent = x.j.time; lastError = ""; save();
-          list.forEach(function (r) { paint(r.file); });  // «✓ на ноутбуке» у отправленных команд
+          Object.keys(sentAt).forEach(function (f) { if ((st.sent[f] || 0) < sentAt[f]) st.sent[f] = sentAt[f]; });
+          st.lastSent = x.j.time; lastError = ""; save(); done = true;
+          Object.keys(sentAt).forEach(function (f) { paint(f); });  // «✓ на ноутбуке» у отправленных команд
         } else { lastError = (x.j && x.j.error) || "ноутбук не принял записи"; }
       })
       .catch(function () { lastError = ""; })  // нет связи — просто ждём
-      .then(function () { busy = false; status(); });
+      .then(function () {
+        busy = false; status();
+        if (done && pending().length) sync();  // поменяли, пока шёл запрос, — отправить сразу
+      });
   }
   function change(f, patch) {
     var r = rec(f);

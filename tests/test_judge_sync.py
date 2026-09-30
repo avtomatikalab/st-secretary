@@ -95,3 +95,29 @@ def test_cutoffs_from_phones_sum_over_stages_and_keep_secretary_value():
     texts = [i.text for i in js.judge_issues(zdata, stages, {"Кедр.xlsx": "Кедр"})]
     assert "«Кедр»: отсечки с телефонов судей — 4:30, в таблице 4:00 — проверьте" in texts
     assert js.Record.from_json({"file": "Кедр.xlsx", "cutoff": "5:00", "cut_on": "10:01:02"}).cut_on == "10:01:02"
+
+
+def test_newer_record_from_same_phone_replaces_earlier():
+    """Правки.md, п. 10: правка, сделанная, пока шла отправка, приходит следующей присылкой — и заменяет прежнюю."""
+    z = zdata()
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "", "10:05:00", updated=1000)], FILES, "т-1", "2025-09-21T10:06:00")
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "0", "10:05:00", "10:12:00", updated=2000)], FILES, "т-1",
+             "2025-09-21T10:12:05")
+    rec = z["judge"]["s1"]["Кедр.xlsx"]
+    assert (rec["leave"], rec["points"], rec["updated"]) == ("10:12:00", "0", 2000)
+    assert z["teams"]["Кедр.xlsx"]["points"]["s1"] == "0"
+    js.merge(z, "s1", [js.Record("Кедр.xlsx", "", "10:05:00", updated=1000)], FILES, "т-1", "2025-09-21T10:13:00")
+    assert z["judge"]["s1"]["Кедр.xlsx"]["leave"] == "10:12:00"  # запоздавшая старая присылка не откатывает
+
+
+def test_phone_marks_sent_only_what_was_sent():
+    """Правки.md, п. 10: после ответа ноутбука «отправлено» — по снимку того, что ушло, а не по текущей записи
+    (иначе правка во время медленной отправки теряется с галочкой «✓ на ноутбуке»)."""
+    from pathlib import Path
+
+    html = (Path(js.__file__).parent / "web" / "templates" / "judge.html").read_text(encoding="utf-8")
+    sync = html[html.index("function sync()"):html.index("function change(")]
+    assert "st.sent[r.file] = r.updated" not in sync
+    assert "sentAt[r.file] = r.updated" in sync and "sentAt[f]" in sync
+    assert "if (done && pending().length) sync();" in sync  # изменённое за время запроса — сразу вдогонку
+    assert "(l.updated || 0) > have" in html  # при загрузке: своё новее ноутбука — отправить снова
