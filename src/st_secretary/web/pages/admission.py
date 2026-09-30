@@ -89,6 +89,10 @@ def register(app, cx) -> None:
         pdocs, tdocs = cm.required_docs(data)
         tm = data.setdefault("teams", {}).setdefault(path.name, {})
         everything = form.get("do") == "all_docs"  # «Отметить все документы»
+        # мед. допуск, стоявший сам по допуску врача в заявке, — не отметка секретаря: сняли — врач не допустил
+        keys = [str(form.get(k)) for k in form if re.fullmatch(r"p-\d+-key", k)]
+        auto_med = {key for key in keys if cm.doctor_covers(tm, key, pdocs, tdocs)
+                    and not tm.get("people", {}).get(key, {}).get("docs", {}).get(cm.MED)}
         tm["team_docs"] = {**tm.get("team_docs", {}),
                            **{d.key: everything or bool(form.get(f"td-{d.key}")) for d in tdocs}}
         number = str(form.get("number", "")).strip()
@@ -101,9 +105,14 @@ def register(app, cx) -> None:
         people = tm.setdefault("people", {})
         idx = sorted({int(k.split("-")[1]) for k in form if re.fullmatch(r"p-\d+-key", k)})
         for i in idx:
-            pm = people.setdefault(str(form.get(f"p-{i}-key")), {})
-            pm["docs"] = {**pm.get("docs", {}),
-                          **{d.key: everything or bool(form.get(f"p-{i}-d-{d.key}")) for d in pdocs}}
+            key = str(form.get(f"p-{i}-key"))
+            pm = people.setdefault(key, {})
+            posted = {d.key: everything or bool(form.get(f"p-{i}-d-{d.key}")) for d in pdocs}
+            if key in auto_med and cm.MED in posted:
+                if not posted[cm.MED]:
+                    pm["med_off"] = True  # врач участника не допустил — сама галочка больше не ставится
+                posted[cm.MED] = False  # стоит сама, пока у команды «Допуск врача»; сняли его — уйдёт
+            pm["docs"] = {**pm.get("docs", {}), **posted}
             decision = str(form.get(f"p-{i}-decision", ""))
             pm["decision"] = decision if decision in (cm.ADMITTED, cm.REJECTED) else ""
             pm["reason"] = str(form.get(f"p-{i}-reason", "")).strip() if pm["decision"] else ""

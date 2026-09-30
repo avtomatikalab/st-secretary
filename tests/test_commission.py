@@ -152,3 +152,30 @@ def test_reentry_record(tmp_path, psr_card):
     assert rec["late"] and not rec["repeat"]  # за 30 минут до старта — позже, чем за час
     rec = reentry_record(les.entries, after, datetime(2025, 9, 20, 8, 0), datetime(2025, 9, 20, 10, 0), [rec])
     assert not rec["late"] and rec["repeat"]  # вовремя, но повторная — по Правилам не принимается
+
+
+def test_doctor_admission_sets_med_except_reentered_and_unticked(tmp_path, psr_card):
+    """Правки.md, п. 23: у команды «Допуск врача в заявке» → «Мед. допуск» всем участникам сам; кроме добавленных
+    перезаявкой и тех, у кого галочку сняли (врач не допустил); сняли «Допуск врача» — уходят только поставленные сами."""
+    no_med = {k: True for k in ALL_DOCS if k != "med"}
+    tm = {"team_docs": {"app": True, "doctor": True},
+          "people": {person_key(n): {"docs": dict(no_med)} for n in LES}}
+    data = {"teams": {"Лесовики.xlsx": tm}}
+    les = check(tmp_path, psr_card, data)["Лесовики.xlsx"]
+    assert les.status == ADMITTED and all(p.docs["med"] and p.auto_docs == {"med"} for p in les.persons)
+
+    tm["people"][person_key(LES[2])]["med_off"] = True  # врач не допустил Кузьмина — галочку сняли
+    kuz = check(tmp_path, psr_card, data)["Лесовики.xlsx"].persons[2]
+    assert not kuz.docs["med"] and kuz.status == PENDING and "мед. допуск" in kuz.why
+
+    tm["reentries"] = [{"text": "включён(а): Смирнова Анна Олеговна", "added": [person_key(LES[1])]}]
+    smirnova = check(tmp_path, psr_card, data)["Лесовики.xlsx"].persons[1]
+    assert not smirnova.docs["med"] and not smirnova.auto_docs  # добавлена перезаявкой — мед. допуск отдельно
+    tm["reentries"] = [{"text": "выбыл(а): Носов Глеб Андреевич; включён(а): Смирнова Анна Олеговна"}]
+    assert not check(tmp_path, psr_card, data)["Лесовики.xlsx"].persons[1].docs["med"]  # запись прежней версии
+
+    tm["people"][person_key(LES[0])]["docs"]["med"] = True  # у Иванова — отметка секретаря (справка)
+    tm["team_docs"]["doctor"] = False
+    les = check(tmp_path, psr_card, data)["Лесовики.xlsx"]
+    assert [p.docs["med"] for p in les.persons] == [True, False, False]
+    assert not any(p.auto_docs for p in les.persons)

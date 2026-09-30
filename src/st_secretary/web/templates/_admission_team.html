@@ -28,6 +28,8 @@
       {% for d in tdocs %}
       <label class="check" title="{{ d.title }}"><input type="checkbox" name="td-{{ d.key }}"{% if t.team_docs[d.key] %} checked{% endif %}> {{ d.title }}</label>
       {% endfor %}
+      {% if t.persons|selectattr("auto_docs")|list %}<div class="adm-sub">Мед. допуск участникам отмечен по допуску врача в
+        заявке (кроме добавленных перезаявкой). Врач кого-то не допустил — снимите галочку у него.</div>{% endif %}
     </div>
     {% endif %}
 
@@ -46,7 +48,7 @@
           <span class="adm-sub">{% if e.birth %}{{ e.birth|d }}{% elif e.birth_year %}{{ e.birth_year }}{% else %}дата рождения?{% endif %}
             · {{ e.qual.label if e.qual is not none else "разряд?" }} · {{ e.zachet.key if e.zachet else "зачёт?" }}</span></td>
         {% for d in pdocs %}
-        <td class="cb"><input type="checkbox" name="p-{{ i }}-d-{{ d.key }}"{% if p.docs[d.key] %} checked{% endif %} aria-label="{{ d.short }}: {{ e.name.full }}"></td>
+        <td class="cb{% if d.key in p.auto_docs %} adm-auto{% endif %}"><input type="checkbox" name="p-{{ i }}-d-{{ d.key }}"{% if p.docs[d.key] %} checked{% endif %} aria-label="{{ d.short }}: {{ e.name.full }}{% if d.key in p.auto_docs %} (по допуску врача в заявке){% endif %}"{% if d.key in p.auto_docs %} title="По допуску врача в заявке. Снимите, если врач участника не допустил"{% endif %}></td>
         {% endfor %}
         <td class="adm-decision">
           <span class="adm-status adm-status-{{ p.status }}">{{ p.label }}</span>

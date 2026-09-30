@@ -675,3 +675,6 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .pts-mark.pts-mark-off { background: none; border-color: var(--line); color: var(--muted); }
 .pts-mark.pts-mark-legend { display: inline-block; margin: 0; cursor: default; }
 
+/* Комиссия: мед. допуск, отмеченный сам по допуску врача в заявке */
+.adm-people td.adm-auto { background: var(--ok-bg); }
+

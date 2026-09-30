@@ -48,6 +48,7 @@ TEAM_DOCS = (
     Doc("app", "Заявка по форме, подписанная направляющей организацией", "Заявка"),
     Doc("doctor", "Допуск врача в заявке: «допущен» напротив каждого, подпись и печать", "Допуск врача"),
 )
+DOCTOR, MED = "doctor", "med"  # допуск врача в заявке (у команды) → мед. допуск участникам (п. 23 правок)
 FEE_METHODS = ("наличные", "перевод", "по счёту")
 DECIDED_HERE = ("Возраст", "Допуск")  # замечания, по которым допуск решает комиссия (ГСК), а не отметка секретаря
 
@@ -72,6 +73,28 @@ def required_docs(data: dict) -> tuple[list[Doc], list[Doc]]:
     return [d for d in PERSON_DOCS if d.key in s["docs"]], [d for d in TEAM_DOCS if d.key in s["team_docs"]]
 
 
+def reentry_added(reentries: list[dict]) -> set[str]:
+    """Кого включили в заявку перезаявкой (ключи ФИО) — в заявке с печатью врача их не было."""
+    out: set[str] = set()
+    for r in reentries:
+        if "added" in r:
+            out.update(r["added"])
+            continue
+        for part in str(r.get("text", "")).split("; "):  # записи прежних версий программы — по тексту
+            if part.startswith("включён(а): "):
+                out.add(person_key(part.removeprefix("включён(а): ")))
+    return out
+
+
+def doctor_covers(m: dict, key: str, pdocs: list[Doc], tdocs: list[Doc]) -> bool:
+    """Мед. допуск участника ставится сам — по допуску врача в заявке: у команды отмечен «Допуск врача», участник
+    был в заявке (не добавлен перезаявкой) и секретарь не снимал у него эту галочку (врач его не допустил)."""
+    return (any(d.key == MED for d in pdocs) and any(d.key == DOCTOR for d in tdocs)
+            and bool(m.get("team_docs", {}).get(DOCTOR))
+            and not m.get("people", {}).get(key, {}).get("med_off")
+            and key not in reentry_added(m.get("reentries", [])))
+
+
 # ------------------------------------------------------------------ состояние участников и команд
 
 
@@ -86,6 +109,7 @@ class PersonCheck:
     warnings: list[Issue]  # неотмеченные «проверить» — нужно решение комиссии
     decision: str = ""  # решение комиссии: "", ADMITTED, REJECTED
     reason: str = ""  # причина недопуска или основание решения
+    auto_docs: set[str] = field(default_factory=set)  # отмечены сами: мед. допуск — по допуску врача в заявке
 
     @property
     def label(self) -> str:
@@ -186,12 +210,14 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
             pm = m.get("people", {}).get(key, {})
             mine = [i for i in issues if i.row == e.row]
             docs = {d.key: bool(pm.get("docs", {}).get(d.key)) for d in pdocs}
+            auto = {MED} if MED in docs and not docs[MED] and doctor_covers(m, key, pdocs, tdocs) else set()
+            docs |= dict.fromkeys(auto, True)
             # «проверено» на предзаявках снимает сомнение в данных (ФИО, территория), но не решает допуск:
             # возраст младше, чем в Положении, — только решением ГСК на комиссии
             waiting = [i for i in mine if i.severity == WARNING or (i.severity == CHECKED and i.field in DECIDED_HERE)]
             p = PersonCheck(e, key, PENDING, docs, [d for d in pdocs if not docs[d.key]],
                             [i for i in mine if i.severity == ERROR], waiting,
-                            pm.get("decision", ""), pm.get("reason", ""))
+                            pm.get("decision", ""), pm.get("reason", ""), auto)
             if p.decision == REJECTED:
                 p.status = REJECTED
             elif p.errors:
@@ -316,4 +342,4 @@ def reentry_record(before: list[Entry], after: list[dict], at: datetime, start_a
             out.append(f"{old[k].name.full}: зачёт {was} → {now}")
     late = bool(start_at and (start_at - at).total_seconds() < 3600)
     return {"at": at.strftime("%d.%m.%Y %H:%M"), "text": "; ".join(out) or "состав и зачёты не изменились",
-            "late": late, "repeat": bool(earlier)}
+            "late": late, "repeat": bool(earlier), "added": [k for k in new if k not in old]}

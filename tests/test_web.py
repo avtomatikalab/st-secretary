@@ -553,6 +553,7 @@ def test_admission_settings_and_reentry(client, tmp_path, psr_card):
     assert r.status_code == 303 and "/admission?done=reentry_late" in r.headers["location"]
     [rec] = f.admission()["teams"]["Кедр.xlsx"]["reentries"]
     assert "выбыл(а): Носов Глеб Андреевич" in rec["text"] and "включён(а): Носова Галина Андреевна" in rec["text"]
+    assert rec["added"] == ["носова галина андреевна"]  # в заявке с печатью врача её не было (п. 23 правок)
     assert rec["late"] and "позже, чем за час до старта" in client.get(url).text
     edit = client.get(base(f) + "/preapps/edit?file=" + quote("Кедр.xlsx") + "&reentry=1").text
     assert "повторные не принимаются" in edit
@@ -1330,3 +1331,31 @@ def test_removed_mark_in_table_protocol_and_unmark(client, tmp_path, psr_card, o
     assert z["teams"]["Кедр.xlsx"]["points"]["s1"] == "15" and z["teams"]["Кедр.xlsx"]["unremoved"] == ["s1"]
     page = client.get(base(f) + "/results" + q).text
     assert "↺ снята" in page and "pts-removed" not in page
+
+
+def test_admission_doctor_mark_sets_med_for_team(client, tmp_path, psr_card):
+    """Правки.md, п. 23: отметили у команды «Допуск врача» — мед. допуск у всех отмечен сам (не отметкой
+    секретаря); сняли галочку у одного — больше сама не ставится; сняли «Допуск врача» — уходят только свои."""
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    url = base(f) + "/admission"
+    data = team_form(client.get(url).text, "Кедр.xlsx") | {"td-doctor": "on"}
+    j = client.post(url + "/team", data=data, headers={"X-Autosave": "1"}).json()
+    assert "по допуску врача в заявке" in j["team"] and "adm-auto" in j["team"]
+    people = f.admission()["teams"]["Кедр.xlsx"]["people"]
+    assert not any(p["docs"].get("med") for p in people.values())  # не отметка секретаря — стоит сама
+
+    data = team_form(client.get(url).text, "Кедр.xlsx")
+    meds = sorted(k for k in data if k.endswith("-d-med"))
+    assert len(meds) == 3  # на странице — отмечены у всех
+    off_key = data[meds[0].replace("-d-med", "-key")]
+    data.pop(meds[0])  # врач не допустил первого
+    client.post(url + "/team", data=data, headers={"X-Autosave": "1"})
+    assert f.admission()["teams"]["Кедр.xlsx"]["people"][off_key]["med_off"]
+    data = team_form(client.get(url).text, "Кедр.xlsx")
+    assert meds[0] not in data and meds[1] in data
+
+    data.pop("td-doctor")  # сняли «Допуск врача»
+    client.post(url + "/team", data=data, headers={"X-Autosave": "1"})
+    data = team_form(client.get(url).text, "Кедр.xlsx")
+    assert not any(k.endswith("-d-med") for k in data)
