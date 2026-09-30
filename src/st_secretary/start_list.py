@@ -21,8 +21,9 @@ import hashlib
 import random
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from fractions import Fraction
+from itertools import pairwise
 from typing import Any
 
 from st_secretary.issues import INFO, WARNING, Issue
@@ -236,6 +237,42 @@ def _group_heads(rows: list[StartRow]) -> None:
             span += " (есть команды без ранга)" if ranks[0] == 0 else ""
         when = ", стартуют первыми" if r.group == 1 else ", стартуют последними" if r.group == last else ""
         r.group_head = f"Группа {r.group} — {span}{when}"
+
+
+def person_conflicts(lists: list[tuple[StartList, int | None]], break_min: int) -> list[tuple[set[str], Issue]]:
+    """Один человек (ФИО + дата рождения) в нескольких зачётах: следующий старт — не раньше, чем старт + расчётное
+    время прошлой дистанции (если задано, с) + перерыв. Возвращает [(ключи зачётов, замечание)] (Правки, п. 25.3)."""
+    starts: dict[str, list] = {}
+    for sl, expected in lists:
+        if sl.start_day is None:
+            continue
+        for r in sl.rows:
+            if r.time is None:
+                continue
+            at = datetime.combine(sl.start_day, time()) + timedelta(seconds=r.time)
+            for m in r.inp.members:
+                key = " ".join(m.fio.lower().replace("ё", "е").split()) + "|" + (m.birth or "")
+                starts.setdefault(key, []).append((at, m.fio, sl.zachet, expected))
+    out = []
+    for xs in starts.values():
+        if len({x[2].key for x in xs}) < 2:
+            continue
+        xs.sort(key=lambda x: x[0])
+        for a, b in pairwise(xs):
+            if a[2].key == b[2].key:
+                continue
+            need = timedelta(minutes=break_min, seconds=a[3] or 0)
+            if b[0] - a[0] >= need and b[0] != a[0]:
+                continue
+            if b[0] == a[0]:
+                why = "одновременно"
+            elif a[3]:
+                why = f"меньше, чем расчётное время {a[2].title} ({a[3] // 60} мин) + перерыв {break_min} мин"
+            else:
+                why = f"меньше перерыва {break_min} мин"
+            text = f"{a[1]}: старт в {a[2].title} в {a[0]:%H:%M} и в {b[2].title} в {b[0]:%H:%M} — {why}"
+            out.append(({a[2].key, b[2].key}, Issue(WARNING, text, source=a[2].key, target="start:order")))
+    return out
 
 
 def build(z, zdata: dict, teams: list, ranks: dict[str, Fraction | None] | None = None,

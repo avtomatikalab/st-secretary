@@ -56,6 +56,16 @@ def register(app, cx) -> None:
             return comp.date_from, ""
         return adm.date(), f"{adm:%H:%M}" if adm.hour or adm.minute else ""
 
+    def start_break(f: CompFolder) -> int:
+        """Перерыв между стартами одного участника в разных зачётах, мин (для всего соревнования)."""
+        v = str(f.run_data().get("start_break", "")).strip()
+        return int(v) if v.isdigit() else 0
+
+    def expected_secs(f: CompFolder, z) -> int | None:
+        """Расчётное время дистанции зачёта (задаётся в дисциплинах по времени), с."""
+        v = str(f.run_data().get("zachety", {}).get(z.key, {}).get("expected", "")).strip()
+        return int(v) * 60 if v.isdigit() else None
+
     def start_name(z) -> str:
         return f"Стартовый протокол {safe_name(z.key.replace('/', '-'))}.xlsx"
 
@@ -67,6 +77,10 @@ def register(app, cx) -> None:
             return page(request, "start.html", active="start", zachet=None, **comp_ctx(f))
         zz = need_zachet(comp, z)
         _, teams, _, lst = start_ctx(f, comp, zz)
+        brk = start_break(f)
+        if len(comp.zachety) > 1:  # один человек в нескольких зачётах — не слишком близко (Правки, п. 25.3)
+            lists = [(lst if x.key == zz.key else start_ctx(f, comp, x)[3], expected_secs(f, x)) for x in comp.zachety]
+            lst.issues += [i for keys, i in sl.person_conflicts(lists, brk) if zz.key in keys]
         pub = _parse_dt(lst.published["at"]) if lst.published else None
         day, first = start_default(f, comp)
         return page(request, "start.html", active="start", zachet=zz, zachety=comp.zachety, sl=lst,
@@ -74,7 +88,7 @@ def register(app, cx) -> None:
                     zq=urlencode({"z": zz.key}), pub_at=pub, until=pub + PROTEST_HOUR if pub else None,
                     defaults={"day": day.isoformat(), "first": first}, is_time=tr.is_time_discipline(zz),
                     publish_by=lst.first_start - PROTEST_HOUR if lst.first_start else None, now=app.state.clock(),
-                    not_admitted=[t.team for t in teams if not t.admitted], **comp_ctx(f))
+                    not_admitted=[t.team for t in teams if not t.admitted], start_break=brk, **comp_ctx(f))
 
     @app.post("/c/{cid}/start/draw")
     async def start_draw(request: Request, cid: str, z: str = ""):
@@ -95,6 +109,12 @@ def register(app, cx) -> None:
                "day": str(form.get("day", "")).strip(), "first": first,
                "interval": str(form.get("interval", "")).strip().replace(",", ".")}
         new = {k: v for k, v in new.items() if k in form}  # у жеребьёвки и времени старта — разные формы
+        if "break" in form:  # перерыв между стартами участника — для всего соревнования
+            brk = str(form.get("break", "")).strip()
+            with cx.run_lock:
+                data = f.run_data()
+                data["start_break"] = int(brk) if brk.isdigit() and int(brk) <= 600 else 0
+                f.save_run_data(data)
         drawing = form.get("action") == "draw"
         order, seed, groups = [], None, {}
         if drawing:

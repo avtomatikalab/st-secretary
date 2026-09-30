@@ -198,3 +198,25 @@ def test_group_boundary_by_lot_and_group_heads(tmp_path, psr_card):
     zero = {**ranks, "Кедр.xlsx": Fraction(0)}
     assert sl.build(z, zdata, ts, zero).rows[0].group_head.startswith("Группа 1 — ранг 0–5 (есть команды без ранга)")
     assert sl.rank_word(Fraction(0)) == "без ранга" and sl.rank_word(Fraction(431, 10)) == "43,1"
+
+
+def test_person_in_two_zachety_starts_too_close():
+    """Правки.md, п. 25.3: один человек (ФИО + дата рождения) в двух зачётах — следующий старт не раньше, чем старт +
+    расчётное время прошлой дистанции + перерыв; тёзка с другой датой рождения — другой человек."""
+    z3, z2 = Zachet("М/Ж", 3, "0840161811Я"), Zachet("М/Ж", 2, "0840271811Я")
+    ivan = Member("Иванов Иван", Qual.II, "II", birth="1990-01-02")
+    namesake = Member("Иванов Иван", Qual.II, "II", birth="1985-05-05")
+    a = TeamInput("A.xlsx", "Кедр", "г. N", "1", [ivan, Member("Петров Пётр", Qual.II, "II")])
+    b = TeamInput("B.xlsx#x", "Иванов Иван", "г. N", "1.1", [ivan])
+    c = TeamInput("C.xlsx", "Сосна", "г. N", "2", [namesake])
+    day = {"day": "2026-10-03"}
+    l3 = sl.build(z3, {"draw": {"order": ["A.xlsx"], "first": "10:20", **day}}, [a])
+    l2 = sl.build(z2, {"draw": {"order": ["B.xlsx#x", "C.xlsx"], "first": "10:30", "interval": "5", **day}}, [b, c])
+    out = sl.person_conflicts([(l3, None), (l2, None)], 60)
+    assert [i.text for _, i in out] == ["Иванов Иван: старт в М/Ж_3 в 10:20 и в М/Ж_2 в 10:30 — меньше перерыва 60 мин"]
+    assert out[0][0] == {"М/Ж_3", "М/Ж_2"} and out[0][1].target == "start:order"
+    assert sl.person_conflicts([(l3, None), (l2, None)], 5) == []
+    out = sl.person_conflicts([(l3, 40 * 60), (l2, None)], 5)
+    assert out[0][1].text.endswith("меньше, чем расчётное время М/Ж_3 (40 мин) + перерыв 5 мин")
+    same = sl.build(z2, {"draw": {"order": ["B.xlsx#x"], "first": "10:20", **day}}, [b])
+    assert sl.person_conflicts([(l3, None), (same, None)], 0)[0][1].text.endswith("— одновременно")

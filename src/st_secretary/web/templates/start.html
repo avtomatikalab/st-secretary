@@ -66,6 +66,10 @@
       <input id="f-first" type="text" name="first" value="{{ sl.settings.first or defaults.first }}" placeholder="10:00" inputmode="numeric"></div>
     <div class="field span-3"><label for="f-iv">Интервал, минут</label>
       <input id="f-iv" type="text" name="interval" value="{{ sl.settings.interval }}" placeholder="5" inputmode="decimal"></div>
+    {% if zachety|length > 1 %}<div class="field span-3"><label for="f-brk">Перерыв между стартами участника, мин</label>
+      <input id="f-brk" type="text" name="break" value="{{ start_break or '' }}" placeholder="0" inputmode="numeric">
+      <p class="hint">Для всех зачётов: кто заявлен в нескольких — не стартует раньше, чем через расчётное время прошлой
+        дистанции (если задано) + перерыв. Конфликты — вверху страницы.</p></div>{% endif %}
     <div class="span-12"><p class="hint">Без времени первого старта протокол будет без времени — только очерёдность.
       Интервал 0 — все стартуют одновременно. Время отдельной команды можно поправить в таблице ниже.
       {% if is_time %}В этом зачёте время из протокола — время старта команды, если старт не вписан и не загружен из SPORTident

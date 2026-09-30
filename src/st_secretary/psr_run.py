@@ -116,6 +116,7 @@ class Member:
     qual: Qual | None
     qual_label: str
     chip: str = ""  # номер чипа SPORTident из заявки (если свой)
+    birth: str = ""  # дата (или год) рождения — узнать одного человека в разных зачётах (расписание стартов)
 
 
 @dataclass

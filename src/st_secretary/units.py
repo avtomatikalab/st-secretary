@@ -28,7 +28,9 @@ UNIT_WORDS = {"group": "команда", "crew": "экипаж", "pair": "свя
 
 
 def _member(e) -> Member:
-    return Member(e.name.full, e.qual, e.qual.label if e.qual is not None else "", e.chip)
+    b, year = getattr(e, "birth", None), getattr(e, "birth_year", None)
+    birth = b.isoformat() if b else str(year or "")
+    return Member(e.name.full, e.qual, e.qual.label if e.qual is not None else "", e.chip, birth)
 
 
 def _pair_label(e) -> str:
