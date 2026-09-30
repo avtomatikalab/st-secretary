@@ -15,12 +15,12 @@
 
 {% if zachety|length > 1 %}
 <nav class="chips" aria-label="Зачёты">
-  {% for x in zachety %}<a class="chip{% if x.key == zachet.key %} is-active{% endif %}" href="{{ base }}/start?z={{ x.key|urlencode }}"{% if x.key == zachet.key %} aria-current="page"{% endif %}>{{ x.key }}</a>{% endfor %}
+  {% for x in zachety %}<a class="chip{% if x.key == zachet.key %} is-active{% endif %}" href="{{ base }}/start?z={{ x.key|urlencode }}"{% if x.key == zachet.key %} aria-current="page"{% endif %}>{{ x.title }}</a>{% endfor %}
 </nav>
 {% endif %}
 
 <div class="tiles">
-  <div class="tile"><b>{{ sl.rows|length }}</b><span>команд в протоколе {{ zachet.key }}</span></div>
+  <div class="tile"><b>{{ sl.rows|length }}</b><span>команд в протоколе {{ zachet.title }}</span></div>
   <div class="tile {% if sl.drawn %}tile-fixed{% endif %}"><b>{{ sl.drawn_at.strftime("%d.%m %H:%M") if sl.drawn else "нет" }}</b><span>жеребьёвка</span></div>
   <div class="tile"><b>{{ sl.first_start.strftime("%H:%M") if sl.first_start else "—" }}</b><span>первый старт{% if sl.start_day %}, {{ sl.start_day.strftime("%d.%m") }}{% endif %}</span></div>
   <div class="tile {% if sl.published and not sl.changed %}tile-fixed{% endif %}"><b>{{ pub_at.strftime("%H:%M") if pub_at else "нет" }}</b><span>опубликован</span></div>
@@ -30,7 +30,7 @@
 {% if not_admitted %}<p class="hint">Не допущены — в протокол не входят: {{ not_admitted|join(", ") }}.</p>{% endif %}
 
 <section class="panel" id="draw">
-  <h2>1. Жеребьёвка — зачёт {{ zachet.key }}</h2>
+  <h2>1. Жеребьёвка — зачёт {{ zachet.title }}</h2>
   {% if sl.drawn %}<p><span class="status-badge gear-ok">{{ icon("check", 14) }} проведена</span> {{ draw_line }}</p>{% endif %}
   <form method="post" action="{{ base }}/start/draw?{{ zq }}">
     <fieldset class="st-methods">
@@ -77,7 +77,7 @@
 <section class="panel" id="order">
   <h2>3. Порядок старта</h2>
   {% if not sl.rows %}
-  <p>Допущенных команд в зачёте {{ zachet.key }} пока нет. Команды берутся из <a href="{{ base }}/preapps">заявок</a>,
+  <p>Допущенных команд в зачёте {{ zachet.title }} пока нет. Команды берутся из <a href="{{ base }}/preapps">заявок</a>,
     допуск — в <a href="{{ base }}/admission">комиссии по допуску</a>.</p>
   {% else %}
   <p class="muted">Перетащите команду за {{ icon("grip", 16) }} выше или ниже (мышкой или пальцем; с клавиатуры — стрелками

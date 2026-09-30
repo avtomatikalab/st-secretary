@@ -16,7 +16,7 @@ from st_secretary import commission as cm
 from st_secretary import start_list as sl
 from st_secretary import time_run as tr
 from st_secretary.exporters import start_protocol as sp
-from st_secretary.reference import discipline_by_code, norm_edition
+from st_secretary.reference import norm_edition
 from st_secretary.web.common import XLSX, _base, _parse_dt, _redirect, _with_done
 from st_secretary.web.store import CompFolder, safe_name
 
@@ -45,7 +45,7 @@ def register(app, cx) -> None:
             norms = norm_edition(comp.norms_edition)
         except KeyError:
             norms = None
-        fmt = discipline_by_code(z.discipline_code).rank_format
+        fmt = z.rank_format
         ranks = {t.file: sl.team_rank(t.members, fmt, norms) for t in teams}
         return zdata, teams, ranks, sl.build(z, zdata, teams, ranks, start_default(f, comp)[0])
 

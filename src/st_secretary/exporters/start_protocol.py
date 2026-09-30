@@ -71,9 +71,10 @@ def write_start_protocol(comp: Competition, sl: StartList, path: str | Path, at:
     line(r, comp.title, True, 13)
     line(r + 1, f"{comp.dates_text}, {comp.place}")
     line(r + 2, "СТАРТОВЫЙ ПРОТОКОЛ", True, 13)
-    line(r + 3, f"Спортивная дисциплина «{z.discipline_name}», код ВРВС {z.discipline_code}; {z.distance_class} класс")
+    line(r + 3, z.header_text)
     day = f"; старт {sl.start_day:%d.%m.%Y}" if sl.start_day else ""
-    line(r + 4, f"Группа: {GROUP_WORDS.get(z.group.upper(), z.group)}{day}")
+    zname = f"Зачёт «{z.name}». " if z.name else ""
+    line(r + 4, f"{zname}Группа: {GROUP_WORDS.get(z.group.upper(), z.group)}{day}")
     r += 6
     head_row = r
     for c, h in enumerate(head, start=1):

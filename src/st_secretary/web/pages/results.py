@@ -22,7 +22,6 @@ from st_secretary import units as un
 from st_secretary.disciplines import Status
 from st_secretary.exporters import results_protocol as rp
 from st_secretary.importers.si_reader import read_si_reader
-from st_secretary.reference import discipline_by_code
 from st_secretary.web.common import PROTEST_DECISIONS, XLSX, _base, _parse_dt, _redirect, _with_done, team_anchor
 from st_secretary.web.store import CompFolder, safe_name
 
@@ -46,7 +45,7 @@ def register(app, cx) -> None:
         if not f.preapp_files():
             return []
         _, teams = commission(f, comp)
-        return un.zachet_units(teams, z, discipline_by_code(z.discipline_code).rank_format)
+        return un.zachet_units(teams, z, z.rank_format)
 
     def need_zachet(comp, key: str):
         z = next((x for x in comp.zachety if x.key == key), None) if key else (comp.zachety[0] if comp.zachety else None)

@@ -12,7 +12,7 @@
   <h2>Результаты по зачётам</h2>
   {% for b in blocks %}{% set z = b.z %}
   <div class="zres" id="z-{{ loop.index }}">
-    <h3>Зачёт {{ z.key }} — «{{ z.discipline_name }}», {{ z.distance_class }} класс</h3>
+    <h3>Зачёт {{ z.title }} — «{{ z.discipline_name }}», {{ z.class_text }}</h3>
     {% if b.res %}
     <p class="muted">{% if b.res.source == "вручную" %}Места введены вручную{% else %}Из протокола «{{ b.res.source }}»{% endif %}{% if b.res.group_text %} · {{ b.res.group_text|lower }}{% endif %}{% if b.res.rank %} · ранг {{ b.res.rank }}{% endif %}</p>
     <div class="table-wrap">
@@ -43,7 +43,7 @@
         <noscript><button class="btn" type="submit">Загрузить</button></noscript>
       </form>
       {% if b.res %}
-      <form method="post" action="{{ base }}/awards/clear" data-confirm="Убрать результаты зачёта {{ z.key }}? Протокол можно будет загрузить снова.">
+      <form method="post" action="{{ base }}/awards/clear" data-confirm="Убрать результаты зачёта {{ z.title }}? Протокол можно будет загрузить снова.">
         <input type="hidden" name="zachet" value="{{ z.key }}">
         <button class="btn btn-ghost" type="submit">Убрать результаты</button>
       </form>

@@ -72,13 +72,22 @@ class Official:
         return f"{short}, {tail}" if tail else short
 
 
+RESULT_KINDS = {"points": "баллы (как ПСР)", "time": "время (как пешеходные, бесштрафовая)",
+                "time_points": "время + штрафные баллы (как пешеходные, штрафная)"}
+UNIT_KINDS = {"person": "личный", "pair": "связка", "team": "команда"}
+_RANK_FORMAT = {"person": "person", "pair": "pair", "team": "group"}
+
+
 @dataclass(frozen=True)
 class Zachet:
-    """Зачёт — группа участников на дистанции определённого класса (как «М/Ж_3» в СЕКРЕТАРЬ_ST)."""
+    """Зачёт — группа участников на дистанции определённого класса (как «М/Ж_3» в СЕКРЕТАРЬ_ST).
+
+    Неофициальные соревнования (решение 038): своё название, класс 0 — «без класса», своя дисциплина (нет кода
+    ВРВС) с видом результата и составом. Данные зачёта хранятся по постоянному коду (zid)."""
 
     group: str
-    distance_class: int
-    discipline_code: str
+    distance_class: int  # 0 — без класса (неклассифицированная дистанция, только неофициальные)
+    discipline_code: str  # код ВРВС; пусто — своя дисциплина (discipline_text)
     age_from: int | None = None
     age_to: int | None = None
     age_from_by_gsk: int | None = None  # «по решению ГСК допускаются с N лет»
@@ -88,15 +97,55 @@ class Zachet:
     min_women: int = 0
     fee: int | None = None
     fee_per: str = "команду"
+    name: str = ""  # своё название (неофициальные): «Новички», «Семейные команды»
+    zid: str = ""  # постоянный код: по нему хранятся данные зачёта; пусто — «группа_класс» (как раньше)
+    discipline_text: str = ""  # своя дисциплина (нет в ВРВС)
+    result: str = ""  # своя дисциплина: points, time, time_points (RESULT_KINDS)
+    unit: str = ""  # своя дисциплина: person, pair, team (UNIT_KINDS)
 
     @property
-    def key(self) -> str:
+    def base_key(self) -> str:
         """Название зачёта в СЕКРЕТАРЬ_ST: ГРУППА_КЛАСС."""
         return f"{self.group}_{self.distance_class}"
 
     @property
+    def key(self) -> str:
+        """Постоянный код зачёта — по нему хранятся его данные (жеребьёвка, результаты, ссылки судей)."""
+        return self.zid or self.base_key
+
+    @property
+    def title(self) -> str:
+        """Как зачёт показывать: своё название или «группа_класс» («группа, без класса»)."""
+        if self.name:
+            return self.name
+        return self.base_key if self.distance_class else f"{self.group}, без класса"
+
+    @property
+    def is_custom(self) -> bool:
+        """Своя дисциплина (неофициальные) — не из ВРВС."""
+        return not self.discipline_code
+
+    @property
     def discipline_name(self) -> str:
-        return discipline_by_code(self.discipline_code).name
+        return self.discipline_text if self.is_custom else discipline_by_code(self.discipline_code).name
+
+    @property
+    def rank_format(self) -> str | None:
+        """Как считается ранг и состав: person, pair, group (у своей дисциплины — по составу)."""
+        if self.is_custom:
+            return _RANK_FORMAT.get(self.unit, "group")
+        return discipline_by_code(self.discipline_code).rank_format
+
+    @property
+    def class_text(self) -> str:
+        return f"{self.distance_class} класс" if self.distance_class else "неклассифицированная"
+
+    @property
+    def header_text(self) -> str:
+        """Строка шапки протокола: дисциплина, код ВРВС, класс."""
+        code = f", код ВРВС {self.discipline_code}" if self.discipline_code else ""
+        return f"Спортивная дисциплина «{self.discipline_name}»{code}; {self.class_text}" if not self.is_custom \
+            else f"Дисциплина «{self.discipline_name}»; {self.class_text}"
 
     @property
     def admission_profile(self) -> str | None:
@@ -119,6 +168,7 @@ class Competition:
     preapp_deadline: date | None = None
     officials: list[Official] = field(default_factory=list)
     zachety: list[Zachet] = field(default_factory=list)
+    unofficial: bool = False  # неофициальные (клубные, учебные, слёт): свои зачёты, без ранга и разрядов (решение 038)
 
     @property
     def year(self) -> int:
@@ -133,10 +183,18 @@ class Competition:
         return next((o for o in self.officials if o.role == role), None)
 
     def find_zachet(self, group: str, distance_class: int | None) -> Zachet | None:
+        """Зачёт по группе и классу из заявки; у своих зачётов (неофициальные) в «Группе» пишут их название."""
         g = _group_key(group)
+        named = [z for z in self.zachety if z.name and _group_key(z.name) == g]
+        if len(named) == 1:
+            return named[0]
         found = [z for z in self.zachety if _group_key(z.group) == g
                  and (distance_class is None or z.distance_class == distance_class)]
         return found[0] if len(found) == 1 else None
+
+    def zachet_in_file(self, z: Zachet) -> tuple[str, str]:
+        """Что писать в заявке в «Группа» и «Класс»: своё название зачёта (класс пусто) или группа и класс."""
+        return (z.name, "") if z.name else (z.group, str(z.distance_class) if z.distance_class else "")
 
     def check(self) -> list[Issue]:
         """Проверка самой карточки."""
@@ -178,22 +236,34 @@ class Competition:
         keys = [z.key for z in self.zachety]
         for k in {k for k in keys if keys.count(k) > 1}:
             err(f"зачёт {k} указан дважды", "Зачёты")
+        titles = [z.title for z in self.zachety]
+        for t in {t for t in titles if titles.count(t) > 1} - {k for k in keys if keys.count(k) > 1}:
+            err(f"два зачёта называются «{t}»", "Зачёты")
         for z in self.zachety:
-            try:
-                _ = z.discipline_name  # KeyError, если такого кода нет в ВРВС
-            except KeyError as e:
-                err(str(e), f"Зачёт {z.key}")
-                continue
-            if not 1 <= z.distance_class <= 6:
-                err(f"зачёт {z.key}: класс дистанции должен быть от 1 до 6", f"Зачёт {z.key}")
+            if z.is_custom:
+                if not self.unofficial:
+                    err(f"зачёт {z.title}: своя дисциплина — только у неофициальных соревнований; выберите "
+                        "дисциплину из ВРВС", f"Зачёт {z.title}")
+                elif not z.discipline_text or z.result not in RESULT_KINDS or z.unit not in UNIT_KINDS:
+                    err(f"зачёт {z.title}: у своей дисциплины нужны название, вид результата и состав",
+                        f"Зачёт {z.title}")
+            else:
+                try:
+                    _ = z.discipline_name  # KeyError, если такого кода нет в ВРВС
+                except KeyError as e:
+                    err(str(e), f"Зачёт {z.key}")
+                    continue
+            if not (0 if self.unofficial else 1) <= z.distance_class <= 6:
+                err(f"зачёт {z.title}: класс дистанции должен быть от 1 до 6"
+                    + (" или «без класса»" if self.unofficial else ""), f"Зачёт {z.title}")
             if z.age_from and z.age_to and z.age_from > z.age_to:
                 err(f"зачёт {z.key}: «возраст от» больше «возраст до»", f"Зачёт {z.key}")
             if z.team_size and z.min_men + z.min_women > z.team_size:
                 err(f"зачёт {z.key}: мужчин и женщин по минимуму больше, чем состав команды", f"Зачёт {z.key}")
-            if z.admission_profile is None:
+            if z.admission_profile is None and not self.unofficial:
                 out.append(Issue(INFO, f"зачёт {z.key}: для дисциплины «{z.discipline_name}» пока нет справочника "
                                        "допуска — проверяются только возраст и разряд из карточки", src))
-            if z.discipline_code in POINTS_DISCIPLINES and self.percent_method is None:
+            if z.discipline_code in POINTS_DISCIPLINES and self.percent_method is None and not self.unofficial:
                 warn(f"зачёт {z.key}: результат в баллах, а методика «% от победителя» не задана — "
                      "нормативы не будут рассчитаны", "Методика %")
         return out

@@ -331,6 +331,11 @@
     });
   });
 
+  // --- Карточка: галочка «Неофициальные соревнования» показывает поля своих зачётов и дисциплин
+  document.querySelectorAll("[data-unofficial]").forEach(function (cb) {
+    cb.addEventListener("change", function () { cb.form.classList.toggle("is-unofficial", cb.checked); });
+  });
+
   // --- Значки «Проверить» / «Ошибка» нажимаются: фильтр замечаний (?only=), фильтр заявок (?show=),
   // к первому полю с замечанием (data-jump), к кнопке «Проверено» у замечания (data-to-check).
   function onlyFilter(sev) {

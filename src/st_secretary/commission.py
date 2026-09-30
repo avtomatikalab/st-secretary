@@ -20,7 +20,6 @@ from st_secretary.competition import Competition
 from st_secretary.issues import CHECKED, ERROR, WARNING, Issue
 from st_secretary.preapp import Entry, PreappResult, TeamApplication
 from st_secretary.qualification import Qual
-from st_secretary.reference import discipline_by_code
 
 ADMITTED, PENDING, REJECTED = "admitted", "pending", "rejected"
 PERSON_LABEL = {ADMITTED: "Допущен", PENDING: "Ожидает", REJECTED: "Не допущен"}
@@ -277,7 +276,7 @@ def _team_problems(t: TeamCheck, comp: Competition) -> list[tuple[str, str]]:
     rejected = any(p.status == REJECTED for p in t.persons)
     for key, members in _by_zachet([p.entry for p in t.persons if p.status != REJECTED]).items():
         z = members[0].zachet
-        if rejected and discipline_by_code(z.discipline_code).rank_format == "group" and z.team_size \
+        if rejected and z.rank_format == "group" and z.team_size \
                 and len(members) < z.team_size:
             problems.append((f"в зачёте {key} осталось {len(members)} чел., нужно {z.team_size} — нужна перезаявка",
                              f"reentry:{t.file}"))

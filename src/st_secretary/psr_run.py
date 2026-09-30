@@ -24,7 +24,7 @@ from st_secretary.issues import ERROR, INFO, WARNING, Issue
 from st_secretary.norms import achieved_norm, percent_of_winner
 from st_secretary.qualification import Qual
 from st_secretary.rank import RankEntry, RankResult, evsk_participation_ok, qualification_rank
-from st_secretary.reference import discipline_by_code, norm_edition
+from st_secretary.reference import norm_edition
 
 STATUS_LABEL = {
     Status.FINISHED: "прошла дистанцию", Status.REMOVED: "снята", Status.DNF: "не финишировала",
@@ -257,13 +257,17 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     # квалификационный ранг: все команды, что стартовали (места 1–6 дают баллы)
     started = [r for r in ordered if r.status not in (Status.DNS, Status.OUT_OF_COMPETITION)]
     rank = None
-    fmt = discipline_by_code(z.discipline_code).rank_format
+    fmt = z.rank_format
     norms = None
     try:
         norms = norm_edition(comp.norms_edition)
     except KeyError:
         issues.append(Issue(ERROR, f"нет редакции норм «{comp.norms_edition}» — нормативы не считаются", source=z.key,
                             target="card"))
+    if comp.unofficial:  # неофициальные: ни ранга, ни нормативов (решение 038)
+        norms = None
+        issues.append(Issue(INFO, "неофициальные соревнования — квалификационный ранг, % от победителя и разряды "
+                                  "не считаются", source=z.key))
     if norms and fmt:
         if any(m.qual is None for r in started for m in r.inp.members):
             issues.append(Issue(WARNING, "у части участников не распознан разряд — в ранге они считаются без разряда",
@@ -279,7 +283,9 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
         run.winner = placed[0].total
     ok, why = evsk_participation_ok(comp.level, len(started), None, judged_points=True)
     subjects_unknown = not ok and "не указано число субъектов" in (why or "")  # его проверяет человек по справке
-    run.norms_ok = ok or subjects_unknown
+    run.norms_ok = (ok or subjects_unknown) and not comp.unofficial
+    if comp.unofficial:
+        return run  # только места: процента, нормативов и фактического класса нет
     if why:
         issues.append(Issue(INFO, f"нормативы: {why}" + (" — проверьте по справке о количестве субъектов"
                                                           if subjects_unknown else " — разряды не присваиваются"),
@@ -306,7 +312,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
         km, modes, kv = (parse_points(dist.get(k)) for k in ("km", "modes", "kv_hours"))
     except ValueError:
         km = modes = kv = None
-    if stages and kv is not None and all(s.max_penalty is not None for s in stages):
+    if stages and kv is not None and z.distance_class and all(s.max_penalty is not None for s in stages):
         for r in ordered:
             if r.status is not Status.FINISHED:
                 continue

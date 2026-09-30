@@ -16,7 +16,6 @@ from st_secretary.competition import Competition, Zachet
 from st_secretary.importers.preapp_xlsx import RawApplication
 from st_secretary.issues import ERROR, FIXED, INFO, WARNING, Issue
 from st_secretary.qualification import Qual, parse_qual
-from st_secretary.reference import discipline_by_code
 from st_secretary.textclean import (
     PersonName,
     clean_spaces,
@@ -112,7 +111,7 @@ def process(apps: list[RawApplication], comp: Competition) -> PreappResult:
     issues: list[Issue] = []
     teams: list[TeamApplication] = []
     all_group_format = bool(comp.zachety) and all(
-        discipline_by_code(z.discipline_code).rank_format == "group" for z in comp.zachety)
+        z.rank_format == "group" for z in comp.zachety)
     known_territories = Counter()
     for a in apps:
         for r in a.rows:
@@ -305,12 +304,14 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
         cls = classes[0]
         add(FIXED, f"класс не указан — проставлен {cls} (в соревновании один класс)", "Класс", "", str(cls))
     zachet = comp.find_zachet(group, cls) if group else None
-    if zachet:
+    if zachet and zachet.name and group.casefold() == zachet.name.casefold():
+        group = zachet.name  # свой зачёт (неофициальные) — записан названием
+    elif zachet:
         if group != zachet.group:
             add(FIXED, f"группа «{group}» записана как в карточке: «{zachet.group}»", "Группа", group, zachet.group)
         group = zachet.group
     else:
-        avail = ", ".join(z.key for z in comp.zachety)
+        avail = ", ".join(z.title for z in comp.zachety)
         add(ERROR, f"группа «{group or '—'}» и класс «{cls or '—'}» не совпадают ни с одним зачётом соревнования",
             "Группа/класс",
             why=f"В карточке соревнования есть зачёты: {avail}. Участник должен попасть ровно в один из них — "
@@ -366,7 +367,7 @@ def _admission(e: Entry, comp: Competition, add) -> None:
             why=f"Для зачёта {z.key} по Положению нужен разряд не ниже {z.min_qual.label} (карточка соревнования).",
             todo="Уточните у представителя: возможно, разряд уже повышен, а в заявке указан старый — тогда на "
                  "комиссии нужен документ о разряде. Если разряд верный — в этом зачёте участник выступать не может.")
-    if z.admission_profile and e.birth and e.qual is not None:
+    if z.admission_profile and e.birth and e.qual is not None and z.distance_class and not comp.unofficial:
         for i in check_athlete(z.admission_profile, z.distance_class, e.birth, e.qual, comp.year):
             # возрастные группы Правил мягче, чем в Положении: предупреждаем, а решение — за ГСК
             add(WARNING if "возрастную группу" in i.text else i.severity, f"Правила: {i.text}", "Допуск",
@@ -384,7 +385,7 @@ def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> 
 
     for members in by_zachet.values():
         z = members[0].zachet
-        if discipline_by_code(z.discipline_code).rank_format != "group":
+        if z.rank_format != "group":
             continue
         n = len(members)
         men = sum(1 for e in members if e.sex == "м")

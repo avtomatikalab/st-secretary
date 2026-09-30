@@ -79,7 +79,7 @@ def default_key(z) -> str:
     """Таблица по дисциплине: пешеходные и спелео — из Правил; остальным (ПСР, горные, СХ) — нет."""
     from st_secretary import time_run as tr
 
-    if not tr.is_time_discipline(z):
+    if z.is_custom or not tr.is_time_discipline(z):
         return ""
     p = tr.profile(z)
     return p if p in BUILTIN else ""

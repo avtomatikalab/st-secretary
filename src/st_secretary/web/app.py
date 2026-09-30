@@ -19,7 +19,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException
 
 from st_secretary import __version__, system, updates
-from st_secretary.competition import LEVEL_LABELS
+from st_secretary.competition import LEVEL_LABELS, RESULT_KINDS, UNIT_KINDS
 from st_secretary.importers.card_xlsx import CardError
 from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, WARNING, Issue
 from st_secretary.textclean import from_years
@@ -85,7 +85,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                                  level_labels=LEVEL_LABELS, empty_zachet=empty_zachet(),
                                  ERROR=ERROR, WARNING=WARNING, CHECKED=CHECKED, FIXED=FIXED, INFO=INFO,
                                  issue_key=issue_key, status_label=STATUS_LABEL, CHECK=CHECK, FIX=FIX, DONE=DONE,
-                                 launcher=system.launcher(), console=system.console(), fix_url=fix_url)
+                                 launcher=system.launcher(), console=system.console(), fix_url=fix_url,
+                                 result_kinds=RESULT_KINDS, unit_kinds=UNIT_KINDS)
 
     def page(request: Request, name: str, status_code: int = 200, background=None, **ctx):
         ctx = {"flash": _flash(request), "can_stop": app.state.shutdown is not None,

@@ -39,19 +39,19 @@
 
 {% if zachety|length > 1 %}
 <nav class="chips" aria-label="Зачёты">
-  {% for x in zachety %}<a class="chip{% if x.key == z.key %} is-active{% endif %}" href="{{ base }}/results?z={{ x.key|urlencode }}"{% if x.key == z.key %} aria-current="page"{% endif %}>{{ x.key }}</a>{% endfor %}
+  {% for x in zachety %}<a class="chip{% if x.key == z.key %} is-active{% endif %}" href="{{ base }}/results?z={{ x.key|urlencode }}"{% if x.key == z.key %} aria-current="page"{% endif %}>{{ x.title }}</a>{% endfor %}
 </nav>
 {% endif %}
 
 <div class="tiles">
-  <div class="tile"><b>{{ run.rows|length }}</b><span>команд в зачёте {{ z.key }}</span></div>
+  <div class="tile"><b>{{ run.rows|length }}</b><span>команд в зачёте {{ z.title }}</span></div>
   <div class="tile"><b>{{ run.stages|length }}</b><span>этапов, туров: {{ run.tours|length }}</span></div>
   <div class="tile {% if run.complete %}tile-fixed{% endif %}"><b>{{ run.rows|selectattr("status", "equalto", FINISHED)|map(attribute="filled")|sum }} / {{ (run.rows|selectattr("status", "equalto", FINISHED)|list|length) * run.stages|length }}</b><span>клеток заполнено</span></div>
   <div class="tile"><b>{{ run.rank.formatted() if run.rank else "—" }}</b><span>ранг по составам</span></div>
 </div>
 
 <details class="panel howto" id="stages"{% if not run.stages %} open{% endif %}>
-  <summary>Этапы дистанции {{ z.key }}{% if run.stages %} — {{ run.stages|length }}{% endif %}</summary>
+  <summary>Этапы дистанции {{ z.title }}{% if run.stages %} — {{ run.stages|length }}{% endif %}</summary>
   <p class="muted">Этапы по порядку, с туром. МШ (максимальный штраф этапа) нужен для фактически пройденного класса,
     КВ этапа — для таймера на телефоне судьи; их можно не заполнять. Бонусы и премии — отдельным этапом (тур «Бонус»).
     {% if not is_time %}<b>Временной штраф считает программа</b>, если у этапа заданы НВ и ВШ: судья вносит только
@@ -59,7 +59,7 @@
     добавляет ВШ — по правилу «баллов за каждые … с сверх НВ» (по умолчанию 1 балл за 30 с), не больше ВШ. Сверх КВ
     или снята с этапа — МШ (по умолчанию ТШ + ВШ). Итог, вписанный в таблицу вручную (протест), программа не
     затирает. Правила, дистанции комбинированные, п. 1.5; формула ВШ — из Условий.{% endif %}</p>
-  <form method="post" action="{{ base }}/results/import?{{ zq }}" enctype="multipart/form-data" class="res-import"{% if run.stages %} data-confirm="Заменить этапы и баллы зачёта {{ z.key }} данными из рабочей книги?"{% endif %}>
+  <form method="post" action="{{ base }}/results/import?{{ zq }}" enctype="multipart/form-data" class="res-import"{% if run.stages %} data-confirm="Заменить этапы и баллы зачёта {{ z.title }} данными из рабочей книги?"{% endif %}>
     <label class="btn">{{ icon("upload", 18) }}Загрузить этапы и баллы из СЕКРЕТАРЬ_ST (.xls)
       <input type="file" name="book" accept=".xls" class="visually-hidden" data-autosubmit></label>
     <span class="hint">Лист «Протокол_группа»: этапы — из шапки блока «Прохождение дистанции», баллы — по названиям команд.</span>
@@ -158,7 +158,7 @@
 </details>
 
 {% if not run.rows %}
-<div class="panel panel-warn" id="points"><h2>{{ icon("alert") }} В зачёте {{ z.key }} пока нет команд</h2>
+<div class="panel panel-warn" id="points"><h2>{{ icon("alert") }} В зачёте {{ z.title }} пока нет команд</h2>
   <p>Команды берутся из <a href="{{ base }}/preapps">предварительных заявок</a> — по группе и классу, указанным в заявке.</p></div>
 {% elif run.stages or is_time %}
 <section class="panel" id="points">

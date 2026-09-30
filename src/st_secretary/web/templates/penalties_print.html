@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Таблица штрафов — {{ z.key }} — {{ comp.title }}</title>
+<title>Таблица штрафов — {{ z.title }} — {{ comp.title }}</title>
 <style>
   body { font: 13px/1.35 "Segoe UI", Arial, sans-serif; color: #111; margin: 16px; background: #fff; }
   h1 { font-size: 17px; margin: 0 0 2px; } .sub { color: #555; margin: 0 0 10px; }
@@ -18,7 +18,7 @@
 <body>
 <p class="noprint"><button onclick="window.print()">Распечатать</button></p>
 <h1>{{ table.title }}</h1>
-<p class="sub">{{ comp.title }} · зачёт {{ z.key }}{% if table.source %} · {{ table.source }}{% endif %}</p>
+<p class="sub">{{ comp.title }} · зачёт {{ z.title }}{% if table.source %} · {{ table.source }}{% endif %}</p>
 <table>
   <thead><tr><th>№</th><th>Нарушение</th>{% if table.systems %}<th>Бесштрафовая</th><th>Штрафная</th>{% else %}<th>Штраф</th>{% endif %}<th>Разъяснение</th></tr></thead>
   <tbody>

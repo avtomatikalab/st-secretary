@@ -14,7 +14,6 @@ from st_secretary.importers.preapp_xlsx import RawApplication
 from st_secretary.issues import ERROR, FIXED, SEVERITY_ORDER, WARNING, Issue
 from st_secretary.preapp import Entry, TeamApplication
 from st_secretary.qualification import Qual
-from st_secretary.reference import discipline_by_code
 from st_secretary.textclean import clean_spaces, parse_birth_date
 
 HEAD_FIELDS = ["team", "territory", "representative", "contacts", "declared"]
@@ -48,7 +47,7 @@ def empty_row(comp: Competition | None = None) -> dict:
     if comp is not None and len(comp.zachety) == 1:
         row["zachet"] = comp.zachety[0].key
     if comp is not None and comp.zachety and all(
-            discipline_by_code(z.discipline_code).rank_format == "group" for z in comp.zachety):
+            z.rank_format == "group" for z in comp.zachety):
         row["team_dist"] = "1"
     return row
 
@@ -108,8 +107,10 @@ def _birth_value(s: str):
     return pd.value or pd.year_only or s
 
 
-def form_to_file(form: dict) -> tuple[dict, list[dict], dict[str, str]]:
-    """(шапка, строки участников для записи в файл, ошибки формы по именам полей)."""
+def form_to_file(form: dict, comp: Competition | None = None) -> tuple[dict, list[dict], dict[str, str]]:
+    """(шапка, строки участников для записи в файл, ошибки формы по именам полей). Зачёт в файле — «Группа» и
+    «Класс» (у своего зачёта с названием — название)."""
+    in_file = {z.key: comp.zachet_in_file(z) for z in comp.zachety} if comp is not None else {}
     errors: dict[str, str] = {}
     head = dict(form["head"])
     if not head["team"]:
@@ -121,7 +122,7 @@ def form_to_file(form: dict) -> tuple[dict, list[dict], dict[str, str]]:
         if not r["fio"]:
             errors[f"p-{i}-fio"] = "Впишите ФИО или удалите строку"
             continue
-        group, cls = split_zachet(r["zachet"])
+        group, cls = in_file.get(r["zachet"]) or split_zachet(r["zachet"])
         rows.append({"fio": r["fio"], "birth": _birth_value(r["birth"]), "qual": r["qual"], "sex": r["sex"],
                      "group": group, "cls": cls, "chip": r["chip"], "personal": r["personal"], "pair": r["pair"],
                      "pair_num": r["pair_num"], "team_dist": r["team_dist"]})
@@ -132,7 +133,7 @@ def form_to_file(form: dict) -> tuple[dict, list[dict], dict[str, str]]:
 
 def columns(comp: Competition, rows: list[dict]) -> dict[str, bool]:
     """Какие колонки участия показывать: по дисциплинам соревнования и по тому, что уже заполнено."""
-    formats = {discipline_by_code(z.discipline_code).rank_format for z in comp.zachety}
+    formats = {z.rank_format for z in comp.zachety}
     filled = {f for r in rows for f in ("personal", "pair", "pair_num", "team_dist") if r.get(f)}
     return {"personal": "individual" in formats or "personal" in filled,
             "pair": "pair" in formats or bool(filled & {"pair", "pair_num"}),
@@ -144,7 +145,8 @@ def choices(comp: Competition, form: dict) -> dict:
     return {
         "quals": [(q.label, q.label) for q in Qual],
         "sexes": [("м", "м"), ("ж", "ж")],
-        "zachety": [(z.key, f"{z.group}, {z.distance_class} кл.") for z in comp.zachety],
+        "zachety": [(z.key, z.name or (f"{z.group}, {z.distance_class} кл." if z.distance_class else
+                                       f"{z.group}, без класса")) for z in comp.zachety],
         "show": columns(comp, form["rows"]),
     }
 

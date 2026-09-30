@@ -19,6 +19,7 @@ from st_secretary.competition import (
     KINDS,
     LEVEL_LABELS,
     PERCENT_LABELS,
+    UNIT_KINDS,
     Competition,
     Official,
     Zachet,
@@ -50,11 +51,16 @@ MAIN_FIELDS = [
     ("Методика «% от победителя»", "percent_method",
      "Для балльных дисциплин (ПСР, горные). «Не задана» — нормативы не считаются"),
     ("Приём предзаявок до", "preapp_deadline", "Дата окончания приёма предварительных заявок"),
+    ("Неофициальные соревнования", "unofficial",
+     "«да» — клубные, учебные, слёт: свои зачёты и дисциплины, без ранга и разрядов; пусто — официальные"),
 ]
+YES = ("да", "yes", "1", "true", "+", "x", "х", "истина")
+RESULT_WORDS = {"points": "баллы", "time": "время", "time_points": "время + баллы"}
+UNIT_WORDS = dict(UNIT_KINDS)
 
 ZACHET_COLUMNS = [
     ("Группа", "как в предзаявке и в СЕКРЕТАРЬ_ST: М/Ж, МУЖЧИНЫ, ЮН/ДЕВ…"),
-    ("Класс", "1–6"),
+    ("Класс", "1–6; у неофициальных 0 — без класса"),
     ("Дисциплина (ВРВС)", "выберите из списка"),
     ("Возраст от", "лет в год соревнований"),
     ("Возраст до", "пусто — без ограничения"),
@@ -65,6 +71,11 @@ ZACHET_COLUMNS = [
     ("Женщин не менее", ""),
     ("Взнос, ₽", ""),
     ("Взнос за", "команду / участника"),
+    ("Название зачёта", "своё (неофициальные): «Новички»; пусто — группа_класс"),
+    ("Код зачёта", "ставит программа — не менять: по нему хранятся данные зачёта"),
+    ("Своя дисциплина", "неофициальные: если нет в ВРВС (тогда «Дисциплина (ВРВС)» пусто)"),
+    ("Результат", "у своей дисциплины: баллы / время / время + баллы"),
+    ("Состав", "у своей дисциплины: личный / связка / команда"),
 ]
 
 GSK_COLUMNS = ["Должность", "ФИО полностью", "Категория", "Территория"]
@@ -82,6 +93,8 @@ def _list_sheet(wb: Workbook) -> dict[str, str]:
         "cat": list(JUDGE_CATEGORIES),
         "qual": ["б/р", "3ю", "2ю", "1ю", "III", "II", "I", "КМС", "МС"],
         "fee": ["команду", "участника"],
+        "result": list(RESULT_WORDS.values()),
+        "unit": list(UNIT_WORDS.values()),
     }
     ranges = {}
     for col, (key, values) in enumerate(lists.items(), start=1):
@@ -143,12 +156,16 @@ def write_card(path: str | Path, comp: Competition | None = None) -> Path:
     for cell in z[2]:
         cell.font = Font(italic=True, color="7F7F7F", size=9)
     for zz in (comp.zachety if comp else []):
-        z.append([zz.group, zz.distance_class, zz.discipline_name, zz.age_from, zz.age_to, zz.age_from_by_gsk,
-                  zz.min_qual.label, zz.team_size, zz.min_men or None, zz.min_women or None, zz.fee, zz.fee_per])
-    _style_table(z, [12, 8, 42, 11, 11, 14, 12, 12, 12, 12, 10, 12], input_from_row=3, rows=20)
+        z.append([zz.group, zz.distance_class, None if zz.is_custom else zz.discipline_name, zz.age_from, zz.age_to,
+                  zz.age_from_by_gsk, zz.min_qual.label, zz.team_size, zz.min_men or None, zz.min_women or None,
+                  zz.fee, zz.fee_per, zz.name or None, zz.zid or None, zz.discipline_text or None,
+                  RESULT_WORDS.get(zz.result), UNIT_WORDS.get(zz.unit)])
+    _style_table(z, [12, 8, 42, 11, 11, 14, 12, 12, 12, 12, 10, 12, 22, 16, 28, 14, 12], input_from_row=3, rows=20)
     _dropdown(z, ranges["disc"], "C3:C30")
     _dropdown(z, ranges["qual"], "G3:G30")
     _dropdown(z, ranges["fee"], "L3:L30")
+    _dropdown(z, ranges["result"], "P3:P30")
+    _dropdown(z, ranges["unit"], "Q3:Q30")
 
     wb.move_sheet("Списки", offset=10)
     path = Path(path)
@@ -177,7 +194,7 @@ def _main_values(c: Competition) -> dict:
         "date_to": c.date_to, "place": c.place, "host_territory": c.host_territory,
         "organizers": "\n".join(c.organizers), "calendar_number": c.calendar_number or None,
         "norms_edition": c.norms_edition, "percent_method": PERCENT_LABELS[c.percent_method],
-        "preapp_deadline": c.preapp_deadline,
+        "preapp_deadline": c.preapp_deadline, "unofficial": "да" if c.unofficial else None,
     }
 
 
@@ -266,11 +283,15 @@ def load_card(path: str | Path) -> Competition:
             continue
         where = f"Зачёты, строка {i}"
         try:
-            disc = discipline_by_name(clean_spaces(cell("Дисциплина (ВРВС)")))
+            own = clean_spaces(cell("Своя дисциплина"))
+            vrvs = clean_spaces(cell("Дисциплина (ВРВС)"))
+            code = "" if own and not vrvs else discipline_by_name(vrvs).code
+            result = {v: k for k, v in RESULT_WORDS.items()}.get(clean_spaces(cell("Результат")).lower(), "")
+            unit = {v: k for k, v in UNIT_WORDS.items()}.get(clean_spaces(cell("Состав")).lower(), "")
             zachety.append(Zachet(
                 group=group,
                 distance_class=_as_int(cell("Класс")) or 0,
-                discipline_code=disc.code,
+                discipline_code=code,
                 age_from=_as_int(cell("Возраст от")),
                 age_to=_as_int(cell("Возраст до")),
                 age_from_by_gsk=_as_int(cell("По решению ГСК с (лет)")),
@@ -280,6 +301,9 @@ def load_card(path: str | Path) -> Competition:
                 min_women=_as_int(cell("Женщин не менее")) or 0,
                 fee=_as_int(cell("Взнос, ₽")),
                 fee_per=clean_spaces(cell("Взнос за")) or "команду",
+                name=clean_spaces(cell("Название зачёта")), zid=clean_spaces(cell("Код зачёта")),
+                discipline_text=own if not code else "", result=result if not code else "",
+                unit=unit if not code else "",
             ))
         except (KeyError, ValueError) as e:
             problems.append(Issue(ERROR, f"{where}: {e}", source=src, field="Зачёты"))
@@ -297,6 +321,7 @@ def load_card(path: str | Path) -> Competition:
         host_territory=clean_spaces(raw["host_territory"]),
         organizers=organizers,
         calendar_number=clean_spaces(raw["calendar_number"]),
+        unofficial=clean_spaces(raw.get("unofficial")).lower() in YES,
         norms_edition=clean_spaces(raw["norms_edition"]),
         percent_method=percent,
         preapp_deadline=dates["preapp_deadline"],

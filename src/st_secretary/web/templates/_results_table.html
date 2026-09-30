@@ -2,7 +2,7 @@
 {% from "_form.html" import fix_item with context %}
 {% from "_icons.html" import icon %}
 <div class="panel" id="results-live" data-live-results>
-  <h2>Результаты — {{ z.key }}</h2>
+  <h2>Результаты — {{ z.title }}</h2>
   <p class="muted">{% if run.profile == "mountain" %}Результат — баллы за время, технику и тактику (часть 2, п. 6.1); со снятиями —
     после команд без снятий, выше тот, у кого снятий меньше.{% elif is_time %}Результат — время на дистанции{% if run.system == "penalty" %}
     плюс штрафные баллы × {{ run.seconds_per_point }} с{% endif %}{% if run.profile in ("pedestrian", "nordic") %} плюс штрафное время{% endif %}{% if run.profile == "speleo" %};

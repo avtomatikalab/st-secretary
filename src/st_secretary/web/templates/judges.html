@@ -14,7 +14,7 @@
 
 {% if zachety|length > 1 %}
 <nav class="chips" aria-label="Зачёты">
-  {% for x in zachety %}<a class="chip{% if x.key == zachet.key %} is-active{% endif %}" href="{{ base }}/judges?z={{ x.key|urlencode }}">{{ x.key }}</a>{% endfor %}
+  {% for x in zachety %}<a class="chip{% if x.key == zachet.key %} is-active{% endif %}" href="{{ base }}/judges?z={{ x.key|urlencode }}">{{ x.title }}</a>{% endfor %}
 </nav>
 {% endif %}
 
@@ -35,7 +35,7 @@
 </section>
 
 <section class="panel">
-  <h2>2. Ссылки этапов — зачёт {{ zachet.key }}</h2>
+  <h2>2. Ссылки этапов — зачёт {{ zachet.title }}</h2>
   {% if not stages %}
   <p>Этапов пока нет — задайте их на <a href="{{ base }}/results?{{ zq }}#stages">странице результатов</a>.</p>
   {% else %}
@@ -96,7 +96,7 @@
 </section>
 
 <section class="panel" id="penalties">
-  <h2>3. Таблица штрафов — зачёт {{ zachet.key }}</h2>
+  <h2>3. Таблица штрафов — зачёт {{ zachet.title }}</h2>
   <p>Судья этапа открывает её на телефоне кнопкой «Таблица штрафов» — с поиском по словам («карабин», «муфта») и по номеру
     пункта; работает без связи. Секретарь может посмотреть и распечатать её здесь.</p>
   <form method="post" action="{{ base }}/judges/penalties?{{ zq }}" class="pen-choose">

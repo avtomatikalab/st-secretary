@@ -27,7 +27,7 @@ from st_secretary.norms import PercentMethod, achieved_norm, percent_of_winner
 from st_secretary.psr_run import TeamInput, TeamResult, ZachetRun, _status, parse_points, stages_of, tours_of, unit_kind
 from st_secretary.qualification import Qual
 from st_secretary.rank import RankEntry, evsk_participation_ok, qualification_rank
-from st_secretary.reference import discipline_by_code, norm_edition
+from st_secretary.reference import norm_edition
 
 # Дисциплины со стартом и финишем: спелео, пешеходные, северная ходьба (результат — время) и горные (баллы за
 # время, технику и тактику).
@@ -40,11 +40,15 @@ REMOVAL = ("с", "снят", "снята", "снятие", "с/э")  # как п
 
 
 def is_time_discipline(z: Zachet) -> bool:
+    if z.is_custom:  # своя дисциплина (неофициальные): время или время + баллы — как пешеходные
+        return z.result in ("time", "time_points")
     return z.discipline_code in TIME_DISCIPLINES
 
 
 def profile(z: Zachet) -> str:
     """«speleo», «pedestrian», «nordic» или «mountain»."""
+    if z.is_custom:
+        return "pedestrian"
     c = z.discipline_code
     return "pedestrian" if c in PEDESTRIAN else "nordic" if c in NORDIC else "mountain" if c in MOUNTAIN else "speleo"
 
@@ -146,7 +150,8 @@ def apply_si(zdata: dict, cards: list, teams: list[TeamInput]) -> dict:
 def settings(z: Zachet, zdata: dict) -> dict:
     """Настройки расчёта зачёта по профилю дисциплины (со значениями по умолчанию)."""
     kind = profile(z)
-    system = "nopenalty" if zdata.get("system") == "nopenalty" and kind in ("pedestrian", "nordic") else "penalty"
+    chosen = zdata.get("system") or ("nopenalty" if z.is_custom and z.result == "time" else "")  # своя «время» — без баллов
+    system = "nopenalty" if chosen == "nopenalty" and kind in ("pedestrian", "nordic") else "penalty"
     return {"profile": kind, "system": system,
             "removal": "okv" if zdata.get("removal") == "okv" else "dsq",  # пешеходные п. 6.2.8; СХ п. 10.4.4
             "rate": MOUNTAIN.get(z.discipline_code)}
@@ -180,7 +185,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
         spp = 15  # северная ходьба: 1 балл = 15 с (п. 10.3.2)
     else:
         spp = int(spp_set) if spp_set in ("15", "30") else (15 if expected.isdigit() and int(expected) <= 30 else 30)
-    unit = unit_kind(discipline_by_code(z.discipline_code).rank_format)
+    unit = unit_kind(z.rank_format)
 
     planned = start_list.planned_starts(zdata, teams)  # «Время старта — время, указанное в стартовом протоколе»
     rows: list[TeamResult] = []
@@ -314,12 +319,16 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
 
     started = [r for r in ordered if r.status not in (Status.DNS, Status.OUT_OF_COMPETITION)]
     rank, norms = None, None
-    fmt = discipline_by_code(z.discipline_code).rank_format
+    fmt = z.rank_format
     try:
         norms = norm_edition(comp.norms_edition)
     except KeyError:
         issues.append(Issue(ERROR, f"нет редакции норм «{comp.norms_edition}» — нормативы не считаются", source=z.key,
                             target="card"))
+    if comp.unofficial:  # неофициальные: ни ранга, ни нормативов (решение 038)
+        norms = None
+        issues.append(Issue(INFO, "неофициальные соревнования — квалификационный ранг, % от победителя и разряды "
+                                  "не считаются", source=z.key))
     if norms and fmt:
         rank = qualification_rank([RankEntry(r.place, tuple(m.qual or Qual.BR for m in r.inp.members))
                                    for r in started], fmt, norms)
@@ -330,7 +339,9 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     # ЕВСК п. 25.4: баллы, начисляемые судьями (штрафная система, горные), — не менее 6 участников, иначе 3
     ok, why = evsk_participation_ok(comp.level, len(started), None, judged_points=penalty_system)
     subjects_unknown = not ok and "не указано число субъектов" in (why or "")
-    run.norms_ok = ok or subjects_unknown
+    run.norms_ok = (ok or subjects_unknown) and not comp.unofficial
+    if comp.unofficial:
+        return run
     if why:
         issues.append(Issue(INFO, f"нормативы: {why}" + (" — проверьте по справке о количестве субъектов"
                                                           if subjects_unknown else " — разряды не присваиваются"),

@@ -700,3 +700,8 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .pen-choose { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0; }
 .pen-choose select { width: auto; max-width: 100%; }
 
+/* Карточка: поля неофициальных соревнований (решение 038) — видны, когда отмечена галочка */
+#cardform:not(.is-unofficial) .z-unof, #cardform:not(.is-unofficial) .z-unof-note { display: none; }
+.z-unof { margin: 0; padding: 0; }
+.card-unof { margin-top: 12px; align-items: flex-start; }
+

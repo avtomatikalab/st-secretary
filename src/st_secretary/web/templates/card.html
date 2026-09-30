@@ -27,14 +27,21 @@
 {% macro zachet_block(i, z, errors, ch) -%}
 {% set p = "z-" ~ i ~ "-" %}
 <div class="zachet" data-row>
+  <input type="hidden" name="{{ p }}zid" value="{{ z.zid }}">
   <div class="zachet-head">
-    <h3>{% if z.group and z.distance_class %}Зачёт {{ z.group }}_{{ z.distance_class }}{% else %}Новый зачёт{% endif %}</h3>
+    <h3>{% if z.name %}Зачёт «{{ z.name }}»{% elif z.group and z.distance_class %}Зачёт {{ z.group }}_{{ z.distance_class }}{% else %}Новый зачёт{% endif %}</h3>
     <button type="button" class="btn btn-ghost btn-small" data-remove-row data-confirm="Удалить этот зачёт?">Удалить зачёт</button>
   </div>
   <div class="grid">
     {{ input(p ~ "group", "Группа", z.group, errors, cls="span-3", list="dl-groups", hint="как в предзаявке: М/Ж, МУЖЧИНЫ…") }}
     {{ select(p ~ "distance_class", "Класс", z.distance_class, ch.classes, errors, cls="span-2", empty="—") }}
     {{ select(p ~ "discipline_code", "Дисциплина (по ВРВС)", z.discipline_code, ch.disciplines, errors, cls="span-7", empty="— выберите дисциплину —") }}
+    <div class="span-12 z-unof grid">
+      {{ input(p ~ "name", "Своё название зачёта", z.name, errors, cls="span-4", list="dl-znames", hint="«Новички», «Семейные команды»; пусто — группа_класс") }}
+      {{ input(p ~ "discipline_text", "Своя дисциплина (если нет в ВРВС)", z.discipline_text, errors, cls="span-4", list="dl-disc", hint="тогда дисциплину из ВРВС не выбирайте") }}
+      {{ select(p ~ "result", "Результат своей дисциплины", z.result, ch.results, errors, cls="span-2", empty="—") }}
+      {{ select(p ~ "unit", "Состав", z.unit, ch.units, errors, cls="span-2", empty="—") }}
+    </div>
     {{ input(p ~ "age_from", "Возраст от", z.age_from, errors, type="number", cls="span-3", hint="лет в год соревнований") }}
     {{ input(p ~ "age_to", "Возраст до", z.age_to, errors, type="number", cls="span-3", hint="пусто — без ограничения") }}
     {{ input(p ~ "age_from_by_gsk", "По решению ГСК — с", z.age_from_by_gsk, errors, type="number", cls="span-3", hint="если Положение разрешает младше") }}
@@ -89,12 +96,16 @@
     {% endif %}
   {% endif %}
 
-  <form id="cardform" method="post" action="{{ base }}/card/edit" data-guard>
+  <form id="cardform" method="post" action="{{ base }}/card/edit" data-guard class="{{ 'is-unofficial' if form.main.unofficial else '' }}">
     <input type="hidden" name="version" value="{{ card_version }}">
 
     <section class="panel" id="main">
       <h2>Основные реквизиты</h2>
       {{ main_fields(form.main, errors, ch) }}
+      <label class="check card-unof"><input type="checkbox" name="unofficial" value="1"{% if form.main.unofficial %} checked{% endif %} data-unofficial>
+        <span><b>Неофициальные соревнования</b> — клубные, учебные, слёт: зачёты со своими названиями, класс «без класса»,
+        своя дисциплина; квалификационный ранг, % от победителя и разряды не считаются, допуск по Правилам (класс,
+        разряд) не проверяется — только то, что задано в зачёте.</span></label>
     </section>
 
     <section class="panel" id="gsk">
@@ -116,7 +127,8 @@
 
     <section class="panel" id="zachety">
       <h2>Зачёты</h2>
-      <p class="muted">Зачёт — группа участников на дистанции определённого класса. Название как в СЕКРЕТАРЬ_ST: группа_класс, например «М/Ж_3».</p>
+      <p class="muted">Зачёт — группа участников на дистанции определённого класса. Название как в СЕКРЕТАРЬ_ST: группа_класс, например «М/Ж_3».
+        <span class="z-unof-note">У неофициальных соревнований — любое своё название, класс «без класса», своя дисциплина.</span></p>
       <div id="z-rows" data-next="{{ form.zachety|length }}">
         {% for z in form.zachety %}{{ zachet_block(loop.index0, z, errors, ch) }}{% endfor %}
       </div>

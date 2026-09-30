@@ -46,9 +46,10 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     show_marks = not timed and any(r.marks for r in run.rows)  # ПСР: сняты с этапов (МШ) — отметка в протоколе
     person = run.unit == "person"  # личная дисциплина: место у спортсмена
     who = ["Участник", "Команда", "Территория", "Разряд"] if person else ["Команда", "Территория", "Состав (разряд)"]
+    norms = [] if comp.unofficial else ["% от победителя", "Выполнен разряд"]  # неофициальные — без разрядов
     head = (["Место", "№"] + who + middle
             + (["Снятия с этапов"] if show_marks else [])
-            + ["Результат", "% от победителя", "Выполнен разряд"] + (["Факт. класс"] if show_class else []))
+            + ["Результат"] + norms + (["Факт. класс"] if show_class else []))
     width = len(head)
 
     def line(r, text, bold=False, size=11):
@@ -64,9 +65,11 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     line(r + 1, f"{comp.dates_text}, {comp.place}")
     title = "ПРЕДВАРИТЕЛЬНЫЙ ПРОТОКОЛ РЕЗУЛЬТАТОВ" if kind == PRELIMINARY else "ПРОТОКОЛ РЕЗУЛЬТАТОВ"
     line(r + 2, title, True, 13)
-    line(r + 3, f"Спортивная дисциплина «{z.discipline_name}», код ВРВС {z.discipline_code}; {z.distance_class} класс")
+    line(r + 3, z.header_text)
     rank = run.rank.formatted() if run.rank else "не определялся"
-    line(r + 4, f"Группа: {GROUP_WORDS.get(z.group.upper(), z.group)}. Квалификационный ранг: {rank}")
+    zname = f"Зачёт «{z.name}». " if z.name else ""
+    line(r + 4, f"{zname}Группа: {GROUP_WORDS.get(z.group.upper(), z.group)}"
+         + ("" if comp.unofficial else f". Квалификационный ранг: {rank}"))
     r += 6
     for c, h in enumerate(head, start=1):
         cell = ws.cell(r, c, h)
@@ -81,7 +84,8 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
                if timed else [points_text(t.tours.get(x)) for x in tours])
         values = ([t.place or "—", t.inp.number or ""] + who_values + mid
                   + ([mark_text(run, t)] if show_marks else [])
-                  + [result, _pct(t.percent), t.norm or ""] + ([t.actual_class or ""] if show_class else []))
+                  + [result] + ([_pct(t.percent), t.norm or ""] if norms else [])
+                  + ([t.actual_class or ""] if show_class else []))
         res_col = 3 + len(who) + len(middle) + (1 if show_marks else 0)
         for c, v in enumerate(values, start=1):
             cell = ws.cell(r, c, v)
@@ -96,7 +100,9 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
                      f"Опубликован {at:%d.%m.%Y в %H:%M}.")
     else:
         notes.append(f"Результаты утверждены {at:%d.%m.%Y в %H:%M}.")
-    if run.rank and run.rank.value is None and run.rank.reason:
+    if comp.unofficial:
+        notes.append("Неофициальные соревнования: квалификационный ранг и разряды не определяются.")
+    elif run.rank and run.rank.value is None and run.rank.reason:
         notes.append(f"Квалификационный ранг не определялся: {run.rank.reason}.")
     for n in notes:
         ws.cell(r, 1, n).font = Font(size=10, italic=True)
@@ -107,7 +113,8 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         ws.cell(r, 1, f"{role} ________________ / {o.signature if o else ' ' * 30} /").font = Font(size=11)
         r += 2
     for c, w in enumerate([7, 6] + ([28, 20, 16, 8] if person else [22, 16, 46]) + [10 if timed else 8] * len(middle)
-                          + ([22] if show_marks else []) + [11, 10, 10] + ([8] if show_class else []), start=1):
+                          + ([22] if show_marks else []) + [11] + ([10, 10] if norms else []) + ([8] if show_class else []),
+                          start=1):
         ws.column_dimensions[get_column_letter(c)].width = w
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
@@ -115,7 +122,8 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
 
     st = wb.create_sheet("По этапам")
     st.cell(1, 1, f"{comp.title} — баллы по этапам, зачёт {z.key}").font = Font(bold=True, size=12)
-    st.cell(2, 1, f"{'Предварительные' if kind == PRELIMINARY else 'Официальные'} результаты на {at:%d.%m.%Y %H:%M}")
+    what = "Предварительные результаты" if kind == PRELIMINARY else "Результаты" if comp.unofficial else "Официальные результаты"
+    st.cell(2, 1, f"{what} на {at:%d.%m.%Y %H:%M}")
     heads = ["Место", "№", "Участник" if person else "Команда"] + [s.title for s in run.stages] + ["Итого"]
     for c, h in enumerate(heads, start=1):
         cell = st.cell(4, c, h)

@@ -37,7 +37,7 @@
     <h2>Основные реквизиты</h2>
     <dl class="facts facts-wide">
       <dt>Наименование</dt><dd><b>{{ comp.title }}</b></dd>
-      <dt>Вид</dt><dd>{{ comp.kind }}</dd>
+      <dt>Вид</dt><dd>{{ comp.kind }}{% if comp.unofficial %} · <b>неофициальные</b> <span class="muted">(свои зачёты; ранг и разряды не считаются)</span>{% endif %}</dd>
       <dt>Уровень (статус)</dt><dd>{{ level_labels[comp.level] }}</dd>
       <dt>Даты</dt><dd>{{ comp.dates_text }}</dd>
       <dt>Приём предзаявок до</dt><dd>{{ comp.preapp_deadline|d or "—" }}</dd>
@@ -75,8 +75,8 @@
       <tbody>
       {% for z in comp.zachety %}
         <tr>
-          <td><b>{{ z.key }}</b></td>
-          <td>{{ z.discipline_name }}<br><span class="muted">{{ z.discipline_code }}</span></td>
+          <td><b>{{ z.title }}</b>{% if z.name %}<br><span class="muted">{{ z.group }}, {{ z.class_text }}</span>{% endif %}</td>
+          <td>{{ z.discipline_name }}<br><span class="muted">{% if z.is_custom %}своя: {{ result_kinds[z.result] }}, {{ unit_kinds[z.unit] }}{% else %}{{ z.discipline_code }}{% endif %}</span></td>
           <td>{% if z.age_from %}с {{ z.age_from|from_years }}{% endif %}{% if z.age_to %} до {{ z.age_to|from_years }}{% endif %}{% if not z.age_from and not z.age_to %}без ограничений{% endif %}
             {% if z.age_from_by_gsk %}<br><span class="muted">с {{ z.age_from_by_gsk|from_years }} — по решению ГСК</span>{% endif %}</td>
           <td>{{ z.min_qual.label }}</td>

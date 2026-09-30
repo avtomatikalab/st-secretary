@@ -222,7 +222,7 @@ def register(app, cx) -> None:
         data = await request.form()
         name, version = str(data.get("file", "")), str(data.get("version", ""))
         form = pf.form_from_data(data)
-        head, rows, errors = pf.form_to_file(form)
+        head, rows, errors = pf.form_to_file(form, comp)
         path = f.preapp_path(name) if name else None
         conflict = not errors and path is not None and version and version != f.file_version(path) \
             and not data.get("force")

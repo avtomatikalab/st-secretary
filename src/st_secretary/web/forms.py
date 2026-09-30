@@ -14,6 +14,8 @@ from st_secretary.competition import (
     KINDS,
     LEVEL_LABELS,
     PERCENT_LABELS,
+    RESULT_KINDS,
+    UNIT_KINDS,
     Competition,
     Official,
     Zachet,
@@ -24,13 +26,14 @@ from st_secretary.reference import Level, disciplines, norm_editions
 from st_secretary.textclean import clean_spaces
 
 MAIN_FIELDS = ["title", "kind", "level", "date_from", "date_to", "place", "host_territory", "organizers",
-               "calendar_number", "norms_edition", "percent_method", "preapp_deadline"]
+               "calendar_number", "norms_edition", "percent_method", "preapp_deadline", "unofficial"]
 REQUIRED = {"title": "Наименование", "kind": "Вид", "level": "Уровень", "date_from": "Дата начала",
             "date_to": "Дата окончания", "place": "Место проведения",
             "host_territory": "Территория организаторов", "norms_edition": "Редакция норм"}
 OFFICIAL_FIELDS = ["role", "fio", "category", "territory"]
 ZACHET_FIELDS = ["group", "distance_class", "discipline_code", "age_from", "age_to", "age_from_by_gsk",
-                 "min_qual", "team_size", "min_men", "min_women", "fee", "fee_per"]
+                 "min_qual", "team_size", "min_men", "min_women", "fee", "fee_per",
+                 "name", "zid", "discipline_text", "result", "unit"]  # последние — неофициальные (решение 038)
 QUAL_LABELS = [q.label for q in Qual]
 FEE_PER = ("команду", "участника")
 GROUP_SUGGESTIONS = ("М/Ж", "МУЖЧИНЫ", "ЖЕНЩИНЫ", "ЮНИОРЫ", "ЮНИОРКИ", "ЮНОШИ", "ДЕВУШКИ", "МАЛЬЧИКИ",
@@ -48,7 +51,9 @@ def choices() -> dict:
         "categories": [(c, c) for c in JUDGE_CATEGORIES],
         "quals": [(q, q) for q in QUAL_LABELS],
         "fee_per": [(f, f) for f in FEE_PER],
-        "classes": [(str(c), str(c)) for c in range(1, 7)],
+        "classes": [(str(c), str(c)) for c in range(1, 7)] + [("0", "без класса (неофициальные)")],
+        "results": list(RESULT_KINDS.items()),
+        "units": list(UNIT_KINDS.items()),
         "roles": GSK_ROLES,
         "groups": GROUP_SUGGESTIONS,
     }
@@ -75,6 +80,7 @@ def card_to_form(comp: Competition | None) -> dict:
         "calendar_number": comp.calendar_number, "norms_edition": comp.norms_edition,
         "percent_method": comp.percent_method.name if comp.percent_method else "",
         "preapp_deadline": comp.preapp_deadline.isoformat() if comp.preapp_deadline else "",
+        "unofficial": "1" if comp.unofficial else "",
     }
     rest = list(comp.officials)
     officials = []
@@ -89,6 +95,7 @@ def card_to_form(comp: Competition | None) -> dict:
         "age_from": _s(z.age_from), "age_to": _s(z.age_to), "age_from_by_gsk": _s(z.age_from_by_gsk),
         "min_qual": z.min_qual.label, "team_size": _s(z.team_size), "min_men": _s(z.min_men or ""),
         "min_women": _s(z.min_women or ""), "fee": _s(z.fee), "fee_per": z.fee_per,
+        "name": z.name, "zid": z.key, "discipline_text": z.discipline_text, "result": z.result, "unit": z.unit,
     } for z in comp.zachety] or [empty_zachet()]
     return {"main": main, "officials": officials, "zachety": zachety}
 
@@ -161,17 +168,26 @@ def form_to_card(form: dict) -> tuple[Competition | None, dict[str, str]]:
         officials.append(Official(clean_spaces(row["role"]), fio, row["category"], clean_spaces(row["territory"])))
 
     codes = {c for c, _ in choices()["disciplines"]}
+    unofficial = bool(m.get("unofficial"))
     zachety = []
     for i, row in enumerate(form["zachety"]):
-        if not any(row[f] for f in ZACHET_FIELDS if f not in ("min_qual", "fee_per")):
+        if not any(row[f] for f in ZACHET_FIELDS if f not in ("min_qual", "fee_per", "zid", "result", "unit")):
             continue  # пустой блок зачёта
         p = f"z-{i}-"
         group = clean_spaces(row["group"])
+        name = clean_spaces(row["name"]) if unofficial else ""
         if not group:
             err[p + "group"] = "укажите группу"
-        cls = _int(row["distance_class"], p + "distance_class", err, 1, 6, required=True)
-        if row["discipline_code"] not in codes:
-            err[p + "discipline_code"] = "выберите дисциплину"
+        cls = _int(row["distance_class"], p + "distance_class", err, 0 if unofficial else 1, 6, required=True)
+        own = clean_spaces(row["discipline_text"]) if unofficial and not row["discipline_code"] else ""
+        if own:  # своя дисциплина (неофициальные): вид результата и состав — обязательно
+            if row["result"] not in RESULT_KINDS:
+                err[p + "result"] = "выберите, чем выражен результат"
+            if row["unit"] not in UNIT_KINDS:
+                err[p + "unit"] = "выберите состав"
+        elif row["discipline_code"] not in codes:
+            err[p + "discipline_code"] = ("выберите дисциплину из ВРВС или впишите свою" if unofficial
+                                          else "выберите дисциплину")
         nums = {f: _int(row[f], p + f, err, 0, 150) for f in ("age_from", "age_to", "age_from_by_gsk", "team_size",
                                                               "min_men", "min_women")}
         fee = _int(row["fee"], p + "fee", err, 0, 10_000_000)
@@ -183,10 +199,15 @@ def form_to_card(form: dict) -> tuple[Competition | None, dict[str, str]]:
         if row["fee_per"] and row["fee_per"] not in FEE_PER:
             err[p + "fee_per"] = "выберите из списка"
         if p + "group" not in err and p + "distance_class" not in err and p + "discipline_code" not in err:
-            zachety.append(Zachet(group, cls, row["discipline_code"], age_from=nums["age_from"],
+            # постоянный код: у существующего зачёта — прежний, у нового — название или «группа_класс»
+            zid = clean_spaces(row["zid"]) or name or f"{group}_{cls}"
+            zid = "" if zid == f"{group}_{cls}" else zid  # совпадает с «группа_класс» — хранить незачем
+            zachety.append(Zachet(group, cls, "" if own else row["discipline_code"], age_from=nums["age_from"],
                                   age_to=nums["age_to"], age_from_by_gsk=nums["age_from_by_gsk"], min_qual=qual,
                                   team_size=nums["team_size"], min_men=nums["min_men"] or 0,
-                                  min_women=nums["min_women"] or 0, fee=fee, fee_per=row["fee_per"] or "команду"))
+                                  min_women=nums["min_women"] or 0, fee=fee, fee_per=row["fee_per"] or "команду",
+                                  name=name, zid=zid, discipline_text=own, result=row["result"] if own else "",
+                                  unit=row["unit"] if own else ""))
     if err:
         return None, err
     organizers = [clean_spaces(x) for x in m["organizers"].replace(";", "\n").split("\n") if clean_spaces(x)]
@@ -195,6 +216,7 @@ def form_to_card(form: dict) -> tuple[Competition | None, dict[str, str]]:
         date_to=dates["date_to"], place=clean_spaces(m["place"]), host_territory=clean_spaces(m["host_territory"]),
         organizers=organizers, calendar_number=clean_spaces(m["calendar_number"]), norms_edition=m["norms_edition"],
         percent_method=percent, preapp_deadline=dates["preapp_deadline"], officials=officials, zachety=zachety,
+        unofficial=unofficial,
     ), {}
 
 
