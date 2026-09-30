@@ -144,6 +144,13 @@ def main() -> None:
                 print(r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace"))
                 if r.returncode != 0:
                     fail(f"install.sh ({attempt}) завершился с кодом {r.returncode}")
+            if "Готово" not in r.stdout.decode("utf-8", "replace") or r.stderr.strip():
+                fail("install.sh не дошёл до конца без ошибок")
+            home = work / "home"
+            shortcut = (home / "Desktop" / f"{NAME}.command" if sys.platform == "darwin"
+                        else home / ".local" / "share" / "applications" / "st-secretary.desktop")
+            if not shortcut.is_file():
+                fail(f"нет ярлыка {shortcut}")
             python_in(dest)
             if not (dest / "program.old").is_dir():
                 fail("повторная установка не сохранила прежнюю версию в program.old")
