@@ -629,3 +629,13 @@ input.st-time.is-manual { font-weight: 700; }
 .upd-bar { height: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 8px 0 10px; }
 .upd-bar > div { height: 100%; width: 0; background: var(--primary); transition: width .4s; }
 .upd-notes { white-space: pre-wrap; max-width: 780px; }
+
+/* Порядок старта: перетаскивание строк (мышь, палец, клавиатура) */
+.st-grip { width: 36px; padding-right: 0; }
+.st-handle { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 36px; border: 0;
+  border-radius: 6px; background: transparent; color: var(--muted); cursor: grab; touch-action: none; }
+.st-handle:hover, .st-handle:focus-visible { background: var(--surface-2); color: var(--primary); }
+tr.is-dragging { background: var(--primary-soft); box-shadow: 0 2px 10px rgba(0, 0, 0, .15); }
+tr.is-dragging .st-handle { cursor: grabbing; }
+tr.is-moved td { transition: background .6s; background: var(--primary-soft); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

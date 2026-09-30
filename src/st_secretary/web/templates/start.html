@@ -79,23 +79,26 @@
   <p>Допущенных команд в зачёте {{ zachet.key }} пока нет. Команды берутся из <a href="{{ base }}/preapps">заявок</a>,
     допуск — в <a href="{{ base }}/admission">комиссии по допуску</a>.</p>
   {% else %}
-  <p class="muted">Порядок — номер в очереди старта: поменяйте числа и нажмите «Сохранить порядок», программа расставит команды
-    по ним. Время — пустое значит «по расчёту» (серым); вписанное — для этой команды вручную.</p>
+  <p class="muted">Перетащите команду за {{ icon("grip", 16) }} выше или ниже (мышкой или пальцем; с клавиатуры — стрелками
+    вверх и вниз) или поменяйте числа в «Порядке» — и нажмите «Сохранить порядок». Время — пустое значит «по расчёту»
+    (серым, пересчитывается сразу); вписанное — для этой команды вручную.</p>
   <form method="post" action="{{ base }}/start/order?{{ zq }}" data-guard>
   <div class="table-wrap">
-  <table class="tbl st-tbl">
-    <thead><tr><th>Порядок</th><th>№</th><th>Команда</th><th>Состав (разряд)</th><th>Ранг</th><th>Время старта</th></tr></thead>
+  <table class="tbl st-tbl" data-reorder data-first="{{ sl.settings.first }}" data-interval="{{ sl.settings.interval }}">
+    <thead><tr><th><span class="sr-only">Перетащить</span></th><th>Порядок</th><th>№</th><th>Команда</th><th>Состав (разряд)</th><th>Ранг</th><th>Время старта</th></tr></thead>
     <tbody>
     {% for r in sl.rows %}{% set i = loop.index0 %}
-    <tr{% if sl.drawn and not r.drawn %} class="sev-warning"{% endif %}>
-      <td><input type="text" inputmode="numeric" name="pos-{{ i }}" value="{{ r.pos }}" class="st-num" aria-label="{{ r.inp.team }}: порядок старта">
+    <tr{% if sl.drawn and not r.drawn %} class="sev-warning"{% endif %} data-row>
+      <td class="st-grip"><button type="button" class="st-handle" data-drag
+          aria-label="{{ r.inp.team }}: перетащить (стрелки вверх и вниз — переставить)">{{ icon("grip", 18) }}</button></td>
+      <td><input type="text" inputmode="numeric" name="pos-{{ i }}" value="{{ r.pos }}" class="st-num" data-pos aria-label="{{ r.inp.team }}: порядок старта">
         <input type="hidden" name="file-{{ i }}" value="{{ r.inp.file }}"></td>
       <td>{{ r.inp.number or "—" }}</td>
       <td><b>{{ r.inp.team }}</b><span class="adm-sub">{{ r.inp.territory }}{% if r.inp.representative %} · {{ r.inp.representative }}{% endif %}</span>
         {% if sl.drawn and not r.drawn %}<span class="adm-sub text-warn">не было при жеребьёвке</span>{% endif %}</td>
       <td class="st-members">{% for m in r.inp.members %}{{ m.fio }} ({{ m.qual_label or "б/р" }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
       <td>{{ rank_text(r.rank) or "—" }}</td>
-      <td><input type="text" inputmode="numeric" name="time-{{ i }}" value="{{ hm(r.time) if r.manual_time else '' }}"
+      <td><input type="text" inputmode="numeric" name="time-{{ i }}" data-time value="{{ hm(r.time) if r.manual_time else '' }}"
                  placeholder="{{ hm(r.time) if not r.manual_time else '' }}" class="st-time{% if r.manual_time %} is-manual{% endif %}"
                  aria-label="{{ r.inp.team }}: время старта"></td>
     </tr>

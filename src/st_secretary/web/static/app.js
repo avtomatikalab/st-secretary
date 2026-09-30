@@ -316,6 +316,80 @@
     });
   });
 
+  // --- Порядок старта: строки перетаскиваются за «ручку» (мышь и палец — pointer events, клавиатура — стрелки).
+  // Номера «Порядок» и время «по расчёту» (первый старт + интервал × место) пересчитываются сразу; сохраняет
+  // прежняя кнопка — сервер берёт порядок из полей pos-i. Вписанное вручную время остаётся за командой.
+  document.querySelectorAll("table[data-reorder]").forEach(function (table) {
+    var tbody = table.tBodies[0];
+    function secs(text) {  // «10:00», «9.30», «10:00:30» → секунды; иначе null
+      var m = /^(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?$/.exec((text || "").trim());
+      return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0)) : null;
+    }
+    function hm(s) {
+      s = ((s % 86400) + 86400) % 86400;
+      var t = String(Math.floor(s / 3600)).padStart(2, "0") + ":" + String(Math.floor(s % 3600 / 60)).padStart(2, "0");
+      return s % 60 ? t + ":" + String(s % 60).padStart(2, "0") : t;
+    }
+    var first = secs(table.dataset.first);
+    var iv = (table.dataset.interval || "").trim().replace(",", ".");
+    var interval = /^\d+(\.\d+)?$/.test(iv) ? Math.round(parseFloat(iv) * 60) : 0;
+    function rows() { return Array.prototype.slice.call(tbody.querySelectorAll("tr[data-row]")); }
+    function renumber() {
+      rows().forEach(function (tr, k) {
+        tr.querySelector("[data-pos]").value = k + 1;
+        var t = tr.querySelector("[data-time]");
+        if (!t.value.trim()) t.placeholder = first === null ? "" : hm(first + k * interval);
+      });
+    }
+    function changed(tr) {
+      renumber();
+      markDirty();
+      tr.classList.add("is-moved");
+      setTimeout(function () { tr.classList.remove("is-moved"); }, 700);
+    }
+    tbody.addEventListener("input", function (e) { if (e.target.matches("[data-time]")) renumber(); });
+
+    var drag = null;
+    tbody.addEventListener("pointerdown", function (e) {
+      var h = e.target.closest("[data-drag]");
+      if (!h || (e.pointerType === "mouse" && e.button !== 0)) return;
+      e.preventDefault();
+      drag = { tr: h.closest("tr"), handle: h, moved: false };
+      h.setPointerCapture(e.pointerId);
+      drag.tr.classList.add("is-dragging");
+    });
+    tbody.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      var over = document.elementFromPoint(e.clientX, e.clientY);
+      var tr = over && over.closest("tr[data-row]");
+      if (!tr || tr === drag.tr || tr.parentNode !== tbody) return;
+      var box = tr.getBoundingClientRect();
+      var below = e.clientY > box.top + box.height / 2;
+      tbody.insertBefore(drag.tr, below ? tr.nextSibling : tr);
+      drag.moved = true;
+      renumber();
+    });
+    function drop() {
+      if (!drag) return;
+      drag.tr.classList.remove("is-dragging");
+      if (drag.moved) changed(drag.tr);
+      drag = null;
+    }
+    tbody.addEventListener("pointerup", drop);
+    tbody.addEventListener("pointercancel", drop);
+    tbody.addEventListener("keydown", function (e) {
+      var h = e.target.closest("[data-drag]");
+      if (!h || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+      e.preventDefault();
+      var tr = h.closest("tr");
+      var other = e.key === "ArrowUp" ? tr.previousElementSibling : tr.nextElementSibling;
+      if (!other) return;
+      tbody.insertBefore(tr, e.key === "ArrowUp" ? other : other.nextSibling);
+      h.focus();
+      changed(tr);
+    });
+  });
+
   // --- Новая версия: GitHub спрашивают в фоне при запуске — главная узнаёт ответ у программы, когда он придёт.
   var updSlot = document.querySelector("[data-update-banner]");
   if (updSlot) {

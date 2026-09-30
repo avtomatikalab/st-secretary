@@ -1207,3 +1207,17 @@ def test_practice_page_and_excel(client, psr_card, opened):
     assert client.get("/practice.xlsx").content[:2] == b"PK"
     r = client.post("/practice/open", follow_redirects=False)
     assert r.status_code == 303 and opened[-1].name == "Судейская практика.xlsx"
+
+
+def test_start_order_drag_markup(client):
+    """Порядок старта перетаскивается (Правки.md, п. 2): «ручка» у каждой строки, первый старт и интервал —
+    для пересчёта времени в браузере; сохраняют прежние поля pos-i / file-i."""
+    client.post("/training")
+    f = client.app.state.store.all()[0]
+    b = base(f) + "/start?" + urlencode({"z": "М/Ж_3"})
+    client.post(base(f) + "/start/draw?" + urlencode({"z": "М/Ж_3"}),
+                data={"action": "save", "day": "2026-10-03", "first": "10:00", "interval": "3"})
+    html = client.get(b).text
+    assert 'data-reorder data-first="10:00" data-interval="3"' in html
+    assert html.count("data-drag") == html.count('name="pos-') > 0 and "data-time" in html
+    assert "стрелками" in html and "Перетащите команду" in html
