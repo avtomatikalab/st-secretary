@@ -15,7 +15,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 
-from st_secretary import __version__
+from st_secretary import __version__, system
 from st_secretary import commission as cm
 from st_secretary.issues import SEVERITY_ORDER, Issue
 from st_secretary.web.store import CompFolder
@@ -163,7 +163,7 @@ def _flash(request: Request) -> dict | None:
                                   "перезаявки не принимаются. Решение — за ГСК."),
         "opened": ("ok", "Открываю…"),
         "updated": ("ok", f"Программа обновлена до версии {__version__}. Соревнования на месте. Прежняя версия "
-                          "сохранена в папке «program.old» рядом с «СТ-Секретарь.bat»."),
+                          f"сохранена в папке «program.old» рядом с «{system.launcher()}»."),
         "run_stages": ("ok", "Этапы дистанции сохранены."),
         "si_nofile": ("err", "Выберите файл si_reader.csv из SPORTident Reader."),
         "si_bad": ("err", f"Файл не прочитан: {q.get('why', '')}. Нужен экспорт SportIdent Reader «Config+ (card readout)»."),

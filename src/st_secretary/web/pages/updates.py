@@ -70,7 +70,7 @@ def register(app, cx) -> None:
 
     @app.post("/update/restart")
     def update_restart():
-        """Новая версия распакована: выключиться с кодом «перезапустить» — «СТ-Секретарь.bat» поставит её."""
+        """Новая версия распакована: выключиться с кодом «перезапустить» — файл запуска поставит её."""
         inst = app.state.installer
         if inst is None or inst.state != "ready" or app.state.shutdown is None:
             raise HTTPException(409, "Новая версия ещё не готова.")

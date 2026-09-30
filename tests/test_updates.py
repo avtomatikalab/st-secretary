@@ -252,3 +252,92 @@ def test_health_reports_version_for_restart_wait(tmp_path, web):
     _, client = web(tmp_path)
     assert client.get("/health").json()["version"] == __version__
     assert Path(updates.__file__).name == "updates.py"
+
+
+# ------------------------------------------------------------------ три системы: Windows, macOS, Linux
+
+
+def test_asset_for_each_system():
+    assert updates.asset_suffix("win32", "AMD64") == "-windows.zip"
+    assert updates.asset_suffix("darwin", "arm64") == "-macos-arm64.tar.gz"
+    assert updates.asset_suffix("darwin", "x86_64") == "-macos-x86_64.tar.gz"
+    assert updates.asset_suffix("linux", "x86_64") == "-linux-x86_64.tar.gz"
+    assert updates.asset_suffix("linux", "aarch64") is None  # сборки нет — только ссылка на выпуск
+    data = api_answer("v9.0.0")
+    data["assets"].append({"name": "st-secretary-9.0.0-macos-arm64.tar.gz", "size": 7, "digest": "sha256:" + "b" * 64,
+                           "browser_download_url": f"{DOWNLOADS}v9.0.0/st-secretary-9.0.0-macos-arm64.tar.gz"})
+    mac = updates.from_api(data, "-macos-arm64.tar.gz")
+    assert mac.asset_url.endswith("macos-arm64.tar.gz") and mac.sha256 == "b" * 64 and mac.installable
+    assert updates.from_api(data, "-windows.zip").asset_url.endswith("windows.zip")
+    assert not updates.from_api(data, "-linux-x86_64.tar.gz").installable
+
+
+def test_portable_root_on_macos_and_linux(tmp_path):
+    exe = tmp_path / "СТ-Секретарь" / "program" / "python" / "bin" / "python3"
+    assert updates.portable_root(str(exe), {"ST_PORTABLE": "1"}) == tmp_path / "СТ-Секретарь"
+    assert updates.portable_root(str(tmp_path / ".venv" / "bin" / "python3"), {"ST_PORTABLE": "1"}) is None
+
+
+def unix_tar(version: str, extra=None) -> bytes:
+    import tarfile
+
+    buf = io.BytesIO()
+    top = "СТ-Секретарь"
+
+    def add(name, data=b"", mode=0o644, kind=tarfile.REGTYPE, link=""):
+        ti = tarfile.TarInfo(f"{top}/{name}")
+        ti.mode, ti.type, ti.linkname, ti.size = mode, kind, link, len(data)
+        t.addfile(ti, io.BytesIO(data) if kind == tarfile.REGTYPE else None)
+
+    with tarfile.open(fileobj=buf, mode="w:gz") as t:
+        add("program/python/bin/python3.12", b"\x7fELF", 0o755)
+        add("program/python/bin/python3", kind=tarfile.SYMTYPE, link="python3.12")
+        add("program/python/lib/python3.12/site-packages/st_secretary/__init__.py",
+            f'__version__ = "{version}"\n'.encode())
+        add("СТ-Секретарь.command", b"#!/bin/bash\necho new\n", 0o755)
+        add("Прочтите меня.txt", "новая версия".encode())
+        for args in extra or []:
+            add(*args)
+    return buf.getvalue()
+
+
+def test_unpack_tar_for_macos_and_linux(tmp_path):
+    import os
+    import sys
+
+    root = tmp_path / "СТ-Секретарь"
+    root.mkdir()
+    (root / "СТ-Секретарь.command").write_bytes(b"#!/bin/bash\necho old\n")
+    archive = tmp_path / "new.tar.gz"
+    archive.write_bytes(unix_tar("9.0.0"))
+    new = updates.unpack(archive, root, "9.0.0")
+    assert (new / "python" / "bin" / "python3").exists() and updates._version_in(new) == "9.0.0"
+    assert (root / "Прочтите меня.txt").read_text(encoding="utf-8") == "новая версия"
+    assert (root / "СТ-Секретарь.command").read_bytes() == b"#!/bin/bash\necho old\n"  # файл запуска не трогаем
+    assert sorted(p.name for p in root.iterdir()) == ["program.new", "Прочтите меня.txt", "СТ-Секретарь.command"]
+    if not sys.platform.startswith("win"):  # права на запуск и ссылка python3 → python3.12 сохранились
+        assert os.access(new / "python" / "bin" / "python3.12", os.X_OK)
+        assert (new / "python" / "bin" / "python3").is_symlink()
+
+
+def test_unpack_tar_refuses_links_outside(tmp_path):
+    import tarfile
+
+    root = tmp_path / "top"
+    root.mkdir()
+    archive = tmp_path / "bad.tar.gz"
+    archive.write_bytes(unix_tar("9.0.0", [("program/evil", b"", 0o644, tarfile.SYMTYPE, "../../../../etc/passwd")]))
+    with pytest.raises(UpdateError, match="странный путь"):
+        updates.unpack(archive, root, "9.0.0")
+    assert list(root.iterdir()) == []
+    archive.write_bytes(b"not an archive")
+    with pytest.raises(UpdateError, match="не архив"):
+        updates.unpack(archive, root, "9.0.0")
+
+
+def test_texts_follow_system():
+    from st_secretary import system
+
+    assert system.launcher("win32") == "СТ-Секретарь.bat" and system.console("win32") == "чёрное окно"
+    assert system.launcher("darwin") == "СТ-Секретарь.command" and system.console("darwin") == "окно Терминала"
+    assert system.launcher("linux") == "СТ-Секретарь.sh" and system.console("linux") == "окно терминала"

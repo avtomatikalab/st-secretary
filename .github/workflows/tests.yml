@@ -1,5 +1,4 @@
-# Тесты на Windows (переносная версия, ноутбуки секретариата) и macOS (разработка на MacBook) после каждой
-# отправки на GitHub. Реальных данных здесь нет: тесты — на выдуманных и обезличенных.
+# Тесты на Windows, macOS и Linux после каждой отправки на GitHub — программа должна работать на всех трёх. Реальных данных здесь нет: тесты — на выдуманных и обезличенных.
 name: Тесты
 
 on:
@@ -13,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
       UV_PYTHON: "3.12"
@@ -27,3 +26,23 @@ jobs:
         run: uv run --frozen pytest -q -p no:warnings
       - name: Проверка стиля
         run: uv run --frozen ruff check src tests tools
+
+  # Переносная версия: сборка для системы runner'а и полная проверка — распаковка, обновление через program.new,
+  # запуск файлом .bat/.command/.sh, страницы, «Выключить»; на macOS и Linux — ещё установка через install.sh.
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: "3.12"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Сборка
+        run: uv run --frozen python tools/build_portable.py build --target native
+      - name: Проверка архива
+        shell: bash
+        run: uv run --frozen python tools/check_portable.py build/st-secretary-windows.zip build/st-secretary-macos-*.tar.gz build/st-secretary-linux-*.tar.gz

@@ -1,5 +1,6 @@
 @echo off
-rem ST-Secretary launcher: double-click to open the program in the browser.
+rem ST-Secretary launcher FROM SOURCE (for developers, needs uv). Secretaries and judges use the ready
+rem program instead: https://github.com/avtomatikalab/st-secretary/releases/latest
 rem Competitions are stored in the "данные" folder next to this file.
 rem This file is saved in CP866 (the Russian Windows console code page) so that messages display correctly.
 rem The window never closes by itself: it is the program; the user stops it with the "Выключить" button or closes it.
@@ -17,10 +18,14 @@ if errorlevel 1 (
     set "UV=%USERPROFILE%\.local\bin\uv.exe"
   ) else (
     echo.
-    echo Не найдена программа uv, через которую запускается СТ-Секретарь.
-    echo Установите её один раз по инструкции: https://docs.astral.sh/uv/getting-started/installation/
-    echo и снова запустите этот файл.
+    echo Это исходный код СТ-Секретаря - он для разработчиков, ему нужна программа uv.
     echo.
+    echo Секретарям и судьям нужна готовая программа: в ней уже всё есть, ничего устанавливать
+    echo не нужно - ни Python, ни PowerShell, ни uv. Открываю страницу, где её скачать:
+    echo https://github.com/avtomatikalab/st-secretary/releases/latest
+    echo Скачайте st-secretary-windows.zip, распакуйте и запустите СТ-Секретарь.bat из распакованной папки.
+    echo.
+    start "" "https://github.com/avtomatikalab/st-secretary/releases/latest"
     pause
     exit /b 1
   )

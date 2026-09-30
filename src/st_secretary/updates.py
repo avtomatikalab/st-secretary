@@ -5,15 +5,16 @@
 ничего не показывается, работе это не мешает. Отключить: st-secretary web --no-update-check (или переменная
 окружения ST_NO_UPDATE_CHECK=1).
 
-Переносная версия (запуск через «СТ-Секретарь.bat») обновляется кнопкой на главной странице:
+Переносная версия (файл запуска «СТ-Секретарь.bat» в Windows, «СТ-Секретарь.command» в macOS,
+«СТ-Секретарь.sh» в Linux) обновляется кнопкой на главной странице:
 1. резервная копия соревнований, где что-то менялось с прошлой копии (backup.auto);
-2. архив выпуска скачивается только с github.com/avtomatikalab/st-secretary и сверяется с контрольной суммой
-   sha256, которую GitHub публикует для каждого файла выпуска; не совпала — ничего не ставится;
+2. архив выпуска для своей системы скачивается только с github.com/avtomatikalab/st-secretary и сверяется с
+   контрольной суммой sha256, которую GitHub публикует для каждого файла выпуска; не совпала — ничего не ставится;
 3. папка program из архива распаковывается рядом как program.new, в ней проверяется номер версии;
-4. программа выключается с кодом RESTART, «СТ-Секретарь.bat» переименовывает program → program.old и
+4. программа выключается с кодом RESTART, файл запуска переименовывает program → program.old и
    program.new → program и запускает новую версию; открытая страница сама переходит на неё.
 Данные (папки «данные», «Резервные копии») обновление не трогает. Прежняя версия остаётся в program.old — откат
-вручную (см. «Прочтите меня»). Сам «СТ-Секретарь.bat» обновление не меняет: его читает работающая консоль.
+вручную (см. «Прочтите меня»). Сам файл запуска обновление не меняет: его построчно читает работающая консоль.
 Если программа запущена из исходников (git), предлагается только ссылка на выпуск.
 """
 
@@ -23,9 +24,11 @@ import hashlib
 import json
 import logging
 import os
+import platform
 import re
 import shutil
 import sys
+import tarfile
 import threading
 import urllib.request
 import zipfile
@@ -42,8 +45,16 @@ REPO = "avtomatikalab/st-secretary"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 DOWNLOADS = f"https://github.com/{REPO}/releases/download/"  # архив скачивается только отсюда
-ASSET_SUFFIX = "-windows.zip"  # архив переносной версии среди файлов выпуска
-RESTART = 75  # код выхода «перезапустить»: «СТ-Секретарь.bat» ставит program.new и запускает программу снова
+# архивы переносной версии среди файлов выпуска: (система, процессор) → конец имени файла
+ASSETS = {
+    ("win32", "x86_64"): "-windows.zip",
+    ("win32", "arm64"): "-windows.zip",  # Windows на ARM запускает x86_64 сам
+    ("darwin", "arm64"): "-macos-arm64.tar.gz",
+    ("darwin", "x86_64"): "-macos-x86_64.tar.gz",
+    ("linux", "x86_64"): "-linux-x86_64.tar.gz",
+}
+LAUNCHERS = (".bat", ".cmd", ".exe", ".command", ".sh")  # файлы запуска обновление не трогает
+RESTART = 75  # код выхода «перезапустить»: файл запуска ставит program.new и запускает программу снова
 TIMEOUT = 5  # секунд на ответ GitHub при проверке
 
 
@@ -71,7 +82,7 @@ class Release:
     page: str  # страница выпуска на GitHub
     notes: str = ""  # что нового — текст выпуска
     published: datetime | None = None
-    asset_url: str = ""  # архив переносной версии для Windows
+    asset_url: str = ""  # архив переносной версии для этой системы
     asset_size: int = 0
     sha256: str = ""  # контрольная сумма архива, которую публикует GitHub
 
@@ -81,8 +92,17 @@ class Release:
         return self.asset_url.startswith(DOWNLOADS) and bool(re.fullmatch(r"[0-9a-f]{64}", self.sha256))
 
 
-def from_api(data: dict) -> Release | None:
-    """Ответ GitHub (releases/latest) → Release; черновики и предварительные выпуски не предлагаются."""
+def asset_suffix(system: str = sys.platform, machine: str = platform.machine()) -> str | None:
+    """Конец имени архива для этой системы; None — готового архива для неё нет (только из исходников)."""
+    system = "win32" if system.startswith("win") else "linux" if system.startswith("linux") else system
+    arch = {"amd64": "x86_64", "x64": "x86_64", "aarch64": "arm64"}.get(machine.lower(), machine.lower())
+    return ASSETS.get((system, arch))
+
+
+def from_api(data: dict, suffix: str | None = None) -> Release | None:
+    """Ответ GitHub (releases/latest) → Release с архивом для этой системы (suffix — для другой);
+    черновики и предварительные выпуски не предлагаются."""
+    suffix = suffix or asset_suffix()
     if data.get("draft") or data.get("prerelease"):
         return None
     version = str(data.get("tag_name") or "").removeprefix("v")
@@ -94,7 +114,7 @@ def from_api(data: dict) -> Release | None:
     except (KeyError, ValueError):
         pass
     for a in data.get("assets") or []:
-        if str(a.get("name", "")).endswith(ASSET_SUFFIX):
+        if suffix and str(a.get("name", "")).endswith(suffix):
             digest = str(a.get("digest") or "")
             rel.asset_url = str(a.get("browser_download_url") or "")
             rel.asset_size = int(a.get("size") or 0)
@@ -125,13 +145,16 @@ def check(current: str = __version__, **kw) -> Release | None:
 
 
 def portable_root(executable: str = sys.executable, env=os.environ) -> Path | None:
-    """Папка переносной версии (где «СТ-Секретарь.bat»), если программа запущена из неё; иначе None."""
+    """Папка переносной версии (где файл запуска), если программа запущена из неё; иначе None.
+    Python в ней: program/python/python.exe (Windows) или program/python/bin/python3 (macOS, Linux)."""
     if not env.get("ST_PORTABLE"):
         return None
-    exe = Path(executable).resolve()
-    if exe.parent.name.lower() != "python" or exe.parent.parent.name.lower() != "program":
+    py = Path(os.path.abspath(executable)).parent  # без resolve: в macOS и Linux python3 — ссылка
+    if py.name.lower() == "bin":
+        py = py.parent
+    if py.name.lower() != "python" or py.parent.name.lower() != "program":
         return None
-    return exe.parents[2]
+    return py.parent.parent
 
 
 # ------------------------------------------------------------------ установка (переносная версия)
@@ -161,51 +184,67 @@ def download(rel: Release, dest: Path, progress: Callable[[int, int], None] | No
     return dest
 
 
+def _python_in(program: Path) -> Path | None:
+    for exe in (program / "python" / "python.exe", program / "python" / "bin" / "python3"):
+        if exe.is_file():
+            return exe
+    return None
+
+
 def _version_in(program: Path) -> str:
-    init = program / "python" / "Lib" / "site-packages" / "st_secretary" / "__init__.py"
-    m = re.search(r'__version__\s*=\s*"([^"]+)"', init.read_text(encoding="utf-8")) if init.is_file() else None
-    return m.group(1) if m else ""
+    """Номер версии программы в папке program (Windows: python/Lib/…, macOS и Linux: python/lib/python3.X/…)."""
+    for init in [program / "python" / "Lib" / "site-packages" / "st_secretary" / "__init__.py",
+                 *(program / "python" / "lib").glob("python3*/site-packages/st_secretary/__init__.py")]:
+        if init.is_file():
+            m = re.search(r'__version__\s*=\s*"([^"]+)"', init.read_text(encoding="utf-8"))
+            return m.group(1) if m else ""
+    return ""
+
+
+def _extract(archive: Path, dest: Path) -> None:
+    """Весь архив (.zip или .tar.gz) → dest; пути и ссылки — только внутрь dest, иначе UpdateError."""
+    if zipfile.is_zipfile(archive):
+        with zipfile.ZipFile(archive) as z:
+            for info in z.infolist():
+                parts = info.filename.rstrip("/").split("/")
+                if any(p in ("", ".", "..") or ":" in p or "\\" in p for p in parts):
+                    raise UpdateError(f"в архиве странный путь «{info.filename}» — ничего не поставлено")
+            z.extractall(dest)
+    elif tarfile.is_tarfile(archive):
+        with tarfile.open(archive) as t:
+            try:
+                t.extractall(dest, filter="data")  # права на запуск сохраняются, ссылки наружу — запрещены
+            except tarfile.FilterError as e:
+                raise UpdateError(f"в архиве странный путь «{e.tarinfo.name}» — ничего не поставлено") from e
+    else:
+        raise UpdateError("скачанный файл — не архив программы")
 
 
 def unpack(archive: Path, root: Path, version: str) -> Path:
-    """Папка program из архива → root/program.new (её «СТ-Секретарь.bat» поставит при перезапуске); рядом —
-    новые «Прочтите меня», инструкция и лицензия. Файл запуска (.bat) не трогается."""
-    part, new = root / "program.new.part", root / "program.new"
-    for d in (part, new):
+    """Папка program из архива → root/program.new (её поставит файл запуска при перезапуске); рядом — новые
+    «Прочтите меня», инструкция и лицензия. Файл запуска не трогается: его читает работающая консоль."""
+    tmp, new = root / "program.update.tmp", root / "program.new"
+    for d in (tmp, new):
         if d.exists():
             shutil.rmtree(d)
-    docs: list[tuple[zipfile.ZipInfo, Path]] = []
     try:
-        with zipfile.ZipFile(archive) as z:
-            files = [i for i in z.infolist() if not i.is_dir()]
-            tops = {i.filename.split("/", 1)[0] for i in files}
-            if len(tops) != 1:
-                raise UpdateError("в архиве не одна папка программы — это не архив СТ-Секретаря")
-            top = tops.pop() + "/"
-            for info in files:
-                parts = info.filename[len(top):].split("/")
-                if any(p in ("", ".", "..") or ":" in p or "\\" in p for p in parts):
-                    raise UpdateError(f"в архиве странный путь «{info.filename}» — ничего не поставлено")
-                if parts[0] == "program" and len(parts) > 1:
-                    target = part.joinpath(*parts[1:])
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with z.open(info) as src, target.open("wb") as out:
-                        shutil.copyfileobj(src, out)
-                elif len(parts) == 1 and not parts[0].lower().endswith((".bat", ".cmd", ".exe")):
-                    docs.append((info, root / parts[0]))
-            found = _version_in(part)
-            if not (part / "python" / "python.exe").is_file() or found != version:
-                raise UpdateError(f"в архиве не та версия программы ({found or 'не найдена'} вместо {version})")
-            part.rename(new)
-            for info, target in docs:  # инструкция может быть открыта — тогда останется прежняя
+        _extract(archive, tmp)
+        tops = list(tmp.iterdir())
+        if len(tops) != 1 or not tops[0].is_dir():
+            raise UpdateError("в архиве не одна папка программы — это не архив СТ-Секретаря")
+        program = tops[0] / "program"
+        found = _version_in(program)
+        if _python_in(program) is None or found != version:
+            raise UpdateError(f"в архиве не та версия программы ({found or 'не найдена'} вместо {version})")
+        program.rename(new)
+        for f in tops[0].iterdir():  # инструкция может быть открыта — тогда останется прежняя
+            if f.is_file() and not f.name.lower().endswith(LAUNCHERS):
                 try:
-                    with z.open(info) as src, target.open("wb") as out:
-                        shutil.copyfileobj(src, out)
+                    shutil.copyfile(f, root / f.name)
                 except OSError as e:
-                    log.warning("Не обновлён %s: %s", target.name, e)
+                    log.warning("Не обновлён %s: %s", f.name, e)
     finally:
-        if part.exists():
-            shutil.rmtree(part, ignore_errors=True)
+        shutil.rmtree(tmp, ignore_errors=True)
     return new
 
 
@@ -239,7 +278,7 @@ class Installer:
         self.done, self.total = done, total
 
     def _run(self, rel: Release, before, opener) -> None:
-        archive = self.root / "program.new.zip"
+        archive = self.root / ("program.new" + (".tar.gz" if rel.asset_url.endswith(".tar.gz") else ".zip"))
         try:
             if before:
                 before()

@@ -350,8 +350,8 @@
         setTimeout(function () { waitNew(started); }, 1000);
       }).catch(function () {
         if (Date.now() - started > 90000) {
-          text.textContent = "Программа долго не отвечает. Посмотрите чёрное окно: если оно закрылось — дважды " +
-                             "щёлкните «СТ-Секретарь.bat».";
+          text.textContent = "Программа долго не отвечает. Посмотрите " + upd.dataset.console + ": если оно " +
+                             "закрылось — запустите «" + upd.dataset.launcher + "» снова.";
         }
         setTimeout(function () { waitNew(started); }, 1000);
       });
@@ -362,7 +362,7 @@
         if (s.state === "download" && s.total) {
           bar.style.width = Math.min(100, Math.round(100 * s.done / s.total)) + "%";
           text.textContent = "Скачано " + (s.done / 1048576).toFixed(1) + " из " + (s.total / 1048576).toFixed(1) +
-                             " МБ. Не закрывайте чёрное окно программы.";
+                             " МБ. Не закрывайте " + upd.dataset.console + " программы.";
         } else if (s.state === "unpack") {
           bar.style.width = "100%";
         } else if (s.state === "ready") {

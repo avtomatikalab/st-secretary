@@ -239,7 +239,7 @@ def cmd_web(a) -> int:
         data = Path(a.data).resolve()
         data.mkdir(parents=True, exist_ok=True)
         port = _free_port(a.port)
-        # после обновления программу перезапускает «СТ-Секретарь.bat»: страница в браузере уже открыта и сама
+        # после обновления программу перезапускает файл запуска (.bat, .command, .sh): страница в браузере уже открыта и сама
         # перейдёт на новую версию — второй вкладки не нужно (если порт тот же)
         no_browser = a.no_browser or (bool(os.environ.get("ST_NO_BROWSER")) and port == a.port)
         url = f"http://{HOST}:{port}/"

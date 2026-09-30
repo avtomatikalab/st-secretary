@@ -7,9 +7,12 @@
 - Python 3.12 и uv. Библиотеки: `uv sync --extra xls` (группа dev — pytest, ruff).
 - Запуск: `uv run st-secretary web` → http://127.0.0.1:8765 (на другом порту: `--port 8766 --no-browser`).
 - Перед каждым коммитом: `uv run pytest -q` и `uv run ruff check src tests tools`.
-- На GitHub тесты идут сами после каждой отправки в main — на Windows и macOS (`.github/workflows/tests.yml`);
+- На GitHub тесты идут сами после каждой отправки в main — на Windows, macOS и Linux (`.github/workflows/tests.yml`);
   результат: `gh run list --limit 3`.
-- Переносная версия для Windows: `uv run python tools/build_portable.py` → `dist/`. Инструкция секретаря со
+- Программа должна работать на Windows, macOS и Linux (тесты и проверка архивов — на всех трёх в CI).
+- Переносные версии для всех систем: `uv run python tools/build_portable.py` → `dist/` (имена файлов без версии —
+  постоянные ссылки «Скачать» в README); проверить архив на его системе: `uv run python tools/check_portable.py
+  dist/<архив>`. Установка на macOS/Linux одной командой — `tools/install.sh`. Инструкция секретаря со
   снимками экрана: `uv run --with websocket-client python tools/make_manual.py` (нужен Chrome или Edge; PDF
   делает Word — только на Windows).
 

@@ -18,7 +18,7 @@
   </div>
   {% if can_stop and not stopped %}
   <form method="post" action="/shutdown" class="topbar-off"
-        data-confirm="Выключить СТ-Секретарь? Всё уже сохранено. Страница перестанет открываться, пока вы снова не запустите «СТ-Секретарь.bat».">
+        data-confirm="Выключить СТ-Секретарь? Всё уже сохранено. Страница перестанет открываться, пока вы снова не запустите «{{ launcher }}».">
     <button class="btn btn-ghost btn-small" type="submit" title="Остановить программу на этом компьютере">{{ icon("power", 18) }}<span>Выключить</span></button>
   </form>
   {% endif %}
