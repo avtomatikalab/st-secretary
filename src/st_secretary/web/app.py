@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException
 from st_secretary import __version__, system, updates
 from st_secretary.competition import LEVEL_LABELS, RESULT_KINDS, UNIT_KINDS
 from st_secretary.importers.card_xlsx import CardError
+from st_secretary.importers.preapp_xlsx import row_place
 from st_secretary.issues import CHECKED, ERROR, FIXED, INFO, SEVERITY_LABEL, WARNING, Issue
 from st_secretary.textclean import from_years
 from st_secretary.web.common import (
@@ -78,6 +79,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     templates.env.filters["d"] = _fmt_date
     templates.env.filters["from_years"] = from_years
     templates.env.filters["team_anchor"] = team_anchor
+    templates.env.filters["row_place"] = row_place  # «строка 12» или «лист 2, строка 12»
     # Метка для адресов стилей и скриптов: меняется вместе с файлами, чтобы браузер не держал старую версию.
     static_version = f"{__version__}-{max(int(p.stat().st_mtime) for p in (HERE / 'static').iterdir())}"
     templates.env.globals.update(steps=STEPS, step_url=_step_url, version=static_version, app_version=__version__,

@@ -8,7 +8,7 @@
   {% elif check and i.severity == WARNING %}<button type="button" class="badge badge-{{ i.severity }} badge-link" data-to-check title="К кнопке «Проверено»">{{ labels[i.severity] }}</button>
   {% else %}<span class="badge badge-{{ i.severity }}">{% if i.severity == CHECKED %}{{ icon("check", 13) }} {% endif %}{{ labels[i.severity] }}</span>{% endif %}
   <div class="issue-body">
-    <div class="issue-what">{% if show_person and i.person %}<b>{{ i.person }}</b> — {% endif %}{{ i.text }}{% if i.row %} <span class="issue-where">строка {{ i.row }} в файле</span>{% endif %}</div>
+    <div class="issue-what">{% if show_person and i.person %}<b>{{ i.person }}</b> — {% endif %}{{ i.text }}{% if i.row %} <span class="issue-where">{{ i.row|row_place }} в файле</span>{% endif %}</div>
     {% if i.after %}<div class="change">было: <del>{{ i.before or "пусто" }}</del> → стало: <ins>{{ i.after }}</ins></div>
     {% elif i.before and i.before not in i.text %}<div class="change">в заявке: «{{ i.before }}»</div>{% endif %}
     {% if i.severity != CHECKED %}

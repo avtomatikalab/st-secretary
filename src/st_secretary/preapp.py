@@ -126,6 +126,8 @@ def process(apps: list[RawApplication], comp: Competition) -> PreappResult:
                                     todo="Попросите команду прислать заявку по бланку или заполните её в программе "
                                          "(кнопка «Исправить заявку» откроет пустую форму для этого файла)."))
             continue
+        for text, why in getattr(app, "notes", []):  # прочитано не всё (лист без таблицы по бланку) — не молчать
+            issues.append(Issue(WARNING, text, source=src, why=why))
         if not app.rows:
             issues.append(Issue(ERROR, "в заявке нет ни одного участника", source=src,
                                 why="В таблице участников не заполнена ни одна строка в колонке «Фамилия, имя».",

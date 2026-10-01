@@ -165,3 +165,58 @@ def test_cli_end_to_end(tmp_path, psr_card, capsys):
     assert "Заявок: 2, команд: 2, участников: 6" in out
     assert (tmp_path / "s.xlsx").exists()
     assert main(["card-check", str(card)]) == 0
+
+
+ROWS_2 = [["Сталактит", "Энск", "Пещерин Олег Петрович", "Сводов Артём", "12.03.2009", "II", "м", "ЮН", None, None,
+           None, None, None, 1],
+          ["Сталактит", "Энск", "Пещерин Олег Петрович", "Гротова Вера", "05.07.2010", "III", "ж", "ЮН", None, None,
+           None, None, None, 1]]
+ROWS_3 = [["Сталактит", "Энск", "Пещерин Олег Петрович", "Колодцев Иван", "21.01.2006", "I", "м", "ЮН", 3, None,
+           None, None, None, 1],
+          ["Сталактит", "Энск", "Пещерин Олег Петрович", "Натёкова Лиза", "30.09.2007", "II", "ж", "ЮН", None, None,
+           None, None, None, 1]]
+
+
+def _check_two_sheets(app):
+    assert not app.problems and not app.notes and app.sheets == ["2 КЛАСС", "3 КЛАСС"]
+    assert [str(r.values["fio"]) for r in app.rows] == ["Сводов Артём", "Гротова Вера", "Колодцев Иван",
+                                                        "Натёкова Лиза"]
+    # класс не вписан — из названия листа; вписан — как вписан; строки второго листа — «лист 2, строка …»
+    assert [str(r.values["cls"]).split(".")[0] for r in app.rows] == ["2", "2", "3", "3"]
+    assert app.rows[0].row < 1000 <= app.rows[2].row and app.team == "Сталактит"
+
+
+def test_application_on_several_sheets_reads_all_of_them(tmp_path):
+    """Правки, п. 29: бланк делегации спелео — по листу на класс; читаются все листы с таблицей участников."""
+    from conftest import make_class_sheets_application
+
+    from st_secretary.importers.preapp_xlsx import row_place
+
+    path = make_class_sheets_application(tmp_path / "Сталактит.xlsx", {"2 КЛАСС": ROWS_2, "3 КЛАСС": ROWS_3})
+    _check_two_sheets(read_preapplication(path))
+    assert row_place(1010) == "лист 2, строка 10" and row_place(10) == "строка 10"
+
+
+def test_application_on_several_sheets_xls(tmp_path):
+    """То же для .xls (как присылают на самом деле): выдуманная делегация, 2 + 2 участника."""
+    import pytest
+
+    pytest.importorskip("xlrd")
+    from pathlib import Path
+
+    _check_two_sheets(read_preapplication(Path(__file__).parent / "fixtures" / "class_sheets_application.xls"))
+
+
+def test_sheet_without_table_is_reported_not_skipped_silently(tmp_path, psr_card):
+    from conftest import make_class_sheets_application
+
+    path = make_class_sheets_application(tmp_path / "Сталактит.xlsx", {"2 КЛАСС": ROWS_2})
+    wb = load_workbook(path)
+    ws = wb.create_sheet("Ещё участники")
+    for r in (["Натёкова Лиза", "30.09.2007", "II"], ["Колодцев Иван", "21.01.2006", "I"]):
+        ws.append(r)
+    wb.save(path)
+    app = read_preapplication(path)
+    assert len(app.rows) == 2 and app.notes and "лист «Ещё участники» не прочитан" in app.notes[0][0]
+    result = process([app], psr_card)
+    assert any(i.severity == WARNING and "Ещё участники" in i.text for i in result.issues)

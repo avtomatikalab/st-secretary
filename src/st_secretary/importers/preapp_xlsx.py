@@ -10,6 +10,7 @@ A–O те же, что на листе «Заявка» книги СЕКРЕТ
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -56,83 +57,122 @@ class RawApplication:
     declared_count: object = None
     rows: list[RawRow] = field(default_factory=list)
     problems: list[tuple[str, str]] = field(default_factory=list)  # (что не так, почему) — файл не прочитан как бланк
+    notes: list[tuple[str, str]] = field(default_factory=list)  # (что не так, почему) — прочитан, но не всё
+    sheets: list[str] = field(default_factory=list)  # листы с таблицей участников, по порядку
 
 
-def _grid(path: Path) -> list[list[object]]:
-    """Лист «Заявка» (или первый) как список строк значений."""
+SHEET_ROWS = 1000  # строка участника на втором листе — 1000 + номер строки, на третьем — 2000 + … (Правки, п. 29)
+
+
+def row_place(row: int) -> str:
+    """«строка 12» или «лист 2, строка 12» — где в файле строка участника."""
+    return f"лист {row // SHEET_ROWS + 1}, строка {row % SHEET_ROWS}" if row >= SHEET_ROWS else f"строка {row}"
+
+
+def _grids(path: Path) -> list[tuple[str, list[list[object]]]]:
+    """Все листы книги: [(название, строки значений)] — заявка может быть на нескольких листах (по классам)."""
     if path.suffix.lower() == ".xls":
         import xlrd  # необязательная зависимость
 
         book = xlrd.open_workbook(str(path))
-        names = book.sheet_names()
-        sh = book.sheet_by_name("Заявка") if "Заявка" in names else book.sheet_by_index(0)
-        grid = []
-        for r in range(sh.nrows):
-            row = []
-            for c in range(sh.ncols):
-                cell = sh.cell(r, c)
-                v = cell.value
-                if cell.ctype == xlrd.XL_CELL_DATE:
-                    v = xlrd.xldate.xldate_as_datetime(v, book.datemode)
-                row.append(v)
-            grid.append(row)
-        return grid
+        out = []
+        for sh in book.sheets():
+            grid = []
+            for r in range(sh.nrows):
+                row = []
+                for c in range(sh.ncols):
+                    cell = sh.cell(r, c)
+                    v = cell.value
+                    if cell.ctype == xlrd.XL_CELL_DATE:
+                        v = xlrd.xldate.xldate_as_datetime(v, book.datemode)
+                    row.append(v)
+                grid.append(row)
+            out.append((sh.name, grid))
+        return out
     from openpyxl import load_workbook
 
     wb = load_workbook(path, data_only=True, read_only=True)
-    ws = wb["Заявка"] if "Заявка" in wb.sheetnames else wb.worksheets[0]
-    grid = [list(r) for r in ws.iter_rows(values_only=True)]
+    out = [(ws.title, [list(r) for r in ws.iter_rows(values_only=True)]) for ws in wb.worksheets]
     wb.close()
-    return grid
+    return out
+
+
+_CLASS_IN_NAME = re.compile(r"(\d)\s*[- ]?\s*(?:кл|класс)", re.IGNORECASE)
 
 
 def read_preapplication(path: str | Path) -> RawApplication:
+    """Заявка из всех листов книги, где есть таблица участников по бланку (по листу на класс — тоже)."""
     path = Path(path)
     app = RawApplication(path)
     try:
-        grid = _grid(path)
+        grids = _grids(path)
     except Exception as e:  # noqa: BLE001 — любой нечитаемый файл должен попасть в отчёт, а не уронить обработку
         app.problems.append((f"файл не открывается: {e}",
                              "Файл повреждён, защищён паролем или это не таблица Excel."))
         return app
+    tables = [(name, grid, head) for name, grid in grids if (head := _table_head(grid)) is not None]
+    if not tables:
+        app.problems.append(("не найдена таблица участников (строка заголовков «№ п/п … Фамилия, имя»)",
+                             f"Похоже, заявка заполнена не по бланку. {BLANK_HOW}"))
+        return app
+    many = len(grids) > 1
+    for name, grid, head in tables:
+        for c, expected in COLUMNS.values():
+            got = clean_spaces(grid[head][c] if c < len(grid[head]) else None)
+            if expected and not got.startswith(expected):
+                app.problems.append((("лист «" + name + "», " if many else "") + f"колонка {chr(65 + c)}: ожидался "
+                                     f"заголовок «{expected}…», а в файле «{got}» — бланк изменён",
+                                     "Колонки бланка сдвинуты или переименованы. Если читать такой файл, данные "
+                                     "попадут не в те графы — поэтому программа его не обрабатывает."))
+    if app.problems:
+        return app
+    for name, grid in grids:  # лист с данными, но без таблицы по бланку — сказать, а не молчать
+        if not any(n == name for n, _, _ in tables) and \
+                sum(1 for row in grid if sum(1 for v in row if clean_spaces(v)) >= 3) >= 2:
+            app.notes.append((f"лист «{name}» не прочитан: на нём нет таблицы участников по бланку",
+                              "Если на этом листе участники — перенесите их в таблицу бланка (на любой лист с шапкой "
+                              "«№ п/п … Фамилия, имя») или впишите в программе. Если это справочный лист — ничего "
+                              "делать не нужно."))
+    for idx, (name, grid, head) in enumerate(tables):
+        app.sheets.append(name)
+        _read_sheet(app, name, grid, head, idx * SHEET_ROWS)
+    return app
 
+
+def _table_head(grid: list[list[object]]) -> int | None:
+    def cell(r, c):
+        return grid[r][c] if r < len(grid) and c < len(grid[r]) else None
+
+    return next((r for r in range(min(len(grid), 25)) if clean_spaces(cell(r, 0)).startswith("№")
+                 and clean_spaces(cell(r, 4)).startswith("Фамилия")), None)
+
+
+def _read_sheet(app: RawApplication, name: str, grid: list[list[object]], head: int, offset: int) -> None:
     def cell(r, c):
         return grid[r][c] if r < len(grid) and c < len(grid[r]) else None
 
     head_team = next((r for r in range(min(len(grid), 15)) if clean_spaces(cell(r, 1)) == "Команда"
                       and clean_spaces(cell(r, 2)).startswith("Территория")), None)
-    head = next((r for r in range(min(len(grid), 25)) if clean_spaces(cell(r, 0)).startswith("№")
-                 and clean_spaces(cell(r, 4)).startswith("Фамилия")), None)
-    if head is None:
-        app.problems.append(("не найдена таблица участников (строка заголовков «№ п/п … Фамилия, имя»)",
-                             f"Похоже, заявка заполнена не по бланку. {BLANK_HOW}"))
-        return app
-    for c, expected in COLUMNS.values():
-        if expected and not clean_spaces(cell(head, c)).startswith(expected):
-            app.problems.append((f"колонка {chr(65 + c)}: ожидался заголовок «{expected}…», "
-                                 f"а в файле «{clean_spaces(cell(head, c))}» — бланк изменён",
-                                 "Колонки бланка сдвинуты или переименованы. Если читать такой файл, данные попадут "
-                                 "не в те графы — поэтому программа его не обрабатывает."))
-    if app.problems:
-        return app
-    if head_team is not None and head_team + 1 < head:
-        r = head_team + 1
+    if head_team is not None and head_team + 1 < head and not (app.team or app.territory or app.representative):
+        r = head_team + 1  # шапка команды — с первого листа, где она заполнена
         app.team, app.territory, app.representative = (clean_spaces(cell(r, c)) for c in (1, 2, 3))
         app.contacts = clean_spaces(cell(r, 4))
         app.declared_count = cell(r, 5)
+    sheet_class = m.group(1) if (m := _CLASS_IN_NAME.search(name)) else ""
     # свои колонки справа от бланка (чип, размер футболки, питание…): читаются как есть и ничего не ломают
     width = max((len(row) for row in grid[head:]), default=0)
     own = {c: clean_spaces(cell(head, c)) for c in range(len(COLUMNS), width) if clean_spaces(cell(head, c))}
     for r in range(head + 1, len(grid)):
         first = clean_spaces(cell(r, 0))
-        if first.upper() == "ОБРАЗЕЦ" or first == "0":
+        if first.upper() == "ОБРАЗЕЦ" or first in ("0", "0.0"):
             continue  # строка «ОБРАЗЕЦ» и пример под ней
         values = {key: cell(r, c) for key, (c, _) in COLUMNS.items()}
         if not clean_spaces(values["fio"]):
             continue  # пустые строки бланка (№ проставлен заранее)
+        if not clean_spaces(values["cls"]) and sheet_class:
+            values["cls"] = sheet_class  # класс не вписан — из названия листа («3 КЛАСС»)
         extra = {h: cell(r, c) for c, h in own.items() if clean_spaces(cell(r, c))}
-        app.rows.append(RawRow(r + 1, values, extra))
-    return app
+        app.rows.append(RawRow(offset + r + 1, values, extra))
 
 
 # ------------------------------------------------------------------ запись
