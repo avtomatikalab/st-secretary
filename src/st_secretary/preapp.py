@@ -231,16 +231,8 @@ def _fix_territory_typo(value: str, comp: Competition, known: Counter, src: str,
 # ------------------------------------------------------------------ участник
 
 
-def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, all_group: bool,
-           issues: list[Issue]) -> Entry:
-    src = t.source
-    name = normalize_name(v["fio"])
-    who = name.full or clean_spaces(v["fio"])
-
-    def add(sev, text, fld="", before="", after="", why="", todo=""):
-        issues.append(Issue(sev, text, source=src, team=t.team, person=who, field=fld, before=before, after=after,
-                            why=why, todo=todo, row=row))
-
+def _check_name(name, v: dict, add) -> None:
+    """ФИО: что поправлено само (регистр, пробелы, буквы) и в чём сомнение."""
     for f in name.fixes:
         if f.startswith("дата"):
             continue
@@ -250,7 +242,9 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
             todo="Сверьте ФИО с документом участника или уточните у представителя и исправьте в заявке. "
                  "Если всё верно — ничего делать не нужно.")
 
-    # дата рождения
+
+def _check_birth(v: dict, name, comp: Competition, add):
+    """Дата рождения: перенос из ФИО, разбор, сомнения (возраст, «только год», день/месяц) → (разбор, год)."""
     raw_birth = v["birth"]
     if (raw_birth is None or clean_spaces(raw_birth) == "") and name.extracted_birth:
         raw_birth = name.extracted_birth
@@ -269,8 +263,11 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
         add(FIXED, f"дата «{clean_spaces(raw_birth)}» прочитана как день/месяц/год: {pd.value:%d.%m.%Y}",
             "Дата рождения", clean_spaces(raw_birth), f"{pd.value:%d.%m.%Y}")
     birth_year = pd.value.year if pd.value else pd.year_only
+    return pd, birth_year
 
-    # разряд
+
+def _check_qual(v: dict, add) -> Qual | None:
+    """Разряд: любое написание → Qual; не узнанный — ошибка (угадывать нельзя)."""
     qual = None
     try:
         qual = parse_qual(v["qual"])
@@ -282,8 +279,11 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
             why=f"Разряд записывают так: {QUAL_HOW} (понятны и «2 юн», «кмс», «1 разряд»). Это написание программа "
                 "не узнаёт, а угадывать нельзя — от разряда зависят допуск и ранг соревнований.",
             todo="Уточните разряд у представителя и выберите его из списка в заявке.")
+    return qual
 
-    # пол
+
+def _check_sex(v: dict, name, add) -> str | None:
+    """Пол: из колонки, иначе по отчеству; колонка и отчество расходятся — «проверить»."""
     sex = normalize_sex(v["sex"])
     by_patr = sex_from_patronymic(name.patronymic) if name.patronymic else None
     if sex is None and by_patr:
@@ -301,8 +301,11 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
             why=f"Отчество «{name.patronymic}» — {kind}, а в колонке «Пол» стоит «{sex}». Обычно это опечатка в колонке "
                 "«Пол»; реже — ошибка в отчестве. От пола зависит проверка состава команды.",
             todo=f"{ASK} и исправьте пол или отчество в заявке.")
+    return sex
 
-    # группа и класс → зачёт
+
+def _check_zachet(v: dict, comp: Competition, add) -> tuple[str, int | None, Zachet | None]:
+    """Группа и класс → зачёт карточки (единственный зачёт или класс подставляются сами) → (группа, класс, зачёт)."""
     group = clean_spaces(v["group"])
     cls = _to_int(v["cls"])
     if cls is None and clean_spaces(v["cls"]):
@@ -331,8 +334,11 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
                 "иначе его не будет ни в стартовом протоколе, ни в сводке для СЕКРЕТАРЬ_ST.",
             todo="Уточните у представителя, в каком зачёте выступает участник, и выберите зачёт в заявке. Если по "
                  "Положению такой зачёт есть, а в карточке его нет, — добавьте зачёт в карточку.")
+    return group, cls, zachet
 
-    # участие в дистанциях (колонки L–O)
+
+def _check_participation(v: dict, all_group: bool, add) -> tuple[str, str, str, str]:
+    """Участие в дистанциях (колонки L–O): личная, связка («см» — смешанная), номер связки, группа."""
     personal, pair, pair_num, team_dist = (clean_spaces(v[k]) for k in ("personal", "pair", "pair_num", "team_dist"))
     pair = pair_code(pair)
     if all_group and not team_dist:
@@ -344,7 +350,27 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
             why="В колонках «Участие в личной дистанции», «…в дистанции связок» и «…в дистанции-группа» нет ни "
                 "одной отметки — участник не попадёт ни в один стартовый протокол.",
             todo=f"{ASK} и отметьте дистанции в заявке.")
+    return personal, pair, pair_num, team_dist
 
+
+def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, all_group: bool,
+           issues: list[Issue]) -> Entry:
+    """Строка заявки → участник со всеми проверками строки (ФИО, дата рождения, разряд, пол, зачёт, участие,
+    допуск по Правилам); замечания — в issues."""
+    src = t.source
+    name = normalize_name(v["fio"])
+    who = name.full or clean_spaces(v["fio"])
+
+    def add(sev, text, fld="", before="", after="", why="", todo=""):
+        issues.append(Issue(sev, text, source=src, team=t.team, person=who, field=fld, before=before, after=after,
+                            why=why, todo=todo, row=row))
+
+    _check_name(name, v, add)
+    pd, birth_year = _check_birth(v, name, comp, add)
+    qual = _check_qual(v, add)
+    sex = _check_sex(v, name, add)
+    group, cls, zachet = _check_zachet(v, comp, add)
+    personal, pair, pair_num, team_dist = _check_participation(v, all_group, add)
     e = Entry(src, row, num, t.team, t.territory, t.representative, name, pd.value, birth_year, qual, sex,
               group, cls, clean_spaces(v["chip"]), personal, pair, pair_num, team_dist, zachet)
     _admission(e, comp, add)

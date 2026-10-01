@@ -293,8 +293,80 @@ def write_contracts(items: list[tuple[Path | None, dict[str, str]]], path: str |
 # ------------------------------------------------------------------ табель-наряд
 
 
+def _put(ws, r, c, v, bold=False, size=11, align=None, border=False, fill=None):
+    """Значение в клетку табеля с оформлением."""
+    cell = ws.cell(r, c, v)
+    cell.font = Font(bold=bold, size=size)
+    if align:
+        cell.alignment = align
+    if border:
+        cell.border = BOX
+    if fill:
+        cell.fill = fill
+    return cell
+
+
+def _tabel_head(ws, comp: Competition, customer: dict, c_ok: int, c_sum: int) -> None:
+    """Шапка табеля: название и даты слева, «УТВЕРЖДАЮ» руководителя заказчика — справа, на последние колонки."""
+    _put(ws, 1, 1, "ТАБЕЛЬ – НАРЯД", True, 14)
+    _put(ws, 2, 1, "на оплату судейской (комендантской) бригады")
+    _put(ws, 3, 1, f"{title_of(comp)} в спортивной дисциплине {disciplines_text(comp)}", True)
+    _put(ws, 4, 1, f"{comp.dates_text}, {comp.place}")
+    head_post = _cap(str(customer.get("head_post") or "директор"))
+    head_fio = str(customer.get("head_fio") or "")
+    approve = ["УТВЕРЖДАЮ:", f"{head_post} {customer.get('short') or customer.get('name') or ''}".strip(),
+               f"______________ {initials(head_fio, surname_first=False) if head_fio else ''}".rstrip(),
+               "«___» ______________ 20__ г."]
+    for r, text in enumerate(approve, start=1):
+        _put(ws, r, c_ok, text, r == 1, align=Alignment(horizontal="left", vertical="center"))
+        ws.merge_cells(start_row=r, start_column=c_ok, end_row=r, end_column=c_sum)
+
+
+def _tabel_columns(ws, r0: int, days: list, c_days: int, c_count: int, c_rate: int, c_sum: int) -> None:
+    """Две строки заголовков: человек, «Дни работы» с датами, дни, ставка, сумма."""
+    nd = len(days)
+    heads = ["№", "Фамилия, имя, отчество", "Должность", "Год рожд.", "Категория", "№ удостоверения"]
+    for c, h in enumerate(heads, start=1):
+        _put(ws, r0, c, h, True, 10, CENTER, True, HEAD)
+        ws.merge_cells(start_row=r0, start_column=c, end_row=r0 + 1, end_column=c)
+    if nd:
+        _put(ws, r0, c_days, "Дни работы", True, 10, CENTER, True, HEAD)
+        ws.merge_cells(start_row=r0, start_column=c_days, end_row=r0, end_column=c_days + nd - 1)
+    for i, d in enumerate(days):
+        _put(ws, r0 + 1, c_days + i, f"{d:%d.%m}", True, 10, CENTER, True, HEAD)
+    for c, h in ((c_count, "Кол-во дней"), (c_rate, "Оплата за день, руб."), (c_sum, "Общая сумма, руб.")):
+        _put(ws, r0, c, h, True, 10, CENTER, True, HEAD)
+        ws.merge_cells(start_row=r0, start_column=c, end_row=r0 + 1, end_column=c)
+    for r in (r0, r0 + 1):  # рамки у объединённых ячеек
+        for c in range(1, c_sum + 1):
+            ws.cell(r, c).border = BOX
+
+
+def _tabel_people(ws, r: int, paid: list[Person], days: list, personal: dict[str, dict], c_days: int, c_count: int,
+                  c_rate: int, c_sum: int) -> int:
+    """Строки бригады: человек, отметки дней, формулы «дней × ставка»; возвращает следующую строку."""
+    nd = len(days)
+    for n, p in enumerate(paid, start=1):
+        pd = personal.get(p.key, {})
+        birth = str(pd.get("birth", "") or "")
+        values = [n, p.fio, p.role, birth[-4:] if len(birth) >= 4 else "", p.cat, pd.get("judge_id", "")]
+        for c, v in enumerate(values, start=1):
+            _put(ws, r, c, v, size=10, align=CENTER if c in (1, 4, 5) else WRAP, border=True)
+        marked = set(p.days)
+        for i, d in enumerate(days):
+            _put(ws, r, c_days + i, MARK if d in marked else None, size=10, align=CENTER, border=True)
+        a, b = get_column_letter(c_days), get_column_letter(c_days + nd - 1)
+        _put(ws, r, c_count, f'=COUNTIF({a}{r}:{b}{r},"{MARK}")' if nd else 0, size=10, align=CENTER, border=True)
+        _put(ws, r, c_rate, p.rate or 0, size=10, align=CENTER, border=True).number_format = "#,##0"
+        _put(ws, r, c_sum, f"={get_column_letter(c_count)}{r}*{get_column_letter(c_rate)}{r}", size=10, align=CENTER,
+             border=True).number_format = "#,##0"
+        r += 1
+    return r
+
+
 def write_tabel(comp: Competition, team: list[Person], days: list, accrual: float, customer: dict,
                 personal: dict[str, dict], path: str | Path) -> Path:
+    """Табель-наряд бригады (Excel): шапка с «УТВЕРЖДАЮ», люди по дням, суммы формулами, начисления, подписи."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Табель-наряд"
@@ -303,80 +375,26 @@ def write_tabel(comp: Competition, team: list[Person], days: list, accrual: floa
     c_days = 7  # первая колонка дней (G)
     c_count, c_rate, c_sum = c_days + nd, c_days + nd + 1, c_days + nd + 2
     last = get_column_letter(c_sum)
-
-    def put(r, c, v, bold=False, size=11, align=None, border=False, fill=None):
-        cell = ws.cell(r, c, v)
-        cell.font = Font(bold=bold, size=size)
-        if align:
-            cell.alignment = align
-        if border:
-            cell.border = BOX
-        if fill:
-            cell.fill = fill
-        return cell
-
-    put(1, 1, "ТАБЕЛЬ – НАРЯД", True, 14)
-    put(2, 1, "на оплату судейской (комендантской) бригады")
-    put(3, 1, f"{title_of(comp)} в спортивной дисциплине {disciplines_text(comp)}", True)
-    put(4, 1, f"{comp.dates_text}, {comp.place}")
-    head_post = _cap(str(customer.get("head_post") or "директор"))
-    head_fio = str(customer.get("head_fio") or "")
     c_ok = max(c_days, c_sum - 3)  # «Утверждаю» — справа, на четыре последние колонки (иначе обрезается при печати)
-    approve = ["УТВЕРЖДАЮ:", f"{head_post} {customer.get('short') or customer.get('name') or ''}".strip(),
-               f"______________ {initials(head_fio, surname_first=False) if head_fio else ''}".rstrip(),
-               "«___» ______________ 20__ г."]
-    for r, text in enumerate(approve, start=1):
-        put(r, c_ok, text, r == 1, align=Alignment(horizontal="left", vertical="center"))
-        ws.merge_cells(start_row=r, start_column=c_ok, end_row=r, end_column=c_sum)
-
+    _tabel_head(ws, comp, customer, c_ok, c_sum)
     r0 = 6
-    heads = ["№", "Фамилия, имя, отчество", "Должность", "Год рожд.", "Категория", "№ удостоверения"]
-    for c, h in enumerate(heads, start=1):
-        put(r0, c, h, True, 10, CENTER, True, HEAD)
-        ws.merge_cells(start_row=r0, start_column=c, end_row=r0 + 1, end_column=c)
-    if nd:
-        put(r0, c_days, "Дни работы", True, 10, CENTER, True, HEAD)
-        ws.merge_cells(start_row=r0, start_column=c_days, end_row=r0, end_column=c_days + nd - 1)
-    for i, d in enumerate(days):
-        put(r0 + 1, c_days + i, f"{d:%d.%m}", True, 10, CENTER, True, HEAD)
-    for c, h in ((c_count, "Кол-во дней"), (c_rate, "Оплата за день, руб."), (c_sum, "Общая сумма, руб.")):
-        put(r0, c, h, True, 10, CENTER, True, HEAD)
-        ws.merge_cells(start_row=r0, start_column=c, end_row=r0 + 1, end_column=c)
-    for r in (r0, r0 + 1):  # рамки у объединённых ячеек
-        for c in range(1, c_sum + 1):
-            ws.cell(r, c).border = BOX
-
-    r = r0 + 2
-    first = r
-    for n, p in enumerate(paid, start=1):
-        pd = personal.get(p.key, {})
-        birth = str(pd.get("birth", "") or "")
-        values = [n, p.fio, p.role, birth[-4:] if len(birth) >= 4 else "", p.cat, pd.get("judge_id", "")]
-        for c, v in enumerate(values, start=1):
-            put(r, c, v, size=10, align=CENTER if c in (1, 4, 5) else WRAP, border=True)
-        marked = set(p.days)
-        for i, d in enumerate(days):
-            put(r, c_days + i, MARK if d in marked else None, size=10, align=CENTER, border=True)
-        a, b = get_column_letter(c_days), get_column_letter(c_days + nd - 1)
-        put(r, c_count, f'=COUNTIF({a}{r}:{b}{r},"{MARK}")' if nd else 0, size=10, align=CENTER, border=True)
-        put(r, c_rate, p.rate or 0, size=10, align=CENTER, border=True).number_format = "#,##0"
-        put(r, c_sum, f"={get_column_letter(c_count)}{r}*{get_column_letter(c_rate)}{r}", size=10, align=CENTER,
-            border=True).number_format = "#,##0"
-        r += 1
+    _tabel_columns(ws, r0, days, c_days, c_count, c_rate, c_sum)
+    first = r0 + 2
+    r = _tabel_people(ws, first, paid, days, personal, c_days, c_count, c_rate, c_sum)
     s = get_column_letter(c_sum)
     total = f"SUM({s}{first}:{s}{r - 1})" if paid else "0"
     rows = [("Итого начислено", f"={total}"),
             (f"Начисления на оплату {accrual:g} %", f"=ROUND({s}{r}*{accrual:g}/100,2)"),
             ("Итого", f"={s}{r}+{s}{r + 1}")]
     for label, formula in rows:
-        put(r, 2, label, True)
-        put(r, c_sum, formula, True, align=CENTER, border=True).number_format = "#,##0.00"
+        _put(ws, r, 2, label, True)
+        _put(ws, r, c_sum, formula, True, align=CENTER, border=True).number_format = "#,##0.00"
         r += 1
     r += 1
     for role in ("Главный судья", "Главный секретарь"):
         o = comp.official(role)
         who = initials(o.fio, surname_first=False) if o and o.fio else " " * 20
-        put(r, 2, f"{role} ______________ / {who} /")
+        _put(ws, r, 2, f"{role} ______________ / {who} /")
         r += 2
     for c, w in enumerate([5, 34, 22, 8, 10, 13], start=1):
         ws.column_dimensions[get_column_letter(c)].width = w

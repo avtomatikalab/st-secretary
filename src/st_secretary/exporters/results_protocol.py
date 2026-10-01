@@ -75,6 +75,24 @@ def _by_stage(wb, comp: Competition, run: ZachetRun, kind: str, at: datetime) ->
     st.sheet_properties.pageSetUpPr.fitToPage = True
 
 
+def _published(kind: str, at: datetime, protests_until: datetime | None) -> str:
+    """Пометка под таблицей: когда опубликован (и до какого часа протесты) или когда утверждён."""
+    if kind == PRELIMINARY:
+        return (f"Опубликован {at:%d.%m.%Y в %H:%M}. Протесты по результатам принимаются в течение 1 часа — "
+                f"до {protests_until:%H:%M} (Правила, раздел 3, п. 8.17)." if protests_until else
+                f"Опубликован {at:%d.%m.%Y в %H:%M}.")
+    return f"Результаты утверждены {at:%d.%m.%Y в %H:%M}."
+
+
+def _signatures(ws, comp: Competition, r: int) -> int:
+    """Подписи главного судьи и главного секретаря; возвращает следующую свободную строку."""
+    for role in ("Главный судья", "Главный секретарь"):
+        o = comp.official(role)
+        ws.cell(r, 1, f"{role} ________________ / {o.signature if o else ' ' * 30} /").font = Font(size=11)
+        r += 2
+    return r
+
+
 def _hms(sec) -> str:
     """Время, как в протоколах СЕКРЕТАРЬ_ST: «0:18:05» (с часами; десятые — если есть)."""
     if sec is None:
@@ -181,13 +199,7 @@ def _speleo(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, prot
             cell.alignment = WRAP if 2 <= c < first_item and head[c - 1] not in ("Год", "Разряд") else CENTER
         r += 1
     r += 1
-    notes = []
-    if kind == PRELIMINARY:
-        notes.append(f"Опубликован {at:%d.%m.%Y в %H:%M}. Протесты по результатам принимаются в течение 1 часа — "
-                     f"до {protests_until:%H:%M} (Правила, раздел 3, п. 8.17)." if protests_until else
-                     f"Опубликован {at:%d.%m.%Y в %H:%M}.")
-    else:
-        notes.append(f"Результаты утверждены {at:%d.%m.%Y в %H:%M}.")
+    notes = [_published(kind, at, protests_until)]
     if comp.unofficial:
         notes.append("Неофициальные соревнования: квалификационный ранг и разряды не определяются.")
     elif run.norms_why:
@@ -196,10 +208,7 @@ def _speleo(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, prot
         ws.cell(r, 1, text).font = Font(size=10, italic=True)
         r += 1
     r += 1
-    for role in ("Главный судья", "Главный секретарь"):
-        o = comp.official(role)
-        ws.cell(r, 1, f"{role} ________________ / {o.signature if o else ' ' * 30} /").font = Font(size=11)
-        r += 2
+    r = _signatures(ws, comp, r)
     widths = ([5] + ([24, 6, 7, 24, 16] if person else [22, 46, 16]) + [5] * len(items)
               + [9] * (len(result) - (2 if norms else 0)) + ([9, 9] if norms else []))
     for c, w in enumerate(widths, start=1):
@@ -211,15 +220,22 @@ def _speleo(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, prot
 
 def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, path: str | Path,
                    protests_until: datetime | None = None) -> Path:
-    z = run.zachet
+    """Протокол результатов (Excel): лист «Протокол» — у спелео как у СЕКРЕТАРЬ_ST (Правки, п. 33), у остальных —
+    общий вид; лист «По этапам» — баллы по этапам для стенда и протестов."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Протокол"
-    if run.profile == "speleo":  # как у СЕКРЕТАРЬ_ST (Правки, п. 33)
-        _speleo(ws, comp, run, kind, at, protests_until)
-        _by_stage(wb, comp, run, kind, at)
-        wb.save(path)
-        return Path(path)
+    (_speleo if run.profile == "speleo" else _general)(ws, comp, run, kind, at, protests_until)
+    _by_stage(wb, comp, run, kind, at)
+    path = Path(path)
+    wb.save(path)
+    return path
+
+
+def _general(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, protests_until: datetime | None) -> None:
+    """Лист «Протокол» общего вида (ПСР, пешеходные, СХ, горные): шапка, места, составы, баллы по турам или время,
+    результат, процент и разряд; пометки и подписи."""
+    z = run.zachet
     timed = run.kind == "time"  # спелео, пешеходные: время на дистанции, штраф, снятия
     tours = [] if timed else run.tours
     middle = (["Время на дистанции", "Штраф, баллы", "Снятий"] + [a["name"] for a in run.adds]) if timed else tours
@@ -277,13 +293,7 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
             cell.alignment = WRAP if 3 <= c < 3 + len(who) or (show_marks and c == res_col - 1) else CENTER
         r += 1
     r += 1
-    notes = []
-    if kind == PRELIMINARY:
-        notes.append(f"Опубликован {at:%d.%m.%Y в %H:%M}. Протесты по результатам принимаются в течение 1 часа — "
-                     f"до {protests_until:%H:%M} (Правила, раздел 3, п. 8.17)." if protests_until else
-                     f"Опубликован {at:%d.%m.%Y в %H:%M}.")
-    else:
-        notes.append(f"Результаты утверждены {at:%d.%m.%Y в %H:%M}.")
+    notes = [_published(kind, at, protests_until)]
     if comp.unofficial:
         notes.append("Неофициальные соревнования: квалификационный ранг и разряды не определяются.")
     elif run.rank and run.rank.value is None and run.rank.reason:
@@ -292,10 +302,7 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         ws.cell(r, 1, n).font = Font(size=10, italic=True)
         r += 1
     r += 1
-    for role in ("Главный судья", "Главный секретарь"):
-        o = comp.official(role)
-        ws.cell(r, 1, f"{role} ________________ / {o.signature if o else ' ' * 30} /").font = Font(size=11)
-        r += 2
+    r = _signatures(ws, comp, r)
     for c, w in enumerate([7, 6] + ([28, 20, 16, 8] if person else [22, 16, 46]) + [10 if timed else 8] * len(middle)
                           + ([22] if show_marks else []) + [11] + ([10, 10] if norms else []) + ([8] if show_class else []),
                           start=1):
@@ -303,11 +310,6 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-
-    _by_stage(wb, comp, run, kind, at)
-    path = Path(path)
-    wb.save(path)
-    return path
 
 
 def mark_text(run: ZachetRun, t) -> str:

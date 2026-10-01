@@ -206,26 +206,82 @@ def _auto_backup(store, data: Path) -> None:
         print(f"Резервная копия при запуске не сделана: {e}")
 
 
+def _web_libraries():
+    """uvicorn и create_app — или понятное сообщение, что делать, если библиотек нет."""
+    try:
+        import uvicorn
+
+        from st_secretary.web.app import create_app
+    except ImportError as e:
+        fix = ("Распакуйте архив программы заново (папку «данные» не трогайте)" if os.environ.get("ST_PORTABLE")
+               else "Выполните: uv sync")
+        raise UserError(f"Не установлены библиотеки для работы в браузере ({e.name}). {fix}") from None
+    return uvicorn, create_app
+
+
+def _open_running(a) -> int:
+    """Второй запуск — просто открыть уже работающую программу."""
+    url = f"http://{HOST}:{a.port}/"
+    print(f"СТ-Секретарь уже работает: {url}")
+    print("Его окно открыто отдельно — работайте в нём. Открываю страницу в браузере.")
+    if not a.no_browser:
+        webbrowser.open(url)
+    return 0
+
+
+def _announce(server, loading, console, url: str, data: Path, docs_root: Path, no_browser: bool) -> None:
+    """Сообщение в окне программы и браузер — только когда сервер действительно отвечает."""
+    while not server.started:
+        if server.should_exit:
+            return
+        time.sleep(0.1)
+    loading.stop()
+    head = console.head_lines()
+    print("СТ-Секретарь работает.")
+    print(f"  {head[0]}")
+    print(f"  Адрес в браузере: {url}")
+    print(f"  Папка с данными:  {data}")
+    print(f"  Документы участников (только на этом компьютере): {docs_root}")
+    print()
+    print("Это окно — сама программа: пока оно открыто, страница в браузере работает.")
+    print("Выключить программу: кнопка «Выключить» вверху страницы или просто закройте это окно.")
+    print()
+    print(head[1])
+    console.ready.set()
+    if not no_browser:
+        webbrowser.open(url)
+
+
+def _after_stop(app) -> int:
+    """Сервер остановлен: перезапуск после обновления (код RESTART) или «выключен»."""
+    print()
+    if app.state.restart:
+        from st_secretary.updates import RESTART
+
+        print(f"Перезапускаю СТ-Секретарь — ставлю версию {app.state.installer.version}…")
+        return RESTART
+    if getattr(app.state, "restart_source", False):  # из исходников: git обновлён — запустить новый код
+        from st_secretary.updates import RESTART
+
+        print("Перезапускаю СТ-Секретарь с обновлёнными исходниками… Страницу в браузере обновите (F5).")
+        os.environ["ST_NO_BROWSER"] = "1"
+        if os.name == "posix":  # macOS, Linux: тот же процесс и то же окно, новый код
+            sys.stdout.flush()
+            os.execv(sys.executable, [sys.executable, "-m", "st_secretary", *sys.argv[1:]])  # noqa: S606 — сама себя
+        return RESTART  # Windows: перезапустит «СТ-Секретарь.bat» (код 75)
+    print("СТ-Секретарь выключен. Всё сохранено в папке с данными.")
+    return 0
+
+
 def cmd_web(a) -> int:
+    """Запуск программы в браузере: журнал, сервер, окно программы (версия, обновления), автокопии; после остановки —
+    перезапуск для обновления или «выключен»."""
     loading = Loading("Загружаю программу").start()  # первая загрузка библиотек бывает небыстрой
     try:
-        try:
-            import uvicorn
-
-            from st_secretary.web.app import create_app
-        except ImportError as e:
-            fix = ("Распакуйте архив программы заново (папку «данные» не трогайте)" if os.environ.get("ST_PORTABLE")
-                   else "Выполните: uv sync")
-            raise UserError(f"Не установлены библиотеки для работы в браузере ({e.name}). {fix}") from None
-
-        if _already_running(a.port):  # второй запуск — просто открыть уже работающую программу
+        uvicorn, create_app = _web_libraries()
+        if _already_running(a.port):
             loading.stop()
-            url = f"http://{HOST}:{a.port}/"
-            print(f"СТ-Секретарь уже работает: {url}")
-            print("Его окно открыто отдельно — работайте в нём. Открываю страницу в браузере.")
-            if not a.no_browser:
-                webbrowser.open(url)
-            return 0
+            return _open_running(a)
         data = Path(a.data).resolve()
         data.mkdir(parents=True, exist_ok=True)
         port = _free_port(a.port)
@@ -255,52 +311,15 @@ def cmd_web(a) -> int:
         console = Console(app, shutdown, enabled=not (a.no_update_check or os.environ.get("ST_NO_UPDATE_CHECK")),
                           portable=bool(os.environ.get("ST_PORTABLE")))
 
-        def announce_when_ready():
-            """Сообщение и браузер — только когда сервер действительно отвечает."""
-            while not server.started:
-                if server.should_exit:
-                    return
-                time.sleep(0.1)
-            loading.stop()
-            head = console.head_lines()
-            print("СТ-Секретарь работает.")
-            print(f"  {head[0]}")
-            print(f"  Адрес в браузере: {url}")
-            print(f"  Папка с данными:  {data}")
-            print(f"  Документы участников (только на этом компьютере): {app.state.store.docs_root}")
-            print()
-            print("Это окно — сама программа: пока оно открыто, страница в браузере работает.")
-            print("Выключить программу: кнопка «Выключить» вверху страницы или просто закройте это окно.")
-            print()
-            print(head[1])
-            console.ready.set()
-            if not no_browser:
-                webbrowser.open(url)
-
-        threading.Thread(target=announce_when_ready, daemon=True).start()
+        threading.Thread(target=_announce, args=(server, loading, console, url, data, app.state.store.docs_root,
+                                                 no_browser), daemon=True).start()
         threading.Thread(target=_auto_backup, args=(app.state.store, data), daemon=True).start()
         console.start()
         server.run()
         journal.stop(stop_how[0])
     finally:
         loading.stop()
-    print()
-    if app.state.restart:
-        from st_secretary.updates import RESTART
-
-        print(f"Перезапускаю СТ-Секретарь — ставлю версию {app.state.installer.version}…")
-        return RESTART
-    if getattr(app.state, "restart_source", False):  # из исходников: git обновлён — запустить новый код
-        from st_secretary.updates import RESTART
-
-        print("Перезапускаю СТ-Секретарь с обновлёнными исходниками… Страницу в браузере обновите (F5).")
-        os.environ["ST_NO_BROWSER"] = "1"
-        if os.name == "posix":  # macOS, Linux: тот же процесс и то же окно, новый код
-            sys.stdout.flush()
-            os.execv(sys.executable, [sys.executable, "-m", "st_secretary", *sys.argv[1:]])  # noqa: S606 — сама себя
-        return RESTART  # Windows: перезапустит «СТ-Секретарь.bat» (код 75)
-    print("СТ-Секретарь выключен. Всё сохранено в папке с данными.")
-    return 0
+    return _after_stop(app)
 
 
 def main(argv=None) -> int:
