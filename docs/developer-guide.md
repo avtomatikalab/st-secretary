@@ -282,6 +282,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `verify.py` | сверка документов (Word, Excel, PDF) с карточкой и между собой |
 | `money.py`, `names.py` | суммы прописью; склонение ФИО и должностей |
 | `training.py` | учебное соревнование на выдуманных данных |
+| `feedback.py` | «Сообщить»: сообщения пользователей (.md + снимок) в «Правки и ошибки», zip для разработчика, `SUPPORT_EMAIL` |
 | `timeutil.py` | старый разбор времени — сейчас используется только в тестах (см. «Ловушки») |
 
 ### Справочники — `reference/`
@@ -312,6 +313,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `exporters/final.py` | выписки на разряды, отчёт главного судьи |
 | `exporters/judges.py` | справки о судействе, о составе коллегии, о числе субъектов |
 | `exporters/contracts.py` | табель-наряд, договоры и акты по шаблону Word с полями `{{…}}` |
+| `exporters/named_application.py` | именная заявка команды (Word) по предзаявке: бланк по Правилам или свой с метками `{…}` |
 
 ### Программа в браузере — `web/`
 
@@ -334,18 +336,23 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 
 | Модуль `web/pages/` | Адреса | Шаблоны |
 |---|---|---|
-| `home.py` | `/`, `/new`, `/import`, `/restore`, `/training`, `/help`, `/health`, `/shutdown`, `/journal.zip`, `/festival/…`, `/practice…` | `home`, `new`, `festival`, `practice`, `stopped` |
-| `competition.py` | `/c/{cid}` (обзор), `/c/{cid}/card…`, `/backup`, `/open/{what}` | `overview`, `card`, `card_view`, `step` |
-| `preapps.py` | `/c/{cid}/preapps…` — загрузка, проверка, статусы, форма заявки, сводка | `preapps`, `preapp_team`, `preapp_edit` |
-| `forms.py` | `/c/{cid}/forms…` — свои формы предзаявок | `forms`, `form_edit` |
-| `admission.py` | `/c/{cid}/admission…`, **а также** `/equipment…` (снаряжение) и `/docs…` (сканы) | `admission*`, `equipment`, `_admission_*`, `_equipment_*` |
-| `start.py` | `/c/{cid}/start…`, `/c/{cid}/schedule` (расписание стартов) | `start`, `schedule` |
-| `results.py` | `/c/{cid}/results…` — этапы, баллы, SI, протесты, протоколы | `results`, `_results_table` |
-| `board.py` | `/c/{cid}/judges…` (телефоны судей), `/penalties…`, `/c/{cid}/board…` (табло) | `judges`, `judges_print`, `penalties_print`, `board_admin`, `judge`, `board` |
-| `awards.py` | `/c/{cid}/awards…` | `awards` |
-| `contracts.py` | `/c/{cid}/contracts…` | `contracts`, `contracts_person`, `_contracts_*` |
-| `verify.py` | `/c/{cid}/verify` | `verify` |
-| `updates.py` | `/update…` | `update`, `_update_banner` |
+| `home.py` | `/`, `/new`, `/import`, `/restore`, `/training`, `/help`, `/health`, `/shutdown`, `/journal.zip`, `/festival/…`, `/practice…` | `home.html`, `new.html`, `festival.html`, `practice.html`, `stopped.html` |
+| `competition.py` | `/c/{cid}` (обзор), `/c/{cid}/card…`, `/backup`, `/open/{what}` | `overview.html`, `card.html`, `card_view.html`, `step.html` |
+| `preapps.py` | `/c/{cid}/preapps…` — загрузка, проверка, статусы, форма заявки, сводка, именная заявка (Word) | `preapps.html`, `preapp_team.html`, `preapp_edit.html`, `_files.html`, `_issues.html` |
+| `forms.py` | `/c/{cid}/forms…` — свои формы предзаявок, свой бланк именной заявки | `forms.html`, `form_edit.html` |
+| `admission.py` | `/c/{cid}/admission…`, **а также** `/equipment…` (снаряжение) и `/docs…` (сканы) | `admission.html`, `admission_check.html`, `equipment.html`, `_admission_team.html`, `_admission_tiles.html`, `_equipment_team.html`, `_equipment_tiles.html`, `_docs.html` |
+| `start.py` | `/c/{cid}/start…`, `/c/{cid}/schedule` (расписание стартов) | `start.html`, `schedule.html` |
+| `results.py` | `/c/{cid}/results…` — этапы, баллы, SI, протесты, протоколы | `results.html`, `_results_table.html` |
+| `board.py` | `/c/{cid}/judges…` (телефоны судей), `/penalties…`, `/c/{cid}/board…` (табло) | `judges.html`, `judges_print.html`, `penalties_print.html`, `board_admin.html`, `judge.html`, `board.html` |
+| `awards.py` | `/c/{cid}/awards…` | `awards.html` |
+| `contracts.py` | `/c/{cid}/contracts…` | `contracts.html`, `contracts_person.html`, `_contracts_tabel.html`, `_contracts_tiles.html` |
+| `verify.py` | `/c/{cid}/verify` | `verify.html` |
+| `updates.py` | `/update…` | `update.html`, `_update_banner.html` |
+| `feedback.py` | `/feedback…` — «Сообщить» (приём с панели), «Мои сообщения», отправка, загрузка чужого файла | `feedback.html` |
+
+Общие шаблоны (`web/app.py`): `base.html` — каркас с меню и кнопкой «Сообщить», `error.html` — «Что-то пошло не так»
+и «не найдено», `cannot_open.html` — файл не открылся; части для многих страниц: `_form.html` (поля форм, списки
+замечаний), `_icons.html` (значки).
 
 Сервер табло (`web/board.py`): `/` и `/c/{cid}` — табло, `/j/{код}` и `/j/{код}/sync` — страница судьи.
 
@@ -361,6 +368,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `tools/make_stub_docs.py` | заглушки сканов «ОБРАЗЕЦ» для проверки комиссии без настоящих документов |
 | `tools/import_1101.py` | таблица баллов судей из Excel ФСТР → `judge_points_1101.json` |
 | `tools/reconcile_psr2024.py` | пересчёт настоящего ПСР-2024 ядром и сверка с протоколом (данные — вне репозитория) |
+| `tools/verify_speleo_2021.py` | пересчёт протоколов спелео ЧК и ПК края 2021 и отчёт о сверке (данные — через ST_REF_DATA) |
 | `СТ-Секретарь.bat` | запуск из исходников в Windows (для разработчика); у переносной версии свои файлы запуска |
 | `docs/releases/<версия>.md` | тексты выпусков |
 
@@ -554,6 +562,9 @@ GET  /c/{cid}/admission?done=adm_saved
 - На модуль ядра — свой файл `tests/test_<модуль>.py`. Страницы — `tests/test_web.py` через
   `fastapi.testclient.TestClient(create_app(tmp_path / "данные", opener=…, docs_dir=…))`; помощник `FormFields`
   собирает поля формы так, как их отправит браузер, — так проверяется, что форма сохраняется без потерь.
+- Этот документ проверяет `tests/test_docs.py`: каждый модуль, шаблон, файл `web/static` и `tools` упомянут здесь;
+  упомянутые пути, `модуль.имя` и `Класс.имя` существуют; ссылки оглавления живые. Добавили или переименовали —
+  тест скажет, какую строку поправить.
 - Заготовки — `tests/conftest.py`: `psr_card` (карточка ПСР), `make_application` (предзаявка по бланку),
   `make_class_sheets_application` (бланк делегации с листами по классам).
 - `tests/fixtures/psr2024.json` — обезличенный ПСР-2024 (делается `tools/reconcile_psr2024.py --write-fixture`):
