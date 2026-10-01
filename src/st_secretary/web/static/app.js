@@ -338,6 +338,17 @@
       var own = document.getElementById("own-values"); if (own) own.classList.toggle("own-hidden", !cb.checked);
     });
   });
+  // соревнование фестиваля: поправили человека в строке ГСК — это «своя» замена в этом соревновании
+  document.addEventListener("input", function (e) {
+    var row = e.target.closest && e.target.closest("tr[data-own-row]");
+    if (!row || e.target.matches('input[name$="-own"]')) return;
+    var own = row.querySelector('input[name$="-own"]');
+    if (own && !own.checked) { own.checked = true; row.className = "gsk-own"; }
+  });
+  document.addEventListener("change", function (e) {
+    if (!e.target.matches || !e.target.matches('tr[data-own-row] input[name$="-own"]')) return;
+    e.target.closest("tr").className = e.target.checked ? "gsk-own" : "gsk-common";
+  });
   // своя дисциплина из запомненных — подставить её вид результата и состав
   document.addEventListener("change", function (e) {
     if (!e.target.matches || !e.target.matches('input[name$="-discipline_text"]')) return;

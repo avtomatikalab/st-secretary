@@ -32,11 +32,12 @@ MAX_BYTES = 2 * 2**30  # распакованный размер: 2 ГБ — б�
 _STAMP = re.compile(r" — (\d{4}-\d{2}-\d{2} \d{2}-\d{2}(?:-\d{2})?)( \(авто\))?\.zip$")
 
 
-FESTIVAL = "Фестиваль.json"  # в копии фестиваля: название и соревнования (решение 039)
+FESTIVAL = "Фестиваль.json"  # в копии фестиваля: его запись — название, соревнования, ГСК, режимы (решение 039)
 
 
-def make_festival(folders: list[Path], title: str, now: datetime) -> bytes:
-    """Копия фестиваля одним архивом: обычные копии всех его соревнований + «Фестиваль.json»."""
+def make_festival(folders: list[Path], fest: dict, now: datetime) -> bytes:
+    """Копия фестиваля одним архивом: обычные копии всех его соревнований + «Фестиваль.json» (запись фестиваля,
+    соревнования — в том же порядке, что копии)."""
     import json
     import tempfile
 
@@ -45,7 +46,8 @@ def make_festival(folders: list[Path], title: str, now: datetime) -> bytes:
         for folder in folders:
             p = make(folder, Path(td), now)
             out.write(p, p.name)
-        out.writestr(FESTIVAL, json.dumps({"title": title, "members": [f.name for f in folders]}, ensure_ascii=False))
+        rec = {**fest, "members": [f.name for f in folders]}
+        out.writestr(FESTIVAL, json.dumps(rec, ensure_ascii=False))
     return buf.getvalue()
 
 
@@ -56,21 +58,31 @@ def is_festival(data: bytes) -> bool:
         return False
 
 
-def restore_festival(data: bytes, data_root: Path, now: datetime) -> tuple[str, list[str]]:
-    """Фестиваль из архива: каждое соревнование — новой папкой (как обычная копия). (название, папки)."""
+def restore_festival(data: bytes, data_root: Path, now: datetime) -> tuple[dict, list[str]]:
+    """Фестиваль из архива: каждое соревнование — новой папкой (как обычная копия). (запись фестиваля, папки);
+    в записи папки соревнований уже заменены на новые («own_gsk» — тоже)."""
     import json
 
     z = zipfile.ZipFile(io.BytesIO(data))
     if sum(i.file_size for i in z.infolist()) > MAX_BYTES * 4:
         raise BackupError("архив слишком большой для копии фестиваля")
     try:
-        title = str(json.loads(z.read(FESTIVAL).decode("utf-8")).get("title") or "Фестиваль")
+        rec = json.loads(z.read(FESTIVAL).decode("utf-8"))
+        if not isinstance(rec, dict):
+            raise ValueError
     except (ValueError, KeyError):
         raise BackupError("в архиве фестиваля не читается «Фестиваль.json»") from None
     names = [restore(z.read(i), data_root, now) for i in z.infolist() if i.filename.lower().endswith(".zip")]
     if not names:
         raise BackupError("в архиве фестиваля нет копий соревнований")
-    return title, names
+    old = [str(m) for m in rec.get("members", [])]
+    renamed = dict(zip(old, names)) if len(old) == len(names) else {}
+    own = rec.get("own_gsk", {}) if isinstance(rec.get("own_gsk"), dict) else {}
+    rec["own_gsk"] = {renamed[k]: v for k, v in own.items() if k in renamed}
+    rec["title"] = str(rec.get("title") or "Фестиваль")
+    rec["members"] = names
+    rec.pop("id", None)
+    return rec, names
 
 
 class BackupError(Exception):

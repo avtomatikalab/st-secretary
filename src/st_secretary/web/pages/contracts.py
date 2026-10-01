@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException
 
+from st_secretary import festival as fv
 from st_secretary import results as res
 from st_secretary import staff as sf
 from st_secretary.exporters import contracts as ct
@@ -34,6 +35,23 @@ def register(app, cx) -> None:
         return cx.need_comp(*a, **k)
 
     # ------------------------------------------------------------ договоры, акты, табель
+
+    def staff_comp(f: CompFolder):
+        """Чьи договоры и табель: соревнования — или, если на фестивале «один договор и табель на весь фестиваль»,
+        всего фестиваля (даты от первого до последнего дня, ГСК всех его соревнований)."""
+        comp = need_comp(f)
+        fest = f.festival()
+        if fv.mode(fest, "contracts") != "festival":
+            return comp
+        comps = []
+        for m in fest["members"]:
+            other = store.get(m) if m != f.id else f
+            try:
+                if other:
+                    comps.append(comp if other is f else other.load())
+            except Exception:  # noqa: BLE001 — карточка не читается: её дней и ГСК в общем табеле нет
+                pass
+        return fv.joint_comp(fest, comps or [comp])
 
     def template_for(f: CompFolder, role: str) -> Path | None:
         """Свой шаблон договора для должности или общий: в папке соревнования, затем в папке «данные»;
@@ -70,7 +88,7 @@ def register(app, cx) -> None:
     @app.get("/c/{cid}/contracts")
     def contracts_page(request: Request, cid: str):
         f = folder(cid)
-        comp = need_comp(f)
+        comp = staff_comp(f)
         ctx = staff_ctx(f, comp)
         prefill = {}
         if not ctx["customer"]:  # заказчик обычно тот же, что в прошлый раз
@@ -82,13 +100,14 @@ def register(app, cx) -> None:
                     sample=sf.RATES_KRSK_2025, customer_fields=ct.CUSTOMER_FIELDS, fields=ct.FIELDS,
                     prefill=prefill, extra_roles=sf.EXTRA_ROLES, categories=sf.CATEGORIES,
                     docs_dir=store.contracts_dir(f), personal_path=store.personal_path,
+                    joint=comp.title if fv.mode(f.festival(), "contracts") == "festival" else "",
                     **{**comp_ctx(f), **staff_parts(f, ctx)})
 
     @app.post("/c/{cid}/contracts/days")
     async def contracts_days(request: Request, cid: str):
         """Табель: отметки дней и «без оплаты». С автосохранением — возвращает обновлённый табель."""
         f = folder(cid)
-        comp = need_comp(f)
+        comp = staff_comp(f)
         form = await request.form()
         data = f.contracts()
         s = sf.settings(comp, data)
@@ -111,7 +130,7 @@ def register(app, cx) -> None:
     @app.post("/c/{cid}/contracts/settings")
     async def contracts_settings(request: Request, cid: str):
         f = folder(cid)
-        comp = need_comp(f)
+        comp = staff_comp(f)
         form = await request.form()
         data = f.contracts()
         if form.get("do") == "sample":  # ставки по образцу — только для пустых
@@ -152,7 +171,7 @@ def register(app, cx) -> None:
     @app.post("/c/{cid}/contracts/add")
     async def contracts_add(request: Request, cid: str):
         f = folder(cid)
-        comp = need_comp(f)
+        comp = staff_comp(f)
         form = await request.form()
         fio = " ".join(str(form.get("fio", "")).split())
         role = " ".join(str(form.get("role", "")).split())
@@ -177,7 +196,7 @@ def register(app, cx) -> None:
     def contracts_person(request: Request, cid: str, key: str = ""):
         """Личные данные для договора — только на этом компьютере; страницу браузер не запоминает."""
         f = folder(cid)
-        comp = need_comp(f)
+        comp = staff_comp(f)
         p = need_person(f, comp, key)
         ctx = staff_ctx(f, comp)
         values = ctx["personal"].get(p.key, {})
@@ -191,7 +210,7 @@ def register(app, cx) -> None:
     @app.post("/c/{cid}/contracts/person")
     async def contracts_person_save(request: Request, cid: str):
         f = folder(cid)
-        comp = need_comp(f)
+        comp = staff_comp(f)
         form = await request.form()
         p = need_person(f, comp, str(form.get("key", "")))
         store.save_personal(p.key, {k: " ".join(str(form.get(k, "")).split()) for k, _, _ in sf.PERSONAL_FIELDS})
@@ -217,7 +236,7 @@ def register(app, cx) -> None:
         return _redirect(f"{_base(f)}/contracts?done=ct_removed#tabel")
 
     def build_contract_doc(f: CompFolder, kind: str, key: str = "", path: Path | None = None) -> tuple[Path, set]:
-        comp = need_comp(f)
+        comp = staff_comp(f)
         ctx = staff_ctx(f, comp)
         team, personal, customer = ctx["team"], ctx["personal"], ctx["customer"]
         out = store.contracts_dir(f)

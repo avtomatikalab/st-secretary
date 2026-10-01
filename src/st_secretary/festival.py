@@ -1,0 +1,171 @@
+"""Фестиваль — несколько соревнований за один выезд (решение 039, Правки, п. 19).
+
+Каждое соревнование остаётся своей папкой; фестиваль — запись в «Фестивали.json» в папке «данные»:
+
+    {"id", "title", "members": [папки соревнований],
+     "officials": [{role, fio, category, territory}],   ГСК фестиваля — общая для всех его соревнований
+     "own_gsk": {папка: [должности]},                   у соревнования своя замена этих должностей
+     "modes": {"contracts", "fee", "numbers"},          режимы (MODES)
+     "brigade": [{fio, role, category}],                судейская бригада сверх ГСК — общая
+     "contracts": {...},                                договоры и табель, если «один на весь фестиваль»
+     "fee": {"amount", "per"}, "fees": {команда: {paid, method}},   взнос, если «один за фестиваль»
+     "start_break": мин}                                перерыв между стартами участника (Правки, п. 25.3)
+
+ГСК: в карточке каждого соревнования лежит действующий состав — ГСК фестиваля, а у должностей, отмеченных «своя»,
+свой человек. Поэтому протоколы, подписи и копия соревнования работают как раньше, а после разъединения у
+соревнования остаётся полная ГСК.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from datetime import date
+
+from st_secretary.competition import Competition, Official
+
+MODES = {
+    "contracts": {"each": "по каждому соревнованию — свой договор и табель",
+                  "festival": "один договор и один табель на весь фестиваль"},
+    "fee": {"each": "по каждому соревнованию — как в карточках (взнос за зачёт)",
+            "festival": "один взнос за фестиваль — ведомость на странице фестиваля"},
+    "numbers": {"festival": "общие на фестиваль — у команды один номер во всех соревнованиях",
+                "each": "свои в каждом соревновании"},
+}
+DEFAULT_MODES = {"contracts": "each", "fee": "each", "numbers": "festival"}
+FEE_PER = ("участника", "команду")
+
+
+def modes(fest: dict | None) -> dict[str, str]:
+    m = (fest or {}).get("modes", {})
+    return {k: m.get(k) if m.get(k) in MODES[k] else DEFAULT_MODES[k] for k in MODES}
+
+
+def mode(fest: dict | None, kind: str) -> str:
+    """Режим фестиваля; не в фестивале — «each» (как у отдельного соревнования)."""
+    return modes(fest)[kind] if fest else "each"
+
+
+# ------------------------------------------------------------------ ГСК фестиваля
+
+
+def officials(fest: dict) -> list[Official]:
+    return [Official(str(o.get("role", "")), str(o.get("fio", "")), str(o.get("category", "")),
+                     str(o.get("territory", ""))) for o in fest.get("officials", []) if o.get("fio")]
+
+
+def official_dict(o: Official) -> dict:
+    return {"role": o.role, "fio": o.fio, "category": o.category, "territory": o.territory}
+
+
+def own_roles(fest: dict, cid: str) -> list[str]:
+    return list(fest.get("own_gsk", {}).get(cid, []))
+
+
+def effective(fest: dict, cid: str, card: list[Official]) -> list[Official]:
+    """Действующая ГСК соревнования: ГСК фестиваля, должности «своя» — из карточки соревнования (на своих местах),
+    свои должности, которых у фестиваля нет, — в конце."""
+    own = set(own_roles(fest, cid))
+    mine = [o for o in card if o.role in own]
+    out, used = [], set()
+    for o in officials(fest):
+        if o.role in own:
+            if o.role not in used:
+                out += [x for x in mine if x.role == o.role]
+                used.add(o.role)
+        else:
+            out.append(o)
+    return out + [x for x in mine if x.role not in used]
+
+
+def differing_roles(fest_officials: list[Official], card: list[Official]) -> list[str]:
+    """Должности, где у соревнования не тот человек, что у фестиваля (и своих должностей у фестиваля нет):
+    при объединении они становятся «своими» — ничего не теряется."""
+    def by_role(xs):
+        out: dict[str, list] = {}
+        for o in xs:
+            out.setdefault(o.role, []).append((o.fio, o.category, o.territory))
+        return out
+
+    a, b = by_role(fest_officials), by_role(card)
+    return [r for r in b if a.get(r) != b[r]]
+
+
+# ------------------------------------------------------------------ один договор и табель на фестиваль
+
+
+def joint_comp(fest: dict, comps: list[Competition]) -> Competition:
+    """Соревнование «весь фестиваль» — для общего договора и табеля: даты от первого до последнего дня, ГСК
+    фестиваля и свои замены, все зачёты (дисциплины). В договоре: «Фестиваля «…» (Чемпионат…; Кубок…)»."""
+    comps = sorted(comps, key=lambda c: c.date_from)
+    first = comps[0]
+    title = " ".join(str(fest.get("title", "")).split()) or "Фестиваль"
+    if not title.lower().startswith(("фестиваль", "слёт", "слет", "спартакиада", "соревнования")):
+        title = f"Фестиваль «{title}»"
+    title += f" ({'; '.join(c.title for c in comps)})"
+    people, seen = [], set()
+    for o in officials(fest) + [o for c in comps for o in c.officials]:
+        k = " ".join(o.fio.lower().replace("ё", "е").split())
+        if k not in seen:
+            seen.add(k)
+            people.append(o)
+    places = list(dict.fromkeys(c.place for c in comps if c.place))
+    return replace(first, title=title, date_from=min(c.date_from for c in comps),
+                   date_to=max(c.date_to for c in comps), place="; ".join(places), officials=people,
+                   zachety=[z for c in comps for z in c.zachety])
+
+
+def merge_contracts(datas: list[dict]) -> dict:
+    """Договоры и табель соревнований → один на фестиваль (режим переключили): ставки, заказчик, начисления — у
+    кого заданы первыми; период — от самого раннего до самого позднего; дни людей — объединяются."""
+    out: dict = {"rates": {}, "people": {}}
+    period = []
+    for d in datas:
+        for k, v in d.get("rates", {}).items():
+            out["rates"].setdefault(k, v)
+        if d.get("customer") and not out.get("customer"):
+            out["customer"] = d["customer"]
+        if "accrual" in d and "accrual" not in out:
+            out["accrual"] = d["accrual"]
+        p = d.get("period", {})
+        period += [x for x in (p.get("from"), p.get("to")) if x]
+        for key, m in d.get("people", {}).items():
+            o = out["people"].setdefault(key, {})
+            if "days" in m:
+                o["days"] = sorted(set(o.get("days", [])) | set(m["days"]))
+            o["unpaid"] = bool(o.get("unpaid")) or bool(m.get("unpaid"))
+    good = sorted(x for x in period if _iso(x))
+    if good:
+        out["period"] = {"from": good[0], "to": good[-1]}
+    return out
+
+
+def _iso(s) -> bool:
+    try:
+        date.fromisoformat(str(s))
+    except ValueError:
+        return False
+    return True
+
+
+def union_brigade(extras: list[list[dict]]) -> list[dict]:
+    """Бригада фестиваля — все добавленные на страницах договоров соревнований, без повторов (по ФИО)."""
+    out, seen = [], set()
+    for xs in extras:
+        for x in xs:
+            k = " ".join(str(x.get("fio", "")).lower().replace("ё", "е").split())
+            if k and k not in seen:
+                seen.add(k)
+                out.append(dict(x))
+    return out
+
+
+# ------------------------------------------------------------------ команды и стартовые номера
+
+
+def team_identity(team: str, territory: str) -> str:
+    """Одна команда в разных соревнованиях фестиваля: название и территория без регистра, «ё», кавычек и пробелов."""
+    def norm(s: str) -> str:
+        s = str(s or "").lower().replace("ё", "е")
+        return " ".join("".join(ch for ch in s if ch not in "«»\"'„“”").split())
+
+    return f"{norm(team)}|{norm(territory)}"

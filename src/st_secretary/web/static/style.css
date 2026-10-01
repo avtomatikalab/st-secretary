@@ -726,4 +726,12 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .side-fest a { display: block; color: inherit; text-decoration: none; }
 .side-fest small { color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .side-fest-other { margin-top: 4px; color: var(--primary) !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ГСК фестиваля в карточке соревнования: общие строки — приглушены, «своя» — как обычно (Правки, п. 19) */
+.gsk-fest-note { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 8px;
+  background: var(--primary-soft); font-size: .92rem; }
+.gsk-tbl.gsk-fest .c-own { width: 64px; }
+.gsk-tbl tr.gsk-common input[type="text"], .gsk-tbl tr.gsk-common select { color: var(--muted); background: transparent; }
+.fest-modes fieldset { margin: 0 0 12px; } .fest-modes .check { display: flex; }
+.fest-own { margin: 4px 0 0; font-size: .9rem; }
+.fest-fee input[type="text"] { width: 7rem; }
 

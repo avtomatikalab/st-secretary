@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from urllib.parse import urlsplit
 
 from fastapi import Request
@@ -10,6 +11,7 @@ from fastapi.responses import FileResponse
 from starlette.exceptions import HTTPException
 
 from st_secretary import backup as bk
+from st_secretary import festival as fv
 from st_secretary.issues import ERROR, FIXED, WARNING
 from st_secretary.web.common import _base, _redirect, _with_done
 from st_secretary.web.forms import GROUP_SUGGESTIONS, card_to_form, choices, form_from_data, form_to_card
@@ -82,6 +84,11 @@ def register(app, cx) -> None:
         return page(request, "card_view.html", active="card", issues=comp.check() if comp else [],
                     percent_labels=dict(ch["percent"]), **ctx)
 
+    def fest_gsk(f) -> dict | None:
+        """Соревнование фестиваля: какие должности ГСК у него свои (Правки, п. 19)."""
+        fest = store.festival_of(f.id)
+        return {"own": fv.own_roles(fest, f.id)} if fest else None
+
     @app.get("/c/{cid}/card/edit")
     def card_edit(request: Request, cid: str):
         f = folder(cid)
@@ -89,7 +96,8 @@ def register(app, cx) -> None:
         if ctx["comp"] is None:  # файл не читается — исправлять в Excel, форма пустой не открывается
             return _redirect(f"{_base(f)}/card")
         return page(request, "card.html", active="card", form=card_to_form(ctx["comp"]), errors={}, ch=choices(),
-                    issues=ctx["comp"].check(), card_version=f.version(), own=store.own_values(), **ctx)
+                    issues=ctx["comp"].check(), card_version=f.version(), own=store.own_values(),
+                    fest_gsk=fest_gsk(f), **ctx)
 
     @app.post("/c/{cid}/card/edit")
     async def card_save(request: Request, cid: str):
@@ -100,6 +108,13 @@ def register(app, cx) -> None:
         sent_version = str(data.get("version", ""))
         conflict = comp is not None and sent_version and sent_version != f.version() and not data.get("force")
         save_error = None
+        if comp is not None and not conflict and (fest := store.festival_of(f.id)):
+            # фестиваль: «своя» — должности, отмеченные галочкой, и те, которых нет в ГСК фестиваля
+            common = {o.role for o in fv.officials(fest)}
+            own = list(dict.fromkeys(r["role"] for r in form["officials"] if r["fio"] and r["role"]
+                                     and (r["own"] or r["role"] not in common)))
+            rec = store.update_festival(fest["id"], lambda x: x.setdefault("own_gsk", {}).__setitem__(f.id, own))
+            comp = replace(comp, officials=fv.effective(rec, f.id, comp.officials))
         if comp is not None and not conflict:
             try:
                 f.save(comp)
@@ -111,7 +126,7 @@ def register(app, cx) -> None:
         ctx = comp_ctx(f)
         return page(request, "card.html", status_code=422 if errors else 409, active="card", form=form,
                     errors=errors, ch=choices(), issues=[], card_version=sent_version, conflict=conflict,
-                    save_error=save_error, own=store.own_values(), **ctx)
+                    save_error=save_error, own=store.own_values(), fest_gsk=fest_gsk(f), **ctx)
 
     @app.post("/c/{cid}/card/forget")
     async def card_forget(request: Request, cid: str):

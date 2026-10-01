@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -16,10 +17,20 @@ from starlette.exceptions import HTTPException
 from st_secretary import __version__, training
 from st_secretary import backup as bk
 from st_secretary import commission as cm
+from st_secretary import festival as fv
 from st_secretary import practice as pt_
 from st_secretary.importers.card_xlsx import CardError, load_card
 from st_secretary.web.common import HERE, XLSX, _base, _redirect, _with_done, log
-from st_secretary.web.forms import card_to_form, choices, form_from_data, form_to_card
+from st_secretary.web.forms import (
+    card_to_form,
+    choices,
+    form_from_data,
+    form_to_card,
+    official_rows,
+    officials_form,
+    officials_from_rows,
+)
+from st_secretary.web.store import CONTRACTS
 
 
 def register(app, cx) -> None:
@@ -139,8 +150,8 @@ def register(app, cx) -> None:
         data = await up.read()
         try:
             if bk.is_festival(data):  # копия фестиваля — все его соревнования и сам фестиваль
-                title, names = bk.restore_festival(data, store.root, app.state.clock())
-                fid = store.set_festival(None, title, names)
+                rec, names = bk.restore_festival(data, store.root, app.state.clock())
+                fid = store.set_festival(None, rec["title"], names, data=rec)
                 return _redirect(f"/festival/{quote(fid, safe='')}?done=restored")
             name = bk.restore(data, store.root, app.state.clock())
         except bk.BackupError as e:
@@ -186,10 +197,54 @@ def register(app, cx) -> None:
     def festival_page(request: Request, fid: str):
         x = need_festival(fid)
         folders = [store.get(m) for m in x["members"]]
-        items = [{**comp_ctx(f), "files": len(f.preapp_files())} for f in folders if f]
+        items = []
+        for f in folders:
+            if not f:
+                continue
+            it = {**comp_ctx(f), "files": len(f.preapp_files())}
+            own = set(fv.own_roles(x, f.id))
+            it["own"] = [o for o in (it["comp"].officials if it["comp"] else []) if o.role in own]
+            items.append(it)
         others = [comp_ctx(f) for f in store.all() if f.id not in x["members"]]
         return page(request, "festival.html", fest=x, items=items, others=others,
-                    people=festival_people([f for f in folders if f]))
+                    people=festival_people([f for f in folders if f]), gsk_rows=official_rows(fv.officials(x)),
+                    ch=choices(), errors={}, modes=fv.modes(x), mode_labels=fv.MODES, fee_per=fv.FEE_PER)
+
+    @app.post("/festival/{fid}/gsk")
+    async def festival_gsk(request: Request, fid: str):
+        """ГСК фестиваля — в карточки всех его соревнований (кроме должностей, где у соревнования своя замена)."""
+        need_festival(fid)
+        err: dict = {}
+        people = officials_from_rows(officials_form(await request.form()), err)
+        if err:
+            return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_gsk_role#gsk")
+        rec = store.update_festival(fid, lambda x: x.__setitem__("officials", [fv.official_dict(o) for o in people]))
+        locked = store.sync_gsk(rec)
+        if locked:
+            return _redirect(_with_done(f"/festival/{quote(fid, safe='')}#gsk", "festival_gsk_locked",
+                                        comps="», «".join(locked)))
+        return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_gsk#gsk")
+
+    @app.post("/festival/{fid}/modes")
+    async def festival_modes(request: Request, fid: str):
+        """Режимы фестиваля: договоры и табель, взнос, стартовые номера (Правки, п. 19)."""
+        x = need_festival(fid)
+        form = await request.form()
+        new = {k: str(form.get(k)) for k in fv.MODES if str(form.get(k)) in fv.MODES[k]}
+        amount = re.sub(r"\D", "", str(form.get("fee_amount", "")).split(",")[0].split(".")[0])
+        per = str(form.get("fee_per", ""))
+        joint = new.get("contracts") == "festival" and fv.mode(x, "contracts") != "festival" \
+            and not x.get("contracts")  # впервые один договор на фестиваль — собрать из договоров соревнований
+        datas = [f._read_json(CONTRACTS) for m in x["members"] if (f := store.get(m))] if joint else []
+
+        def change(rec):
+            rec["modes"] = {**fv.modes(rec), **new}
+            rec["fee"] = {"amount": int(amount) if amount else None, "per": per if per in fv.FEE_PER else fv.FEE_PER[0]}
+            if joint:
+                rec["contracts"] = fv.merge_contracts(datas)
+
+        store.update_festival(fid, change)
+        return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_modes#modes")
 
     @app.post("/festival/{fid}/edit")
     async def festival_edit(request: Request, fid: str):
@@ -209,7 +264,7 @@ def register(app, cx) -> None:
     def festival_backup(fid: str):
         x = need_festival(fid)
         folders = [store.get(m).path for m in x["members"] if store.get(m)]
-        data = bk.make_festival(folders, x["title"], app.state.clock())
+        data = bk.make_festival(folders, x, app.state.clock())
         name = f"Фестиваль {x['title']} — {app.state.clock():%Y-%m-%d %H-%M}.zip"
         return Response(data, media_type="application/zip",
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})

@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_form.html" import official_row %}
 {% block title %}Фестиваль «{{ fest.title }}» — СТ-Секретарь{% endblock %}
 {% block content %}
 <a class="back" href="/">← Все соревнования</a>
 <h1>Фестиваль «{{ fest.title }}»</h1>
 <p class="lead">Несколько соревнований за один выезд. Каждое — самостоятельное: своя карточка, зачёты, результаты,
-  протоколы, ранг и нормы. Общие судьи, ГСК и отметки документов участников — появятся после ответов владельца
-  (решение 039); сейчас — группа на главной, переключение, сводка и копия одним архивом.</p>
+  протоколы, ранг и нормы. Общие — ГСК и судейская бригада, документы участников (отмечаются один раз), стартовые
+  номера и перерыв между стартами участника; договоры, табель и взнос — как выберете ниже.</p>
 
 <section class="panel">
   <h2>Соревнования фестиваля</h2>
@@ -17,8 +18,10 @@
         <div class="comp-main"><strong>{{ it.comp.title if it.comp else it.folder.id }}</strong>
           {% if it.comp %}<span>{{ it.comp.place }} · {{ it.comp.zachety|map(attribute="title")|join(", ") }}</span>{% endif %}</div>
         <div class="comp-stat"><b>{{ it.files }}</b><span>заявок</span></div>{{ icon("arrow") }}</a>
-      <form method="post" action="/festival/{{ fest.id|urlencode }}/edit" data-confirm="Убрать соревнование из фестиваля? Его данные не изменятся.">
+      <form method="post" action="/festival/{{ fest.id|urlencode }}/edit" data-confirm="Убрать соревнование из фестиваля? Его данные не изменятся, ГСК в карточке останется.">
         <input type="hidden" name="remove" value="{{ it.folder.id }}"><button class="btn btn-ghost btn-small" type="submit">Убрать из фестиваля</button></form>
+      {% if it.own %}<p class="fest-own muted">Своя ГСК в этом соревновании: {% for o in it.own %}{{ o.role|lower }} — {{ o.fio }}{% if not loop.last %}; {% endif %}{% endfor %}
+        (<a href="{{ it.base }}/card/edit#gsk">изменить в карточке</a>)</p>{% endif %}
     </div>
   {% endfor %}
   </div>
@@ -29,6 +32,53 @@
     <button class="btn" type="submit">{{ icon("plus", 18) }}Добавить</button>
   </form>
   {% endif %}
+</section>
+
+<section class="panel" id="gsk">
+  <h2>Главная судейская коллегия фестиваля</h2>
+  <p class="muted">Вводится один раз и сама попадает в карточки всех соревнований фестиваля — в подписи протоколов, табель,
+    справки. Если в каком-то соревновании у должности свой человек (например, свой главный судья), впишите его в
+    карточке этого соревнования и отметьте «Своя» — он заменит общего только там.</p>
+  <form method="post" action="/festival/{{ fest.id|urlencode }}/gsk" data-guard>
+    <div class="table-wrap">
+    <table class="tbl form-tbl gsk-tbl">
+      <colgroup><col class="c-role"><col class="c-fio"><col class="c-cat"><col class="c-terr"><col class="c-act"></colgroup>
+      <thead><tr><th>Должность</th><th>ФИО полностью</th><th>Категория</th><th>Территория</th><th></th></tr></thead>
+      <tbody id="gsk-rows" data-next="{{ gsk_rows|length }}">
+        {% for o in gsk_rows %}{{ official_row(loop.index0, o, errors, ch, fixed=(loop.index0 < ch.roles|length and o.role == ch.roles[loop.index0])) }}{% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" data-add-row="gsk-rows" data-template="tpl-official">{{ icon("plus") }}Добавить судью</button>
+      <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить ГСК фестиваля</button>
+    </div>
+  </form>
+  <datalist id="dl-roles">{% for r in ch.roles %}<option value="{{ r }}">{% endfor %}</datalist>
+  <template id="tpl-official">{{ official_row("__i__", {"role": "", "fio": "", "category": "", "territory": ""}, {}, ch) }}</template>
+</section>
+
+<section class="panel fest-modes" id="modes">
+  <h2>Договоры и табель, взнос, стартовые номера</h2>
+  <form method="post" action="/festival/{{ fest.id|urlencode }}/modes">
+    <fieldset><legend>Договоры и табель судей</legend>
+      {% for k, label in mode_labels.contracts.items() %}<label class="check"><input type="radio" name="contracts" value="{{ k }}"{% if modes.contracts == k %} checked{% endif %}> {{ label }}</label>{% endfor %}
+      <p class="hint">Судейская бригада (кого добавили на странице «Договоры и табель») — общая в обоих случаях. Один договор —
+        дни работы и ставки задаются один раз, период — от первого до последнего дня фестиваля; открывается с любого
+        соревнования фестиваля.</p>
+    </fieldset>
+    <fieldset class="fest-fee"><legend>Стартовый взнос</legend>
+      {% for k, label in mode_labels.fee.items() %}<label class="check"><input type="radio" name="fee" value="{{ k }}"{% if modes.fee == k %} checked{% endif %}> {{ label }}</label>{% endfor %}
+      <p>Взнос за фестиваль: <input type="text" inputmode="numeric" name="fee_amount" value="{{ fest.fee.amount if fest.fee and fest.fee.amount else '' }}" aria-label="Взнос за фестиваль, рублей"> ₽ за
+        <select name="fee_per" aria-label="Взнос за фестиваль — за кого">{% for p in fee_per %}<option value="{{ p }}"{% if fest.fee and fest.fee.per == p %} selected{% endif %}>{{ p }}</option>{% endfor %}</select></p>
+    </fieldset>
+    <fieldset><legend>Стартовые номера</legend>
+      {% for k, label in mode_labels.numbers.items() %}<label class="check"><input type="radio" name="numbers" value="{{ k }}"{% if modes.numbers == k %} checked{% endif %}> {{ label }}</label>{% endfor %}
+      <p class="hint">Общие: одна команда — одинаковые название и территория в заявках. Номер, поставленный у команды в одном
+        соревновании, ставится ей и в остальных; «Присвоить тем, у кого нет» нумерует все соревнования фестиваля сразу.</p>
+    </fieldset>
+    <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить режимы</button>
+  </form>
 </section>
 
 <section class="panel" id="people">

@@ -1,4 +1,29 @@
 {# Поля формы. Ошибка показывается у поля; значение — всегда то, что ввёл человек. #}
+{# Строка ГСК (карточка соревнования, ГСК фестиваля). own — соревнование фестиваля: None — не в фестивале,
+   иначе галочка «своя» (True — у должности свой человек в этом соревновании, False — общий из ГСК фестиваля). #}
+{% macro official_row(i, o, errors, ch, fixed=False, own=None) -%}
+{% set rk = "g-" ~ i ~ "-role" %}
+<tr data-row{% if own is not none %} data-own-row class="{{ 'gsk-own' if own else 'gsk-common' }}"{% endif %}>
+  <td class="role-cell">
+    {% if fixed %}<input type="hidden" name="{{ rk }}" value="{{ o.role }}"><span>{{ o.role }}</span>
+    {% else %}<input type="text" name="{{ rk }}" value="{{ o.role }}" list="dl-roles" placeholder="Должность" aria-label="Должность"{% if errors.get(rk) %} class="is-invalid"{% endif %}>
+      {% if errors.get(rk) %}<p class="field-error">{{ errors[rk] }}</p>{% endif %}
+    {% endif %}
+  </td>
+  <td><input type="text" name="g-{{ i }}-fio" value="{{ o.fio }}" placeholder="Фамилия Имя Отчество" aria-label="ФИО полностью"></td>
+  <td>
+    <select name="g-{{ i }}-category" aria-label="Судейская категория">
+      <option value="">—</option>
+      {% if o.category and o.category not in ch.categories|map("first")|list %}<option value="{{ o.category }}" selected>{{ o.category }} (не из списка)</option>{% endif %}
+      {% for v, t in ch.categories %}<option value="{{ v }}"{% if v == o.category %} selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select>
+  </td>
+  <td><input type="text" name="g-{{ i }}-territory" value="{{ o.territory }}" placeholder="г. Красноярск" aria-label="Территория"></td>
+  {% if own is not none %}<td class="cb"><input type="checkbox" name="g-{{ i }}-own" value="1"{% if own %} checked{% endif %} aria-label="Своя в этом соревновании: {{ o.role }}" title="Свой человек в этом соревновании — вместо ГСК фестиваля"></td>{% endif %}
+  <td class="cell-action">{% if not fixed %}<button type="button" class="icon-btn" data-remove-row data-confirm="Удалить эту строку?" title="Удалить строку" aria-label="Удалить строку">×</button>{% endif %}</td>
+</tr>
+{%- endmacro %}
+
 {% macro input(name, label, value, errors, type="text", hint="", required=False, cls="span-6", list=None, placeholder="") -%}
 <div class="field {{ cls }}{% if errors.get(name) %} has-error{% endif %}">
   <label for="f-{{ name }}">{{ label }}{% if required %}<span class="req" title="обязательное поле">*</span>{% endif %}</label>

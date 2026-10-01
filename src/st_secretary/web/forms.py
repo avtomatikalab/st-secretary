@@ -30,7 +30,7 @@ MAIN_FIELDS = ["title", "kind", "level", "date_from", "date_to", "place", "host_
 REQUIRED = {"title": "Наименование", "kind": "Вид", "level": "Уровень", "date_from": "Дата начала",
             "date_to": "Дата окончания", "place": "Место проведения",
             "host_territory": "Территория организаторов", "norms_edition": "Редакция норм"}
-OFFICIAL_FIELDS = ["role", "fio", "category", "territory"]
+OFFICIAL_FIELDS = ["role", "fio", "category", "territory", "own"]  # own — «своя» у соревнования фестиваля
 ZACHET_FIELDS = ["group", "distance_class", "discipline_code", "age_from", "age_to", "age_from_by_gsk",
                  "min_qual", "team_size", "min_men", "min_women", "fee", "fee_per",
                  "name", "zid", "discipline_text", "result", "unit"]  # последние — неофициальные (решение 038)
@@ -82,14 +82,7 @@ def card_to_form(comp: Competition | None) -> dict:
         "preapp_deadline": comp.preapp_deadline.isoformat() if comp.preapp_deadline else "",
         "unofficial": "1" if comp.unofficial else "",
     }
-    rest = list(comp.officials)
-    officials = []
-    for role in GSK_ROLES:  # стандартные должности — всегда на своих местах, как в Excel
-        o = next((x for x in rest if x.role == role), None)
-        if o:
-            rest.remove(o)
-        officials.append(_official_row(role, o))
-    officials += [_official_row(o.role, o) for o in rest]
+    officials = official_rows(comp.officials)
     zachety = [{
         "group": z.group, "distance_class": _s(z.distance_class), "discipline_code": z.discipline_code,
         "age_from": _s(z.age_from), "age_to": _s(z.age_to), "age_from_by_gsk": _s(z.age_from_by_gsk),
@@ -98,6 +91,32 @@ def card_to_form(comp: Competition | None) -> dict:
         "name": z.name, "zid": z.key, "discipline_text": z.discipline_text, "result": z.result, "unit": z.unit,
     } for z in comp.zachety] or [empty_zachet()]
     return {"main": main, "officials": officials, "zachety": zachety}
+
+
+def official_rows(officials: list[Official]) -> list[dict]:
+    """Строки ГСК для формы: стандартные должности — всегда на своих местах, как в Excel, затем остальные."""
+    rest = list(officials)
+    out = []
+    for role in GSK_ROLES:
+        o = next((x for x in rest if x.role == role), None)
+        if o:
+            rest.remove(o)
+        out.append(_official_row(role, o))
+    return out + [_official_row(o.role, o) for o in rest]
+
+
+def officials_from_rows(rows: list[dict], err: dict) -> list[Official]:
+    """ГСК из строк формы: незаполненные должности пропускаются; ФИО без должности — ошибка в err."""
+    out = []
+    for i, row in enumerate(rows):
+        fio = clean_spaces(row["fio"])
+        if not fio:
+            continue
+        if not clean_spaces(row["role"]):
+            err[f"g-{i}-role"] = "укажите должность"
+        # категорию не из списка не запрещаем: проверка карточки предупредит, а данные не пропадут
+        out.append(Official(clean_spaces(row["role"]), fio, row["category"], clean_spaces(row["territory"])))
+    return out
 
 
 def _official_row(role: str, o: Official | None) -> dict:
@@ -109,6 +128,11 @@ def form_from_data(data) -> dict:
     """Поля из отправленной формы. data — словарь (FormData) «имя поля → значение»."""
     main = {k: _s(data.get(k)).strip() for k in MAIN_FIELDS}
     return {"main": main, "officials": _rows(data, "g", OFFICIAL_FIELDS), "zachety": _rows(data, "z", ZACHET_FIELDS)}
+
+
+def officials_form(data) -> list[dict]:
+    """Строки ГСК из отправленной формы (g-N-role, g-N-fio, …)."""
+    return _rows(data, "g", OFFICIAL_FIELDS)
 
 
 def _rows(data, prefix: str, fields: list[str]) -> list[dict]:
@@ -157,15 +181,7 @@ def form_to_card(form: dict) -> tuple[Competition | None, dict[str, str]]:
         if percent is None:
             err["percent_method"] = "выберите из списка"
 
-    officials = []
-    for i, row in enumerate(form["officials"]):
-        fio = clean_spaces(row["fio"])
-        if not fio:
-            continue  # незаполненная должность — просто пропускаем
-        if not clean_spaces(row["role"]):
-            err[f"g-{i}-role"] = "укажите должность"
-        # категорию не из списка не запрещаем: проверка карточки предупредит, а данные не пропадут
-        officials.append(Official(clean_spaces(row["role"]), fio, row["category"], clean_spaces(row["territory"])))
+    officials = officials_from_rows(form["officials"], err)
 
     codes = {c for c, _ in choices()["disciplines"]}
     unofficial = bool(m.get("unofficial"))

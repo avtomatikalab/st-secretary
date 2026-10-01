@@ -1,28 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
-{% from "_form.html" import main_fields, input, select, issue_list %}
-
-{% macro official_row(i, o, errors, ch, fixed=False) -%}
-{% set rk = "g-" ~ i ~ "-role" %}
-<tr data-row>
-  <td class="role-cell">
-    {% if fixed %}<input type="hidden" name="{{ rk }}" value="{{ o.role }}"><span>{{ o.role }}</span>
-    {% else %}<input type="text" name="{{ rk }}" value="{{ o.role }}" list="dl-roles" placeholder="Должность" aria-label="Должность"{% if errors.get(rk) %} class="is-invalid"{% endif %}>
-      {% if errors.get(rk) %}<p class="field-error">{{ errors[rk] }}</p>{% endif %}
-    {% endif %}
-  </td>
-  <td><input type="text" name="g-{{ i }}-fio" value="{{ o.fio }}" placeholder="Фамилия Имя Отчество" aria-label="ФИО полностью"></td>
-  <td>
-    <select name="g-{{ i }}-category" aria-label="Судейская категория">
-      <option value="">—</option>
-      {% if o.category and o.category not in ch.categories|map("first")|list %}<option value="{{ o.category }}" selected>{{ o.category }} (не из списка)</option>{% endif %}
-      {% for v, t in ch.categories %}<option value="{{ v }}"{% if v == o.category %} selected{% endif %}>{{ t }}</option>{% endfor %}
-    </select>
-  </td>
-  <td><input type="text" name="g-{{ i }}-territory" value="{{ o.territory }}" placeholder="г. Красноярск" aria-label="Территория"></td>
-  <td class="cell-action">{% if not fixed %}<button type="button" class="icon-btn" data-remove-row data-confirm="Удалить эту строку?" title="Удалить строку" aria-label="Удалить строку">×</button>{% endif %}</td>
-</tr>
-{%- endmacro %}
+{% from "_form.html" import main_fields, input, select, issue_list, official_row %}
 
 {% macro zachet_block(i, z, errors, ch) -%}
 {% set p = "z-" ~ i ~ "-" %}
@@ -111,13 +89,19 @@
     <section class="panel" id="gsk">
       <h2>Главная судейская коллегия</h2>
       <p class="muted">Подписи протоколов берутся отсюда: «И.О. Фамилия, категория, территория». Пустые строки не сохраняются.</p>
+      {% if fest_gsk %}
+      <p class="gsk-fest-note">{{ icon("info", 18) }} <span>Соревнование входит в фестиваль <a href="/festival/{{ festival.id|urlencode }}#gsk">«{{ festival.title }}»</a>:
+        ГСК — общая для его соревнований, менять её — на странице фестиваля. Если в этом соревновании у должности
+        свой человек (например, свой главный судья), впишите его и отметьте «Своя» — он заменит общего только здесь.
+        Снимите «Своя» — снова будет человек из ГСК фестиваля.</span></p>
+      {% endif %}
       <div class="table-wrap">
-      <table class="tbl form-tbl gsk-tbl">
-        <colgroup><col class="c-role"><col class="c-fio"><col class="c-cat"><col class="c-terr"><col class="c-act"></colgroup>
-        <thead><tr><th>Должность</th><th>ФИО полностью</th><th>Категория</th><th>Территория</th><th></th></tr></thead>
+      <table class="tbl form-tbl gsk-tbl{% if fest_gsk %} gsk-fest{% endif %}">
+        <colgroup><col class="c-role"><col class="c-fio"><col class="c-cat"><col class="c-terr">{% if fest_gsk %}<col class="c-own">{% endif %}<col class="c-act"></colgroup>
+        <thead><tr><th>Должность</th><th>ФИО полностью</th><th>Категория</th><th>Территория</th>{% if fest_gsk %}<th class="cb" title="Свой человек в этом соревновании — вместо ГСК фестиваля">Своя</th>{% endif %}<th></th></tr></thead>
         <tbody id="gsk-rows" data-next="{{ form.officials|length }}">
           {% for o in form.officials %}
-          {{ official_row(loop.index0, o, errors, ch, fixed=(loop.index0 < ch.roles|length and o.role == ch.roles[loop.index0])) }}
+          {{ official_row(loop.index0, o, errors, ch, fixed=(loop.index0 < ch.roles|length and o.role == ch.roles[loop.index0]), own=((o.own == "1") if o.own is defined else (o.role in fest_gsk.own)) if fest_gsk else none) }}
           {% endfor %}
         </tbody>
       </table>
@@ -160,7 +144,7 @@
     {% endfor %}
   </details>
   {% endif %}
-  <template id="tpl-official">{{ official_row("__i__", {"role": "", "fio": "", "category": "", "territory": ""}, {}, ch) }}</template>
+  <template id="tpl-official">{{ official_row("__i__", {"role": "", "fio": "", "category": "", "territory": ""}, {}, ch, own=true if fest_gsk else none) }}</template>
   <template id="tpl-zachet">{{ zachet_block("__i__", empty_zachet, {}, ch) }}</template>
 {% endif %}
 {% endblock %}

@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from st_secretary import festival as fv
 from st_secretary.competition import Competition
 from st_secretary.exporters.preapp_xlsx import write_preapp_report
 from st_secretary.importers.card_xlsx import load_card, write_card
@@ -82,7 +83,37 @@ IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}  # браузе
 
 def default_docs_root() -> Path:
     return Path.home() / DOCS_ROOT_NAME
+
+
 EXCEL = (".xlsx", ".xls")
+
+
+def read_festivals(root: Path) -> list[dict]:
+    """Записи фестивалей из «Фестивали.json» как есть (см. festival.py)."""
+    try:
+        data = json.loads((Path(root) / FESTIVALS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    items = data.get("festivals", []) if isinstance(data, dict) else []
+    return [x for x in items if isinstance(x, dict) and x.get("id")]
+
+
+def write_festivals(root: Path, items: list[dict]) -> None:
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    tmp = root / f"~{FESTIVALS}"
+    tmp.write_text(json.dumps({"festivals": items}, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, root / FESTIVALS)
+
+
+def update_festival(root: Path, fid: str, change) -> dict | None:
+    """Прочитать, изменить (change(запись)) и записать фестиваль. Возвращает изменённую запись."""
+    items = read_festivals(root)
+    x = next((i for i in items if i["id"] == fid), None)
+    if x is not None:
+        change(x)
+        write_festivals(root, items)
+    return x
 
 _BAD_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')  # недопустимы в именах файлов Windows
 
@@ -328,12 +359,40 @@ class CompFolder:
     def out_dir(self) -> Path:
         return self.path / OUT_DIR
 
+    def festival(self) -> dict | None:
+        """Фестиваль, в который входит соревнование (запись из «Фестивали.json» в папке «данные»)."""
+        return next((x for x in read_festivals(self.path.parent) if self.id in x.get("members", [])), None)
+
     def contracts(self) -> dict:
-        """Договоры и табель: {"period", "accrual", "rates", "customer", "people", "extra"} (см. staff.py)."""
-        return self._read_json(CONTRACTS)
+        """Договоры и табель: {"period", "accrual", "rates", "customer", "people", "extra"} (см. staff.py).
+        На фестивале бригада («extra») — общая, а при «один договор и табель на фестиваль» — и всё остальное."""
+        data = self._read_json(CONTRACTS)
+        fest = self.festival()
+        if fest is None:
+            return data
+        if fv.mode(fest, "contracts") == "festival":
+            data = dict(fest.get("contracts", {}))
+        data["extra"] = list(fest.get("brigade", []))
+        return data
 
     def save_contracts(self, data: dict) -> None:
-        self._write_json(CONTRACTS, data)
+        fest = self.festival()
+        if fest is None:
+            self._write_json(CONTRACTS, data)
+            return
+        data = dict(data)
+        brigade = data.pop("extra", [])
+        joint = fv.mode(fest, "contracts") == "festival"
+
+        def change(x):
+            x["brigade"] = brigade
+            if joint:
+                x["contracts"] = data
+
+        update_festival(self.path.parent, fest["id"], change)
+        if not joint:  # свои дни и ставки — в папке соревнования; его прежняя бригада там же остаётся
+            own = self._read_json(CONTRACTS).get("extra")
+            self._write_json(CONTRACTS, {**data, **({"extra": own} if own is not None else {})})
 
     @property
     def contract_template(self) -> Path:
@@ -461,24 +520,10 @@ class Store:
         return self.root / FESTIVALS
 
     def festivals(self) -> list[dict]:
-        """[{id, title, members: [папки соревнований]}]; соревнования, которых уже нет, пропускаются."""
-        try:
-            data = json.loads(self.festivals_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return []
+        """Записи фестивалей (festival.py); соревнования, которых уже нет, пропускаются."""
         have = {f.id for f in self.all()}
-        out = []
-        for x in (data.get("festivals", []) if isinstance(data, dict) else []):
-            if isinstance(x, dict) and x.get("id"):
-                out.append({"id": str(x["id"]), "title": str(x.get("title") or "Фестиваль"),
-                            "members": [m for m in x.get("members", []) if m in have]})
-        return out
-
-    def save_festivals(self, items: list[dict]) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-        tmp = self.root / f"~{FESTIVALS}"
-        tmp.write_text(json.dumps({"festivals": items}, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.festivals_path)
+        return [{**x, "id": str(x["id"]), "title": str(x.get("title") or "Фестиваль"),
+                 "members": [m for m in x.get("members", []) if m in have]} for x in read_festivals(self.root)]
 
     def festival(self, fid: str) -> dict | None:
         return next((x for x in self.festivals() if x["id"] == fid), None)
@@ -486,21 +531,99 @@ class Store:
     def festival_of(self, cid: str) -> dict | None:
         return next((x for x in self.festivals() if cid in x["members"]), None)
 
-    def set_festival(self, fid: str | None, title: str, members: list[str]) -> str:
-        """Создать или изменить фестиваль; соревнование — только в одном фестивале. Пустой фестиваль — удаляется."""
+    def update_festival(self, fid: str, change) -> dict | None:
+        return update_festival(self.root, fid, change)
+
+    def set_festival(self, fid: str | None, title: str, members: list[str], data: dict | None = None) -> str:
+        """Создать или изменить фестиваль; соревнование — только в одном фестивале. Пустой фестиваль — удаляется.
+        Вошедшие соревнования: их ГСК сверяется с ГСК фестиваля (отличия — «своя» замена), бригада — в общую;
+        вышедшие получают бригаду фестиваля в свои договоры. data — сохранённые данные фестиваля (из копии)."""
         import secrets
 
         fid = fid or "ф" + secrets.token_hex(4)
-        items = []
-        for x in self.festivals():
+        items, rec = [], None
+        for x in read_festivals(self.root):
             if x["id"] == fid:
+                rec = x
                 continue
-            x["members"] = [m for m in x["members"] if m not in members]
-            items.append(x)
+            gone = [m for m in x.get("members", []) if m in members]
+            for m in gone:
+                self._leave_festival(x, m)
+            x["members"] = [m for m in x.get("members", []) if m not in members]
+            if x["members"]:
+                items.append(x)
+        rec = {**(rec or {}), **(data or {})}
+        before = list(rec.get("members", [])) if not data else []
+        for m in before:
+            if m not in members:
+                self._leave_festival(rec, m)
+        joined = [m for m in members if m not in before]
         if members:
-            items.append({"id": fid, "title": " ".join(title.split())[:200] or "Фестиваль", "members": members})
-        self.save_festivals(items)
+            rec.update(id=fid, title=" ".join(title.split())[:200] or "Фестиваль", members=members)
+            if joined:
+                self._join_festival(rec, joined, restored=bool(data))
+            items.append(rec)
+        write_festivals(self.root, items)
+        if members and joined:
+            self.sync_gsk(rec)
         return fid
+
+    def _comp(self, cid: str) -> tuple[CompFolder, Competition] | None:
+        f = self.get(cid)
+        try:
+            return (f, f.load()) if f else None
+        except Exception:  # noqa: BLE001 — карточка не читается: ГСК этого соревнования не трогаем
+            return None
+
+    def _join_festival(self, rec: dict, joined: list[str], restored: bool = False) -> None:
+        loaded = {m: x for m in rec["members"] if (x := self._comp(m))}
+        if not rec.get("officials"):  # ГСК фестиваля — из самого раннего соревнования
+            first = min((c for _, c in loaded.values() if c.officials), key=lambda c: c.date_from, default=None)
+            rec["officials"] = [fv.official_dict(o) for o in first.officials] if first else []
+        fest_off = fv.officials(rec)
+        own = rec.setdefault("own_gsk", {})
+        extras = [rec.get("brigade", [])]
+        for m in joined:
+            if m not in loaded:
+                continue
+            f, comp = loaded[m]
+            roles = list(dict.fromkeys(own.get(m, []) + fv.differing_roles(fest_off, comp.officials)))
+            if roles:
+                own[m] = roles
+            raw = f._read_json(CONTRACTS)
+            extras.append(raw.get("extra", []))
+            if fv.mode(rec, "contracts") == "festival" and not restored:
+                rec["contracts"] = fv.merge_contracts([rec.get("contracts", {}), raw])
+        rec["brigade"] = fv.union_brigade(extras)
+
+    def _leave_festival(self, rec: dict, cid: str) -> None:
+        """Соревнование вышло из фестиваля: ГСК в его карточке уже полная, бригада фестиваля — в его договоры."""
+        rec.get("own_gsk", {}).pop(cid, None)
+        f = self.get(cid)
+        if f is None:
+            return
+        raw = f._read_json(CONTRACTS)
+        raw["extra"] = fv.union_brigade([raw.get("extra", []), rec.get("brigade", [])])
+        f._write_json(CONTRACTS, raw)
+
+    def sync_gsk(self, rec: dict) -> list[str]:
+        """Записать действующую ГСК (фестиваля и свои замены) в карточки соревнований фестиваля. Возвращает
+        соревнования, чьи карточки записать не удалось (открыты в Excel)."""
+        from dataclasses import replace
+
+        locked = []
+        for m in rec.get("members", []):
+            x = self._comp(m)
+            if x is None:
+                continue
+            f, comp = x
+            new = fv.effective(rec, m, comp.officials)
+            if new != comp.officials:
+                try:
+                    f.save(replace(comp, officials=new))
+                except PermissionError:
+                    locked.append(comp.title)
+        return locked
 
     @property
     def own_values_path(self) -> Path:
@@ -563,7 +686,11 @@ class Store:
         os.replace(tmp, self.personal_path)
 
     def contracts_dir(self, f: CompFolder) -> Path:
-        """Договоры и табель соревнования — там же, где сканы: в них паспорта и счета."""
+        """Договоры и табель соревнования — там же, где сканы: в них паспорта и счета. Один договор на весь
+        фестиваль — в папке фестиваля."""
+        fest = f.festival()
+        if fv.mode(fest, "contracts") == "festival":
+            return self.docs_root / safe_name(f"Фестиваль {fest.get('title', '')}") / CONTRACTS_DIR
         return self.docs_root / f.id / CONTRACTS_DIR
 
     def review(self, f: CompFolder, comp: Competition) -> tuple[PreappResult, dict[str, Review]]:
