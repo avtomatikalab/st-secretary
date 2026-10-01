@@ -22,6 +22,8 @@ from st_secretary.reference import norm_edition
 from st_secretary.web.common import XLSX, _base, _parse_dt, _redirect, _with_done
 from st_secretary.web.store import CompFolder, safe_name
 
+DEFAULT_FIRST, DEFAULT_INTERVAL = "10:00", "5"  # время старта по умолчанию: первый старт, интервал в минутах
+
 
 def register(app, cx) -> None:
     comp_ctx = cx.comp_ctx
@@ -58,6 +60,17 @@ def register(app, cx) -> None:
         if adm is None:
             return comp.date_from, ""
         return adm.date(), f"{adm:%H:%M}" if adm.hour or adm.minute else ""
+
+    def time_fields(f: CompFolder, comp, zdata: dict) -> dict:
+        """Время старта в полях (Правки, п. 40): сохранённое, а пока его не сохраняли — настоящее значение по
+        умолчанию (не серая подсказка): «Начало соревнований» комиссии по допуску, иначе первый день и 10:00;
+        интервал — 5 мин. Пустое сохранённое время — «без времени, только очерёдность»."""
+        day, first = start_default(f, comp)
+        saved = zdata.get("draw", {})
+        return {"day": str(saved.get("day") or day.isoformat()),
+                "first": str(saved["first"]) if "first" in saved else first or DEFAULT_FIRST,
+                "interval": str(saved["interval"]) if "interval" in saved else DEFAULT_INTERVAL,
+                "saved": "first" in saved}
 
     def start_break(f: CompFolder) -> int:
         """Перерыв между стартами одного участника в разных зачётах, мин (для всего соревнования; на фестивале — для
@@ -111,14 +124,14 @@ def register(app, cx) -> None:
             lists = [(lst if g.id == f.id and x.key == zz.key else s, exp) for g, _, x, s, exp in everything]
             lst.issues += [i for keys, i in sl.person_conflicts(lists, brk) if zz.key in keys]
         pub = _parse_dt(lst.published["at"]) if lst.published else None
-        day, first = start_default(f, comp)
+        zdata = f.run_data().get("zachety", {}).get(zz.key, {})
         return page(request, "start.html", active="start", zachet=zz, zachety=comp.zachety, sl=lst,
                     methods=sl.METHODS, hm=sl.hm_text, rank_text=sl.rank_word, draw_line=sp.draw_line(lst),
                     zq=urlencode({"z": zz.key}), pub_at=pub, until=pub + PROTEST_HOUR if pub else None,
-                    defaults={"day": day.isoformat(), "first": first}, is_time=tr.is_time_discipline(zz),
+                    times=time_fields(f, comp, zdata), is_time=tr.is_time_discipline(zz),
                     publish_by=lst.first_start - PROTEST_HOUR if lst.first_start else None, now=app.state.clock(),
                     not_admitted=[t.team for t in teams if not t.admitted], start_break=brk,
-                    fit_notes=f.run_data().get("zachety", {}).get(zz.key, {}).get("draw", {}).get("fit", []),
+                    fit_notes=zdata.get("draw", {}).get("fit", []),
                     **comp_ctx(f))
 
     @app.post("/c/{cid}/start/draw")
@@ -154,6 +167,9 @@ def register(app, cx) -> None:
                     f.save_run_data(data)
         drawing = form.get("action") == "draw"
         zdata, teams, ranks, lst = start_ctx(f, comp, zz)
+        if drawing:  # время старта не задавали — жеребьёвка берёт значения по умолчанию из полей (Правки, п. 40)
+            defaults = time_fields(f, comp, zdata)
+            new.update({k: defaults[k] for k in ("first", "interval") if k not in new})
         st = sl.settings({"draw": {**zdata.get("draw", {}), **new}})
         order, seed, groups, blocks = [r.inp.file for r in lst.rows], None, {}, None
         units = {t.file: t for t in teams if t.admitted}
@@ -195,8 +211,10 @@ def register(app, cx) -> None:
                 dr["times"] = {**dr.get("times", {}), **{k: sl.hm_text(v) for k, v in times.items()}}
 
         _save_zachet(f, zz.key, update)
-        return _redirect(_with_done(back + ("#order" if drawing else "#times"),
-                                    ("start_drawn" if drawing else "start_times") + ("_fit" if notes else "")))
+        done = ("start_drawn" if drawing else "start_times") + ("_fit" if notes else "")
+        if drawing:  # в сообщении — с какого времени и через сколько стартуют
+            return _redirect(_with_done(back + "#order", done, first=st["first"], interval=st["interval"]))
+        return _redirect(_with_done(back + "#times", done))
 
     @app.post("/c/{cid}/start/order")
     async def start_order(request: Request, cid: str, z: str = ""):

@@ -1232,6 +1232,47 @@ def test_start_order_drag_markup(client):
     assert "стрелками" in html and "Перетащите команду" in html
 
 
+def test_draw_without_touching_time_fields_sets_start_times(client):
+    """Правки, п. 40: в полях времени — настоящие значения по умолчанию (10:00, 5 мин), а не серые подсказки; кнопка
+    жеребьёвки отправляет и время — после жеребьёвки у всех команд есть время старта."""
+    client.post("/training")
+    f = client.app.state.store.all()[0]
+    q = "?" + urlencode({"z": "М/Ж_3"})
+    page = client.get(base(f) + "/start" + q).text
+    action = f'action="{base(f)}/start/draw{q}"'.replace("&", "&amp;")
+    assert page.count(action) == 1  # одна форма на жеребьёвку и время старта
+    form = FormFields(page.replace(action, 'id="d"'), "d").fields
+    assert form["interval"] == "5" and re.fullmatch(r"\d\d:\d\d", form["first"])
+    r = client.post(base(f) + "/start/draw" + q, data={**form, "action": "draw"}, follow_redirects=False)
+    flash = client.get(r.headers["location"]).text
+    assert f"Время старта — с {form['first']} через 5 мин" in flash
+    import json
+
+    sched = client.get(base(f) + "/schedule").text
+    lanes = json.loads(sched.split('id="schedule-data">')[1].split("</script>")[0])["lanes"]
+    times = [r["t"] for r in next(x for x in lanes if x["zkey"] == "М/Ж_3")["rows"]]
+    assert len(times) > 1 and None not in times and times[1] - times[0] == 300
+    page = client.get(base(f) + "/start" + q).text
+    assert "Время старта ещё не сохранено" not in page and "первый старт" in page
+
+
+def test_old_draw_request_without_time_takes_defaults(client, tmp_path, psr_card):
+    """Жеребьёвка без полей времени (старая форма) — время по умолчанию: «Начало соревнований» или 10:00, 5 мин."""
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    q = "?" + urlencode({"z": "М/Ж_3"})
+    page = client.get(base(f) + "/start" + q).text
+    assert 'name="first" value="10:00" placeholder="чч:мм"' in page and 'name="interval" value="5"' in page
+    r = client.post(base(f) + "/start/draw" + q, data={"method": "random", "action": "draw"}, follow_redirects=False)
+    assert "first=10%3A00" in r.headers["location"] and "interval=5" in r.headers["location"]
+    dr = f.run_data()["zachety"]["М/Ж_3"]["draw"]
+    assert (dr["first"], dr["interval"]) == ("10:00", "5")
+    client.post(base(f) + "/start/draw" + q, data={"action": "save", "first": "", "interval": "5"})
+    page = client.get(base(f) + "/start" + q).text
+    assert 'name="first" value="" placeholder="чч:мм"' in page  # стёрли время — без времени, только очерёдность
+
+
 def test_rename_stage_keeps_points_judge_log_and_link(client, tmp_path, psr_card):
     """Правки.md, п. 5 (переделать): название этапа можно менять — баллы, журнал судьи и ссылка привязаны к id этапа;
     на телефоне судьи — новое название. В «Этапах дистанции» название — поле, которое растёт по тексту."""

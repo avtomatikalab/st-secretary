@@ -31,11 +31,13 @@
 {% if sl.issues %}<div class="panel">{{ issue_list(sl.issues, base) }}</div>{% endif %}
 {% if not_admitted %}<p class="hint">Не допущены — в протокол не входят: {{ not_admitted|join(", ") }}.</p>{% endif %}
 
+{# одна форма на жеребьёвку и время старта: кнопка жеребьёвки отправляет и время — введённое, но не сохранённое,
+   не теряется (Правки, п. 40) #}
+<form method="post" action="{{ base }}/start/draw?{{ zq }}">
 <section class="panel" id="draw">
   <h2>1. Жеребьёвка — зачёт {{ zachet.title }}</h2>
   {% if sl.drawn %}<p><span class="status-badge gear-ok">{{ icon("check", 14) }} проведена</span> {{ draw_line }}</p>{% endif %}
   {% if fit_notes %}<div class="st-fit"><b>Перерыв участника соблюдён:</b><ul>{% for n in fit_notes %}<li>{{ n }}</li>{% endfor %}</ul></div>{% endif %}
-  <form method="post" action="{{ base }}/start/draw?{{ zq }}">
     <fieldset class="st-methods">
       <legend>Способ</legend>
       {% for key, label in methods.items() %}
@@ -62,18 +64,20 @@
       затем впишите в колонку «Порядок» номера, которые вытянули представители, и нажмите «Сохранить порядок».</p>
     <button class="btn btn-primary" type="submit" name="action" value="draw"{% if sl.drawn %} data-confirm="Жеребьёвка уже проведена {{ sl.drawn_at.strftime('%d.%m в %H:%M') }}. Провести заново? Порядок старта изменится{% if sl.published %}, стартовый протокол придётся опубликовать заново{% endif %}."{% endif %}>
       {{ icon("shuffle", 18) }}{% if sl.drawn %}Провести жеребьёвку заново{% else %}Провести жеребьёвку{% endif %}</button>
-  </form>
+    <span class="hint">Время старта — из раздела «Время старта» ниже{% if times.first %}: с {{ times.first }}{% if times.interval not in ("", "0") %} через {{ times.interval }} мин{% endif %}{% endif %}.</span>
 </section>
 
 <section class="panel" id="times">
   <h2>2. Время старта</h2>
-  <form method="post" action="{{ base }}/start/draw?{{ zq }}" class="grid">
+  {% if sl.drawn and not times.saved %}<p class="st-unsaved">{{ icon("alert", 16) }} Время старта ещё не сохранено —
+    в протоколе только очерёдность. Проверьте поля и нажмите «Сохранить время старта».</p>{% endif %}
+  <div class="grid">
     <div class="field span-3"><label for="f-day">День старта</label>
-      <input id="f-day" type="date" name="day" value="{{ sl.settings.day or defaults.day }}"></div>
+      <input id="f-day" type="date" name="day" value="{{ times.day }}"></div>
     <div class="field span-3"><label for="f-first">Первый старт, чч:мм</label>
-      <input id="f-first" type="text" name="first" value="{{ sl.settings.first or defaults.first }}" placeholder="10:00" inputmode="numeric"></div>
+      <input id="f-first" type="text" name="first" value="{{ times.first }}" placeholder="чч:мм" inputmode="numeric"></div>
     <div class="field span-3"><label for="f-iv">Интервал, минут</label>
-      <input id="f-iv" type="text" name="interval" value="{{ sl.settings.interval }}" placeholder="5" inputmode="decimal"></div>
+      <input id="f-iv" type="text" name="interval" value="{{ times.interval }}" placeholder="мин" inputmode="decimal"></div>
     {% if zachety|length > 1 or festival %}<div class="field span-3"><label for="f-brk">Перерыв между стартами участника, мин</label>
       <input id="f-brk" type="text" name="break" value="{{ start_break or '' }}" placeholder="0" inputmode="numeric">
       <p class="hint">Для всех зачётов{% if festival %} всех соревнований фестиваля{% endif %}: кто заявлен в нескольких — не
@@ -85,8 +89,9 @@
       {% if is_time %}В этом зачёте время из протокола — время старта команды, если старт не вписан и не загружен из SPORTident
       (раздел 3, часть 8, п. 1.5.5).{% endif %}</p>
       <button class="btn" type="submit" name="action" value="save">{{ icon("check", 18) }}Сохранить время старта</button></div>
-  </form>
+  </div>
 </section>
+</form>
 
 <section class="panel" id="order">
   <h2>3. Порядок старта</h2>

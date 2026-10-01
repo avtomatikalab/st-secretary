@@ -745,6 +745,7 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .st-spread { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; }
 .st-fit { margin: 8px 0; padding: 8px 12px; border-radius: 8px; background: var(--primary-soft); font-size: .92rem; }
 .st-fit ul { margin: 4px 0 0; padding-left: 20px; }
+.st-unsaved { display: flex; gap: 6px; align-items: center; margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); font-size: .92rem; }
 
 /* Наглядное расписание стартов (Правки, п. 25.5) */
 .sch-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 10px; }
