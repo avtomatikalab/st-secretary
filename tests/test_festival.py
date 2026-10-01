@@ -243,3 +243,41 @@ def test_festival_break_between_starts_of_one_person_in_two_competitions(client,
     assert dr["times"].get(first_a) and dr["times"][first_a] >= "10:30" and dr["fit"]
     page = client.get(base(b) + "/start" + q).text
     assert "Перерыв участника соблюдён" in page and "всех соревнований фестиваля" in page
+
+
+def test_schedule_all_zachety_of_festival_and_save(client, tmp_path, psr_card):
+    """Правки, п. 25.5: наглядное расписание — все зачёты всех соревнований фестиваля на одной шкале; «Сохранить» —
+    порядок и время старта в каждом зачёте (как «Порядок старта»), сдвиг блока — время первого старта."""
+    import json
+    from urllib.parse import urlencode
+
+    store = client.app.state.store
+    a = store.create(psr_card)
+    b = store.create(replace(psr_card, title="Кубок города N по спортивному туризму"))
+    for f in (a, b):
+        f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+        f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    make_festival(client, a, b)
+    q = "?" + urlencode({"z": "М/Ж_3"})
+    client.post(base(a) + "/start/draw" + q, data={"day": "2025-09-20", "first": "10:00", "interval": "10"})
+    page = client.get(base(a) + "/schedule").text
+    assert "Расписание стартов" in page and "всех соревнований фестиваля" in page
+    data = json.loads(page.split('id="schedule-data">')[1].split("</script>")[0])
+    lanes = {(x["cid"], x["zkey"]): x for x in data["lanes"]}
+    assert set(lanes) == {(a.id, "М/Ж_3"), (b.id, "М/Ж_3")}
+    la = lanes[(a.id, "М/Ж_3")]
+    assert la["first"] == 36000 and la["interval"] == 600 and [r["t"] for r in la["rows"]] == [36000, 36600]
+    assert la["rows"][0]["people"] and la["block"] is False and lanes[(b.id, "М/Ж_3")]["first"] is None
+
+    # перетащили: вторая команда — первой и на 9:50; блок второго соревнования — с 11:00
+    files = [r["file"] for r in la["rows"]]
+    body = {"lanes": [{"cid": a.id, "zkey": "М/Ж_3", "order": files[::-1], "times": {files[1]: "09:50"},
+                       "first": "10:00"},
+                      {"cid": b.id, "zkey": "М/Ж_3", "order": [], "times": {}, "first": "11:00"}]}
+    r = client.post(base(a) + "/schedule", json=body)
+    assert r.json()["ok"]
+    dra = a.run_data()["zachety"]["М/Ж_3"]["draw"]
+    assert dra["order"] == files[::-1] and dra["times"] == {files[1]: "09:50"} and dra["done_method"] == "manual"
+    assert b.run_data()["zachety"]["М/Ж_3"]["draw"]["first"] == "11:00"
+    page = client.get(base(a) + "/start" + q).text
+    assert "09:50" in page

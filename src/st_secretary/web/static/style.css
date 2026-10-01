@@ -746,6 +746,34 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .st-fit { margin: 8px 0; padding: 8px 12px; border-radius: 8px; background: var(--primary-soft); font-size: .92rem; }
 .st-fit ul { margin: 4px 0 0; padding-left: 20px; }
 
+/* Наглядное расписание стартов (Правки, п. 25.5) */
+.sch-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 10px; }
+.sch-tools [data-sch-save] { margin-left: auto; }
+.sch-legend { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: .85rem; }
+.sch-key { display: inline-block; width: 14px; height: 10px; border-radius: 3px; background: var(--primary-soft);
+  border: 2px solid transparent; vertical-align: middle; }
+.sch-day { margin: 0 0 18px; } .sch-day h2 { font-size: 1.05rem; margin: 0 0 6px; }
+.sch-scroll { overflow-x: auto; padding-bottom: 6px; border: 1px solid var(--border, #d6dbe0); border-radius: 8px;
+  background: var(--surface, #fff); }
+.sch-ruler { position: relative; height: 22px; margin-left: 180px; border-bottom: 1px solid var(--border, #d6dbe0); }
+.sch-ruler span { position: absolute; top: 3px; font-size: .75rem; color: var(--muted); transform: translateX(-50%); }
+.sch-lane { display: flex; align-items: stretch; min-height: 38px; border-bottom: 1px dashed var(--border, #e3e7eb); }
+.sch-label { position: sticky; left: 0; z-index: 2; flex: 0 0 180px; padding: 6px 8px; font-size: .85rem;
+  background: var(--surface, #fff); color: inherit; text-decoration: none; border-right: 1px solid var(--border, #d6dbe0); }
+.sch-collapse { position: sticky; left: 180px; z-index: 2; align-self: center; }
+.sch-track { position: relative; flex: none; min-height: 38px; }
+.sch-item { position: absolute; top: 5px; height: 28px; padding: 0 6px; overflow: hidden; white-space: nowrap;
+  text-overflow: ellipsis; font-size: .78rem; text-align: left; border-radius: 6px; cursor: grab; touch-action: none;
+  border: 2px solid transparent; background: var(--primary-soft); color: inherit; }
+.sch-item:focus-visible { outline: 3px solid var(--primary); outline-offset: 1px; }
+.sch-item.sch-drag { cursor: grabbing; opacity: .85; z-index: 3; box-shadow: 0 4px 12px rgba(0, 0, 0, .2); }
+.sch-block { background: var(--primary); color: #fff; font-weight: 600; }
+.sch-manual, .sch-key.sch-manual { border-style: dashed; border-color: var(--muted); }
+.sch-deleg, .sch-key.sch-deleg { border-color: #e08a00; }
+.sch-conflict, .sch-key.sch-conflict { border-color: #c62828; background: #fde7e7; color: #7a1010; }
+.sch-none { display: inline-block; padding: 9px 8px; font-size: .85rem; color: var(--muted); }
+.sch-issues ul { margin: 4px 0 0; padding-left: 20px; } .sch-issues h2 { font-size: 1rem; }
+
 /* Свои формы заявок (Правки, п. 37) */
 .form-sheet { margin: 8px 0; } .form-sheet summary { cursor: pointer; font-weight: 600; }
 .form-grid { font-size: .8rem; } .form-grid td, .form-grid th { padding: 3px 6px; white-space: nowrap; max-width: 14rem;

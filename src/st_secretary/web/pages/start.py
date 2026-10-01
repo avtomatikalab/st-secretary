@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException
 
 from st_secretary import commission as cm
@@ -269,5 +269,83 @@ def register(app, cx) -> None:
         if p is None or not p.is_file():
             raise HTTPException(404)
         return FileResponse(p, filename=p.name, media_type=XLSX)
+
+    # ------------------------------------------------------------ наглядное расписание стартов (Правки, п. 25.5)
+
+    def interval_secs(st: dict) -> int:
+        iv = st["interval"].strip().replace(",", ".")
+        return round(float(iv) * 60) if re.fullmatch(r"\d+(\.\d+)?", iv) else 0
+
+    def schedule_data(f: CompFolder, comp) -> dict:
+        """Все зачёты соревнования (на фестивале — всех его соревнований): старты, люди, делегации."""
+        lanes = []
+        for g, c, z, lst, exp in all_lists(f, comp):
+            st = lst.settings
+            try:
+                first = sl.parse_hm(st["first"])
+            except ValueError:
+                first = None
+            iv = interval_secs(st)
+            lanes.append({
+                "id": f"{g.id}/{z.key}", "cid": g.id, "comp": c.title, "zkey": z.key, "title": z.title,
+                "day": lst.start_day.isoformat() if lst.start_day else "", "first": first, "interval": iv,
+                "expected": exp or 0, "dur": exp or iv or 300, "block": z.rank_format in ("person", "pair"),
+                "spread": bool(st.get("spread")), "url": f"{_base(g)}/start?{urlencode({'z': z.key})}",
+                "rows": [{"file": r.inp.file, "name": r.inp.team, "num": str(r.inp.number or ""), "t": r.time,
+                          "manual": r.manual_time, "people": [sl.person_key(m) for m in r.inp.members],
+                          "fio": [m.fio for m in r.inp.members], "deleg": sl.delegation_of(r.inp)}
+                         for r in lst.rows]})
+        return {"break": start_break(f) * 60, "lanes": lanes}
+
+    @app.get("/c/{cid}/schedule")
+    def schedule_page(request: Request, cid: str):
+        f = folder(cid)
+        comp = need_comp(f)
+        return page(request, "schedule.html", active="start", data=schedule_data(f, comp), **comp_ctx(f))
+
+    @app.post("/c/{cid}/schedule")
+    async def schedule_save(request: Request, cid: str):
+        """«Сохранить» расписание: порядок и время старта в каждом зачёте (как «Порядок старта»), сдвиг блока —
+        время первого старта зачёта."""
+        f = folder(cid)
+        comp = need_comp(f)
+        body = await request.json()
+        scope = {g.id: (g, c) for g, c, *_ in all_lists(f, comp)}
+        now = app.state.clock()
+        for lane in body.get("lanes", []) if isinstance(body, dict) else []:
+            g, c = scope.get(str(lane.get("cid", "")), (None, None))
+            z = next((x for x in (c.zachety if c else []) if x.key == lane.get("zkey")), None)
+            if z is None:
+                continue
+            _, _, _, lst = start_ctx(g, c, z)
+            known = [r.inp.file for r in lst.rows]
+            order = [x for x in lane.get("order", []) if x in known]
+            order += [x for x in known if x not in order]
+            times = {}
+            for k, v in (lane.get("times") or {}).items():
+                try:
+                    if k in known and sl.parse_hm(v) is not None:
+                        times[k] = str(v)
+                except ValueError:
+                    pass
+            first = str(lane.get("first") or "")
+            try:
+                first = first if sl.parse_hm(first) is not None else None
+            except ValueError:
+                first = None
+
+            def update(d, order=order, times=times, first=first, before=known):
+                dr = d.setdefault("draw", {})
+                if not dr.get("at"):  # порядок задан в расписании — как внесённый вручную
+                    dr.update(at=now.isoformat(timespec="minutes"), done_method="manual", method="manual")
+                elif order != before and dr.get("done_method") != "manual":
+                    dr["edited"] = now.isoformat(timespec="minutes")
+                dr["order"] = order + [x for x in dr.get("order", []) if x not in order]
+                dr["times"] = times
+                if first:
+                    dr["first"] = first
+
+            _save_zachet(g, z.key, update)
+        return JSONResponse({"ok": True, "saved": now.strftime("%H:%M:%S")})
 
     cx.update(start_ctx=start_ctx)

@@ -593,4 +593,187 @@
     }
     if (upd.dataset.state !== "idle" && upd.dataset.state !== "error") poll();
   }
+
+  // --- Наглядное расписание стартов (Правки, п. 25.5): все зачёты на одной шкале времени, плашки перетаскиваются.
+  var sch = document.querySelector("[data-schedule]");
+  var schJson = document.getElementById("schedule-data");
+  if (sch && schJson) schedule(sch, JSON.parse(schJson.textContent));
+
+  function schedule(root, data) {
+    var BRK = data["break"] || 0, pxMin = 6, open = {}, changed = false;
+    var status = document.querySelector(".sch-status"), issuesBox = document.querySelector(".sch-issues");
+    var lanes = data.lanes.filter(function (l) { return l.rows.length; });
+    var many = data.lanes.some(function (x) { return x.cid !== data.lanes[0].cid; });  // фестиваль: несколько соревнований
+    lanes.forEach(function (l) { l.label = l.title + (many ? " · " + l.comp : ""); });
+    function hm(s) {
+      s = ((s % 86400) + 86400) % 86400;
+      var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+      return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+    }
+    function retime(l) {  // время «по расчёту» — первый старт + интервал × место; вписанное вручную — как есть
+      l.rows.sort(function (a, b) { return (a.t == null ? 1e9 : a.t) - (b.t == null ? 1e9 : b.t); });
+      if (l.first == null) return;
+      l.rows.forEach(function (r, i) { if (!r.manual) r.t = l.first + i * l.interval; });
+    }
+    function conflicts() {  // человек: старт + расчётное время прошлой дистанции + перерыв
+      var by = {}, bad = {}, deleg = {}, texts = [];
+      lanes.forEach(function (l) {
+        var day = l.day ? Date.parse(l.day) / 1000 : 0;
+        l.rows.forEach(function (r) {
+          if (r.t == null) return;
+          r.people.forEach(function (p, k) {
+            (by[p] = by[p] || []).push({ at: day + r.t, l: l, r: r, fio: r.fio[k] });
+          });
+        });
+        if (l.spread) {
+          for (var i = 1; i < l.rows.length; i++) {
+            if (l.rows[i].deleg === l.rows[i - 1].deleg) { deleg[l.id + "|" + l.rows[i].file] = deleg[l.id + "|" + l.rows[i - 1].file] = 1; }
+          }
+        }
+      });
+      Object.keys(by).forEach(function (p) {
+        var xs = by[p].sort(function (a, b) { return a.at - b.at; });
+        for (var i = 1; i < xs.length; i++) {
+          var a = xs[i - 1], b = xs[i];
+          if (a.l === b.l) continue;
+          if (b.at - a.at < a.l.expected + BRK || b.at === a.at) {
+            bad[a.l.id + "|" + a.r.file] = bad[b.l.id + "|" + b.r.file] = 1;
+            texts.push(a.fio + ": " + a.l.label + " в " + hm(a.at) + " и " + b.l.label + " в " + hm(b.at) +
+              " — меньше " + Math.round((a.l.expected + BRK) / 60) + " мин");
+          }
+        }
+      });
+      return { bad: bad, deleg: deleg, texts: texts };
+    }
+    function draw() {
+      lanes.forEach(retime);
+      var c = conflicts(), days = {};
+      lanes.forEach(function (l) { (days[l.day || ""] = days[l.day || ""] || []).push(l); });
+      root.innerHTML = "";
+      Object.keys(days).sort().forEach(function (day) {
+        var ls = days[day], ts = [];
+        ls.forEach(function (l) { l.rows.forEach(function (r) { if (r.t != null) { ts.push(r.t); ts.push(r.t + l.dur); } }); });
+        var t0 = ts.length ? Math.floor(Math.min.apply(null, ts) / 1800) * 1800 - 1800 : 0;
+        var t1 = ts.length ? Math.ceil(Math.max.apply(null, ts) / 1800) * 1800 + 1800 : 3600;
+        var width = (t1 - t0) / 60 * pxMin, box = document.createElement("section");
+        box.className = "sch-day";
+        box.innerHTML = "<h2>" + (day ? day.split("-").reverse().join(".") : "День не задан") + "</h2>";
+        var scroll = document.createElement("div"), ruler = document.createElement("div");
+        scroll.className = "sch-scroll"; ruler.className = "sch-ruler"; ruler.style.width = width + "px";
+        for (var t = t0; t <= t1; t += 1800) {
+          var tick = document.createElement("span");
+          tick.style.left = ((t - t0) / 60 * pxMin) + "px"; tick.textContent = hm(t);
+          ruler.appendChild(tick);
+        }
+        scroll.appendChild(ruler);
+        ls.forEach(function (l) { lane(scroll, l, t0, width, c); });
+        box.appendChild(scroll);
+        root.appendChild(box);
+      });
+      var shown = c.texts.slice(0, 30), more = c.texts.length - shown.length;
+      issuesBox.innerHTML = c.texts.length ? "<h2>Перерыв участника: " + c.texts.length + "</h2><ul>" + shown.map(function (x) {
+        return "<li>" + x.replace(/[<>&]/g, "") + "</li>"; }).join("") + (more > 0 ? "<li>и ещё " + more + "</li>" : "") +
+        "</ul>" : "";
+    }
+    function lane(scroll, l, t0, width, c) {
+      var row = document.createElement("div"), label = document.createElement("a"), track = document.createElement("div");
+      row.className = "sch-lane"; label.className = "sch-label"; label.href = l.url;
+      label.textContent = l.label;
+      track.className = "sch-track"; track.style.width = width + "px";
+      row.appendChild(label); row.appendChild(track); scroll.appendChild(row);
+      if (l.first == null && l.rows.every(function (r) { return r.t == null; })) {
+        track.innerHTML = "<span class='sch-none'>нет времени старта — задайте его на странице жеребьёвки</span>";
+        return;
+      }
+      if (l.block && !open[l.id]) {  // личный зачёт, связки — одним блоком
+        var ts = l.rows.filter(function (r) { return r.t != null; }).map(function (r) { return r.t; });
+        var a = Math.min.apply(null, ts), b = Math.max.apply(null, ts) + l.dur;
+        var bl = plaque(track, l.title + ", " + hm(a) + "–" + hm(b) + ", " + l.rows.length + " " +
+          (l.rows[0].people.length > 1 ? "связок" : "чел."), a, b - a, t0, "sch-block");
+        if (l.rows.some(function (r) { return c.bad[l.id + "|" + r.file]; })) bl.classList.add("sch-conflict");
+        drag(bl, function (d) { move(l, null, d); }, function () { open[l.id] = 1; draw(); });
+        return;
+      }
+      if (l.block) {
+        var close = document.createElement("button");
+        close.type = "button"; close.className = "btn btn-ghost btn-small sch-collapse"; close.textContent = "свернуть";
+        close.addEventListener("click", function () { delete open[l.id]; draw(); });
+        label.after(close);
+      }
+      l.rows.forEach(function (r) {
+        if (r.t == null) return;
+        var p = plaque(track, (r.num ? r.num + " " : "") + r.name, r.t, l.dur, t0, "");
+        if (r.manual) p.classList.add("sch-manual");
+        if (c.bad[l.id + "|" + r.file]) p.classList.add("sch-conflict");
+        if (c.deleg[l.id + "|" + r.file]) p.classList.add("sch-deleg");
+        p.title = r.name + " — " + hm(r.t) + (r.fio.length ? "\n" + r.fio.join(", ") : "");
+        drag(p, function (d) { move(l, r, d); }, null);
+      });
+    }
+    function plaque(track, text, t, dur, t0, cls) {
+      var p = document.createElement("button");
+      p.type = "button"; p.className = "sch-item " + cls; p.textContent = text;
+      p.style.left = ((t - t0) / 60 * pxMin) + "px";
+      p.style.width = Math.max(dur / 60 * pxMin - 2, 18) + "px";
+      track.appendChild(p);
+      return p;
+    }
+    function move(l, r, delta) {  // delta — секунды; r — участник, иначе весь блок
+      if (!delta) return;
+      if (r) { r.t = Math.max(0, r.t + delta); r.manual = true; }
+      else { l.first = (l.first || 0) + delta; l.rows.forEach(function (x) { if (x.manual && x.t != null) x.t += delta; }); }
+      changed = true;
+      if (status) status.textContent = "есть несохранённые изменения";
+      draw();
+    }
+    function drag(el, done, click) {  // мышь, палец, клавиатура
+      var x0 = null, moved = 0;
+      el.addEventListener("pointerdown", function (e) {
+        x0 = e.clientX; moved = 0; el.setPointerCapture(e.pointerId); el.classList.add("sch-drag");
+      });
+      el.addEventListener("pointermove", function (e) {
+        if (x0 === null) return;
+        moved = e.clientX - x0; el.style.transform = "translateX(" + moved + "px)";
+      });
+      el.addEventListener("pointerup", function () {
+        if (x0 === null) return;
+        x0 = null; el.classList.remove("sch-drag"); el.style.transform = "";
+        var min = Math.round(moved / pxMin);
+        if (Math.abs(moved) < 4 && click) { click(); return; }
+        if (min) done(min * 60);
+      });
+      el.addEventListener("pointercancel", function () { x0 = null; el.style.transform = ""; });
+      if (click) el.addEventListener("click", function (e) { if (e.detail === 0) click(); });  // Enter с клавиатуры
+      el.addEventListener("keydown", function (e) {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        var id = el.textContent;
+        done((e.key === "ArrowLeft" ? -60 : 60) * (e.shiftKey ? 5 : 1));
+        var again = Array.prototype.filter.call(root.querySelectorAll(".sch-item"), function (x) { return x.textContent === id; })[0];
+        if (again) again.focus();
+      });
+    }
+    document.querySelectorAll("[data-sch-zoom]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        pxMin = Math.min(30, Math.max(1, pxMin * (b.dataset.schZoom === "1" ? 1.5 : 1 / 1.5)));
+        draw();
+      });
+    });
+    var save = document.querySelector("[data-sch-save]");
+    if (save) save.addEventListener("click", function () {
+      var body = { lanes: lanes.map(function (l) {
+        var times = {};
+        l.rows.forEach(function (r) { if (r.manual && r.t != null) times[r.file] = hm(r.t); });
+        return { cid: l.cid, zkey: l.zkey, order: l.rows.map(function (r) { return r.file; }), times: times,
+                 first: l.first == null ? "" : hm(l.first) };
+      }) };
+      if (status) status.textContent = "сохраняю…";
+      fetch(root.dataset.save, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { changed = false; if (status) status.textContent = "сохранено в " + j.saved; })
+        .catch(function () { if (status) status.textContent = "не сохранилось — попробуйте ещё раз"; });
+    });
+    window.addEventListener("beforeunload", function (e) { if (changed) { e.preventDefault(); e.returnValue = ""; } });
+    draw();
+  }
 })();

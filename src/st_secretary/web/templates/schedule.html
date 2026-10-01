@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Расписание стартов — СТ-Секретарь{% endblock %}
+{% block content %}
+<a class="back" href="{{ base }}/start">← Жеребьёвка и стартовые протоколы</a>
+<h1>Расписание стартов</h1>
+<p class="lead">Все зачёты{% if festival %} всех соревнований фестиваля «{{ festival.title }}»{% endif %} на одной шкале
+  времени. Команды — плашками; личные зачёты и связки — одним блоком: его можно сдвинуть целиком, а нажатием —
+  раскрыть и переставить участников по одному. Перетаскивайте мышью или пальцем; с клавиатуры — стрелки влево и
+  вправо (минута, с Shift — 5 минут). Конфликты видны сразу: красным — участнику не хватает перерыва
+  ({{ data["break"] // 60 }} мин{% if not data["break"] %}, задаётся на странице жеребьёвки{% endif %}), оранжевым —
+  команды одной делегации подряд (где отмечено «разнести»). «Сохранить» — порядок и время старта в каждом зачёте,
+  как в «Порядке старта».</p>
+
+<div class="sch-tools">
+  <button type="button" class="btn btn-small" data-sch-zoom="-1" aria-label="Мельче">−</button>
+  <button type="button" class="btn btn-small" data-sch-zoom="1" aria-label="Крупнее">+</button>
+  <span class="muted sch-legend"><span class="sch-key sch-conflict"></span> перерыв участника
+    <span class="sch-key sch-deleg"></span> делегация подряд <span class="sch-key sch-manual"></span> время вписано вручную</span>
+  <span class="sch-status muted" aria-live="polite"></span>
+  <button type="button" class="btn btn-primary" data-sch-save>{{ icon("check", 18) }}Сохранить</button>
+</div>
+<div class="sch" data-schedule data-save="{{ base }}/schedule"></div>
+<div class="sch-issues" aria-live="polite"></div>
+<script type="application/json" id="schedule-data">{{ data|tojson }}</script>
+<noscript><p class="text-err">Расписание работает со включёнными скриптами браузера. Порядок старта можно поправить на странице
+  жеребьёвки.</p></noscript>
+{% endblock %}

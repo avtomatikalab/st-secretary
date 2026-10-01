@@ -25,6 +25,8 @@
     </div>
   {% endfor %}
   </div>
+  {% if items %}<p><a class="btn" href="{{ items[0].base }}/schedule">{{ icon("clock", 18) }}Расписание стартов фестиваля</a>
+    <span class="muted">все зачёты всех соревнований на одной шкале времени; перерыв участника — общий</span></p>{% endif %}
   {% if others %}
   <form method="post" action="/festival/{{ fest.id|urlencode }}/edit" class="fest-add">
     <label for="f-add">Добавить соревнование</label>
