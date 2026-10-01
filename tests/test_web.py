@@ -442,9 +442,7 @@ def test_overview_steps_and_errors(client, psr_card, opened):
     f = client.app.state.store.create(psr_card)
     r = client.get(base(f))
     assert "Дальше по порядку" in r.text and "Комиссия по допуску" in r.text and "И.П. Судьин, СС1К" in r.text
-    assert client.get(base(f) + "/step/start").status_code == 404  # жеребьёвка готова — своя страница
-    assert client.get(base(f) + "/step/admission").status_code == 404  # готовый шаг — своя страница
-    assert client.get(base(f) + "/step/card").status_code == 404  # готовый шаг открывается не здесь
+    assert f'href="{base(f)}/start"' in r.text and f'href="{base(f)}/admission"' in r.text  # шаг — своя страница
     assert client.get("/c/нет такого").status_code == 404
     assert "Страница не найдена" in client.get("/c/..%2F..%2Fsecret").text
     client.post(base(f) + "/open/folder")
@@ -954,7 +952,6 @@ def test_draw_start_protocol_publish_and_board(client, tmp_path, psr_card, opene
     board = TestClient(client.app.state.board.app).get("/").text
     assert "Стартовый протокол" in board and "Кедр" in board and "10:30" not in board  # время Кедра теперь 10:00
     assert "после публикации менялся" in board
-    assert client.get(base(f) + "/step/start").status_code == 404
 
 
 def test_help_opens_manual_next_to_program(client, tmp_path, monkeypatch):

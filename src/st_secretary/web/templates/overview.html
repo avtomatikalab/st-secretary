@@ -83,7 +83,6 @@
   <li><a href="{{ step_url(base, s) }}">
     <span class="step-num">{{ steps.index(s) + 1 }}</span>
     <div><b>{{ s.title }}</b><span>{{ s.lead }}</span></div>
-    {% if not s.ready %}<span class="soon">этап {{ s.stage }}</span>{% endif %}
   </a></li>
   {% endfor %}
 </ol>

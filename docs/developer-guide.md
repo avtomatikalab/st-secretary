@@ -283,7 +283,6 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `money.py`, `names.py` | суммы прописью; склонение ФИО и должностей |
 | `training.py` | учебное соревнование на выдуманных данных |
 | `feedback.py` | «Сообщить»: сообщения пользователей (.md + снимок) в «Правки и ошибки», zip для разработчика, `SUPPORT_EMAIL` |
-| `timeutil.py` | старый разбор времени — сейчас используется только в тестах (см. «Ловушки») |
 
 ### Справочники — `reference/`
 
@@ -337,7 +336,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | Модуль `web/pages/` | Адреса | Шаблоны |
 |---|---|---|
 | `home.py` | `/`, `/new`, `/import`, `/restore`, `/training`, `/help`, `/health`, `/shutdown`, `/journal.zip`, `/festival/…`, `/practice…` | `home.html`, `new.html`, `festival.html`, `practice.html`, `stopped.html` |
-| `competition.py` | `/c/{cid}` (обзор), `/c/{cid}/card…`, `/backup`, `/open/{what}` | `overview.html`, `card.html`, `card_view.html`, `step.html` |
+| `competition.py` | `/c/{cid}` (обзор), `/c/{cid}/card…`, `/backup`, `/open/{what}` | `overview.html`, `card.html`, `card_view.html` |
 | `preapps.py` | `/c/{cid}/preapps…` — загрузка, проверка, статусы, форма заявки, сводка, именная заявка (Word) | `preapps.html`, `preapp_team.html`, `preapp_edit.html`, `_files.html`, `_issues.html` |
 | `forms.py` | `/c/{cid}/forms…` — свои формы предзаявок, свой бланк именной заявки | `forms.html`, `form_edit.html` |
 | `admission.py` | `/c/{cid}/admission…`, **а также** `/equipment…` (снаряжение) и `/docs…` (сканы) | `admission.html`, `admission_check.html`, `equipment.html`, `_admission_team.html`, `_admission_tiles.html`, `_equipment_team.html`, `_equipment_tiles.html`, `_docs.html` |
@@ -659,7 +658,6 @@ GET  /c/{cid}/admission?done=adm_saved
   `start_list.person_key`). Нужен ключ человека — возьмите существующую функцию, не пишите новую.
 - **Время разбирают четыре функции** с разными форматами: `start_list.parse_hm` (время старта «10:00»),
   `time_run.parse_clock` / `parse_duration` (старт и финиш, отсечки), `stage_time.clock_seconds` (часы телефона).
-  `timeutil.py` в программе не используется (только в тестах).
 - **Ключ команды — имя файла заявки.** Переименование файла отвязывает от команды баллы, отметки, жеребьёвку.
 - **`Результаты_дистанции.json` — только под `run_lock`** (телефоны судей пишут в него из других запросов).
 - **Пересчёт при каждом запросе.** Страница результатов пересчитывает заявки → допуск → состав → результат.

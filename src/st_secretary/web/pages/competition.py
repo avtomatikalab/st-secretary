@@ -16,7 +16,6 @@ from st_secretary.issues import ERROR, FIXED, WARNING
 from st_secretary.web.common import _base, _redirect, _with_done
 from st_secretary.web.forms import GROUP_SUGGESTIONS, card_to_form, choices, form_from_data, form_to_card
 from st_secretary.web.review import DONE
-from st_secretary.web.steps import BY_SLUG
 
 
 def register(app, cx) -> None:
@@ -135,13 +134,3 @@ def register(app, cx) -> None:
         form = await request.form()
         store.forget_own(str(form.get("kind", "")), str(form.get("value", "")))
         return _redirect(f"{_base(f)}/card/edit#own-values")
-
-    # ------------------------------------------------------------ шаги в разработке
-
-    @app.get("/c/{cid}/step/{slug}")
-    def step_page(request: Request, cid: str, slug: str):
-        f = folder(cid)
-        step = BY_SLUG.get(slug)
-        if step is None or step.ready:
-            raise HTTPException(404)
-        return page(request, "step.html", active=slug, step=step, **comp_ctx(f))

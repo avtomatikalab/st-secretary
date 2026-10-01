@@ -39,9 +39,9 @@
       {% for o in festival.others %}<a class="side-fest-other" href="/c/{{ o|urlencode }}">→ {{ o }}</a>{% endfor %}</div>{% endif %}
     <ol class="steps">
       {% for s in steps %}
-      <li><a href="{{ step_url(base, s) }}" class="{% if s.slug == active %}is-active{% endif %}{% if not s.ready %} is-soon{% endif %}"{% if s.slug == active %} aria-current="page"{% endif %}>
+      <li><a href="{{ step_url(base, s) }}" class="{% if s.slug == active %}is-active{% endif %}"{% if s.slug == active %} aria-current="page"{% endif %}>
         <span class="step-num">{{ loop.index }}</span>
-        <span class="step-text">{{ s.title }}{% if not s.ready %}<small>скоро · этап {{ s.stage }}</small>{% endif %}</span>
+        <span class="step-text">{{ s.title }}</span>
       </a></li>
       {% endfor %}
     </ol>

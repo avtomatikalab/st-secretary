@@ -79,10 +79,6 @@ code { background: var(--surface-2); border: 1px solid var(--line); border-radiu
   flex: none; width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center;
   font-size: .8rem; font-weight: 700; background: var(--primary); color: #fff;
 }
-.steps a.is-soon { color: var(--muted); }
-.steps a.is-soon .step-num { background: #e3e8ec; color: var(--muted); }
-.steps a.is-soon.is-active { background: var(--surface-2); color: var(--text); }
-.soon { margin-left: auto; font-size: .7rem; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
 .step-text small { display: block; font-size: .72rem; color: var(--muted); font-weight: 400; }
 .side-foot { margin-top: auto; display: grid; gap: 4px; }
 .side-foot form { margin: 0; }

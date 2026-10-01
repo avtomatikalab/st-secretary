@@ -97,7 +97,7 @@ def _base(f: CompFolder) -> str:
 
 
 def _step_url(base: str, step) -> str:
-    return f"{base}/{step.slug}" if step.ready else f"{base}/step/{step.slug}"
+    return f"{base}/{step.slug}"
 
 
 def _redirect(url: str) -> RedirectResponse:

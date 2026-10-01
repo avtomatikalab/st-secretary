@@ -4,7 +4,7 @@ import pytest
 
 from st_secretary.disciplines import Status
 from st_secretary.disciplines.speleo import SpeleoRun, point_seconds, standings
-from st_secretary.timeutil import parse_time
+from st_secretary.time_run import parse_clock as parse_time
 
 
 def run(entry, order, start, finish, **kw):
