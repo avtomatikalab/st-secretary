@@ -18,7 +18,7 @@ from st_secretary import results as res
 from st_secretary.exporters import awards as aw
 from st_secretary.exporters import final as fin
 from st_secretary.exporters import judges as jd
-from st_secretary.web.common import DOCX, GRADES, XLSX, _base, _redirect
+from st_secretary.web.common import DOCX, GRADES, XLSX, base_url, redirect
 from st_secretary.web.store import CompFolder
 
 
@@ -80,7 +80,7 @@ def register(app, cx) -> None:
         key = str(form.get("zachet", ""))
         up = form.get("protocol")
         if key not in {z.key for z in comp.zachety} or up is None or not getattr(up, "filename", ""):
-            return _redirect(f"{_base(f)}/awards?done=res_none")
+            return redirect(f"{base_url(f)}/awards?done=res_none")
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / Path(up.filename).name
             p.write_bytes(await up.read())
@@ -88,15 +88,15 @@ def register(app, cx) -> None:
                 from st_secretary.importers.sekretar_xls import read_result_protocol
                 proto = read_result_protocol(p)
             except ImportError:
-                return _redirect(f"{_base(f)}/awards?done=res_noxlrd")
+                return redirect(f"{base_url(f)}/awards?done=res_noxlrd")
             except Exception:  # noqa: BLE001 — не протокол или не .xls: объяснить, а не упасть
-                return _redirect(f"{_base(f)}/awards?done=res_bad")
+                return redirect(f"{base_url(f)}/awards?done=res_bad")
         if not proto.rows:
-            return _redirect(f"{_base(f)}/awards?done=res_bad")
+            return redirect(f"{base_url(f)}/awards?done=res_bad")
         data = f.results_data()
         data.setdefault("zachety", {})[key] = res.from_protocol(proto)
         f.save_results_data(data)
-        return _redirect(f"{_base(f)}/awards?done=res_imported")
+        return redirect(f"{base_url(f)}/awards?done=res_imported")
 
     @app.post("/c/{cid}/awards/manual")
     async def awards_manual(request: Request, cid: str):
@@ -121,7 +121,7 @@ def register(app, cx) -> None:
         data = f.results_data()
         data.setdefault("zachety", {})[key] = {"source": res.MANUAL, "group_text": "", "rank": "", "rows": rows}
         f.save_results_data(data)
-        return _redirect(f"{_base(f)}/awards?done=res_saved")
+        return redirect(f"{base_url(f)}/awards?done=res_saved")
 
     @app.post("/c/{cid}/awards/clear")
     async def awards_clear(request: Request, cid: str):
@@ -130,7 +130,7 @@ def register(app, cx) -> None:
         data = f.results_data()
         data.get("zachety", {}).pop(key, None)
         f.save_results_data(data)
-        return _redirect(f"{_base(f)}/awards?done=res_cleared")
+        return redirect(f"{base_url(f)}/awards?done=res_cleared")
 
     def build_award_doc(f: CompFolder, kind: str, path: Path | None = None) -> Path:
         comp = need_comp(f)
@@ -148,9 +148,9 @@ def register(app, cx) -> None:
         try:
             path = build_award_doc(f, kind)
         except PermissionError:
-            return _redirect(f"{_base(f)}/awards?done=doc_locked")
+            return redirect(f"{base_url(f)}/awards?done=doc_locked")
         app.state.opener(path)
-        return _redirect(f"{_base(f)}/awards?done=doc_ready")
+        return redirect(f"{base_url(f)}/awards?done=doc_ready")
 
     @app.get("/c/{cid}/awards/file/{kind}")
     def awards_doc_download(cid: str, kind: str):
@@ -215,7 +215,7 @@ def register(app, cx) -> None:
         data = f.results_data()
         data["report"] = {k: str(form.get(k, "")).strip() for k in fin.REPORT_DEFAULTS}
         f.save_results_data(data)
-        return _redirect(f"{_base(f)}/awards?done=report_saved#report")
+        return redirect(f"{base_url(f)}/awards?done=report_saved#report")
 
     def admitted_territories(f: CompFolder, comp) -> list[str]:
         """Территории команд, допущенных комиссией; если комиссия не велась — всех заявившихся."""
@@ -237,4 +237,4 @@ def register(app, cx) -> None:
             if g in GRADES:
                 grades[res.person_key(o.fio)] = g
         f.save_results_data(data)
-        return _redirect(f"{_base(f)}/awards?done=grades_saved#judges")
+        return redirect(f"{base_url(f)}/awards?done=grades_saved#judges")

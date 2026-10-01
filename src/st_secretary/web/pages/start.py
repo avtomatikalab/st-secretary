@@ -19,7 +19,7 @@ from st_secretary import time_run as tr
 from st_secretary.exporters import start_protocol as sp
 from st_secretary.rank import INDIVIDUAL, PAIR
 from st_secretary.reference import norm_edition
-from st_secretary.web.common import XLSX, _base, _parse_dt, _redirect, _with_done
+from st_secretary.web.common import XLSX, base_url, parse_dt, redirect, with_done
 from st_secretary.web.store import CompFolder, safe_name
 
 DEFAULT_FIRST, DEFAULT_INTERVAL = "10:00", "5"  # время старта по умолчанию: первый старт, интервал в минутах
@@ -56,7 +56,7 @@ def register(app, cx) -> None:
 
     def start_default(f: CompFolder, comp) -> tuple[date, str]:
         """День и время старта по умолчанию — «Начало соревнований» у комиссии по допуску или первый день."""
-        adm = _parse_dt(cm.settings(f.admission())["start_at"])
+        adm = parse_dt(cm.settings(f.admission())["start_at"])
         if adm is None:
             return comp.date_from, ""
         return adm.date(), f"{adm:%H:%M}" if adm.hour or adm.minute else ""
@@ -123,7 +123,7 @@ def register(app, cx) -> None:
         if len(everything) > 1:  # один человек в нескольких зачётах — не слишком близко (Правки, п. 25.3)
             lists = [(lst if g.id == f.id and x.key == zz.key else s, exp) for g, _, x, s, exp in everything]
             lst.issues += [i for keys, i in sl.person_conflicts(lists, brk) if zz.key in keys]
-        pub = _parse_dt(lst.published["at"]) if lst.published else None
+        pub = parse_dt(lst.published["at"]) if lst.published else None
         zdata = f.run_data().get("zachety", {}).get(zz.key, {})
         return page(request, "start.html", active="start", zachet=zz, zachety=comp.zachety, sl=lst,
                     methods=sl.METHODS, hm=sl.hm_text, rank_text=sl.rank_word, draw_line=sp.draw_line(lst),
@@ -141,12 +141,12 @@ def register(app, cx) -> None:
         comp = need_comp(f)
         zz = need_zachet(comp, z)
         form = await request.form()
-        back = f"{_base(f)}/start?{urlencode({'z': zz.key})}"
+        back = f"{base_url(f)}/start?{urlencode({'z': zz.key})}"
         first = str(form.get("first", "")).strip()
         try:
             sl.parse_hm(first)
         except ValueError:
-            return _redirect(_with_done(back + "#times", "start_bad_time"))
+            return redirect(with_done(back + "#times", "start_bad_time"))
         method = str(form.get("method", "random"))
         new = {"method": method if method in sl.METHODS else "random", "groups": str(form.get("groups", "2")).strip(),
                "strong": "first" if form.get("strong") == "first" else "last",
@@ -175,7 +175,7 @@ def register(app, cx) -> None:
         units = {t.file: t for t in teams if t.admitted}
         if drawing:
             if not units:
-                return _redirect(_with_done(back, "start_empty"))
+                return redirect(with_done(back, "start_empty"))
             seed = secrets.randbelow(900000) + 100000  # шесть цифр — легко записать и проверить
             order, groups = sl.draw_groups(list(units.values()), st["method"], seed, ranks, st["groups"],
                                            st["strong"] == "last")
@@ -213,8 +213,8 @@ def register(app, cx) -> None:
         _save_zachet(f, zz.key, update)
         done = ("start_drawn" if drawing else "start_times") + ("_fit" if notes else "")
         if drawing:  # в сообщении — с какого времени и через сколько стартуют
-            return _redirect(_with_done(back + "#order", done, first=st["first"], interval=st["interval"]))
-        return _redirect(_with_done(back + "#times", done))
+            return redirect(with_done(back + "#order", done, first=st["first"], interval=st["interval"]))
+        return redirect(with_done(back + "#times", done))
 
     @app.post("/c/{cid}/start/order")
     async def start_order(request: Request, cid: str, z: str = ""):
@@ -248,7 +248,7 @@ def register(app, cx) -> None:
             dr["times"] = times
 
         _save_zachet(f, zz.key, update)
-        return _redirect(_with_done(f"{_base(f)}/start?{urlencode({'z': zz.key})}#order", "start_saved"))
+        return redirect(with_done(f"{base_url(f)}/start?{urlencode({'z': zz.key})}#order", "start_saved"))
 
     @app.post("/c/{cid}/start/publish")
     def start_publish(cid: str, z: str = ""):
@@ -257,16 +257,16 @@ def register(app, cx) -> None:
         comp = need_comp(f)
         zz = need_zachet(comp, z)
         _, _, _, lst = start_ctx(f, comp, zz)
-        back = f"{_base(f)}/start?{urlencode({'z': zz.key})}#publish"
+        back = f"{base_url(f)}/start?{urlencode({'z': zz.key})}#publish"
         if not lst.rows:
-            return _redirect(_with_done(back, "start_empty"))
+            return redirect(with_done(back, "start_empty"))
         now = app.state.clock()
         f.protocols_dir.mkdir(exist_ok=True)
         path = f.protocols_dir / start_name(zz)
         try:
             sp.write_start_protocol(comp, lst, path, now)
         except PermissionError:
-            return _redirect(_with_done(back, "doc_locked"))
+            return redirect(with_done(back, "doc_locked"))
 
         def update(d):
             dr = d.setdefault("draw", {})
@@ -277,7 +277,7 @@ def register(app, cx) -> None:
 
         _save_zachet(f, zz.key, update)
         app.state.opener(path)
-        return _redirect(_with_done(back, "start_published", until=f"{now + PROTEST_HOUR:%H:%M}"))
+        return redirect(with_done(back, "start_published", until=f"{now + PROTEST_HOUR:%H:%M}"))
 
     @app.get("/c/{cid}/start/file")
     def start_file(cid: str, z: str = ""):
@@ -309,7 +309,7 @@ def register(app, cx) -> None:
                 "id": f"{g.id}/{z.key}", "cid": g.id, "comp": c.title, "zkey": z.key, "title": z.title,
                 "day": lst.start_day.isoformat() if lst.start_day else "", "first": first, "interval": iv,
                 "expected": exp or 0, "dur": exp or iv or 300, "block": z.rank_format in (INDIVIDUAL, PAIR),
-                "spread": bool(st.get("spread")), "url": f"{_base(g)}/start?{urlencode({'z': z.key})}",
+                "spread": bool(st.get("spread")), "url": f"{base_url(g)}/start?{urlencode({'z': z.key})}",
                 "rows": [{"file": r.inp.file, "name": r.inp.team, "num": str(r.inp.number or ""), "t": r.time,
                           "manual": r.manual_time, "people": [sl.person_key(m) for m in r.inp.members],
                           "fio": [m.fio for m in r.inp.members], "deleg": sl.delegation_of(r.inp)}

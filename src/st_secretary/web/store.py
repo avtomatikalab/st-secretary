@@ -55,7 +55,7 @@ from st_secretary.exporters.preapp_xlsx import write_preapp_report
 from st_secretary.importers.card_xlsx import load_card, write_card
 from st_secretary.importers.preapp_xlsx import read_preapplication, write_preapplication
 from st_secretary.preapp import PreappResult, process
-from st_secretary.textclean import alpha_key
+from st_secretary.textclean import alpha_key, name_key
 from st_secretary.web.review import HAND, STATUSES, Review, apply_marks
 
 CARD = "Карточка_соревнования.xlsx"
@@ -103,7 +103,7 @@ EXCEL = (".xlsx", ".xls")
 def keep_extra(rows: list[dict], old_rows: list) -> list[dict]:
     """Строкам исправленной заявки — свои колонки прежнего файла: по ФИО, иначе по месту в списке."""
     def key(s) -> str:
-        return " ".join(str(s or "").lower().replace("ё", "е").split())
+        return name_key(s)
 
     by_name = {key(r.values.get("fio")): r.extra for r in old_rows if r.extra}
     out = []
@@ -129,9 +129,7 @@ def read_festivals(root: Path) -> list[dict]:
 def write_festivals(root: Path, items: list[dict]) -> None:
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
-    tmp = root / f"~{FESTIVALS}"
-    tmp.write_text(json.dumps({"festivals": items}, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(tmp, root / FESTIVALS)
+    save_json(root / FESTIVALS, {"festivals": items})
 
 
 def update_festival(root: Path, fid: str, change) -> dict | None:
@@ -144,6 +142,25 @@ def update_festival(root: Path, fid: str, change) -> dict | None:
     return x
 
 _BAD_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')  # недопустимы в именах файлов Windows
+
+
+def load_json(path: Path) -> dict:
+    """JSON-файл программы как словарь; нет файла или он испорчен — пустой словарь."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_json(path: Path, data) -> None:
+    """Записать JSON: сначала во временный файл «~имя» рядом, потом заменить — оборвавшаяся запись не портит
+    данные."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"~{path.name}")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def safe_name(name: str, limit: int = 120) -> str:
@@ -295,9 +312,7 @@ class CompFolder:
         return data if isinstance(data, dict) else {}
 
     def _save_marks(self, data: dict) -> None:
-        tmp = self.path / f"~{MARKS}"
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.marks_path)
+        save_json(self.marks_path, data)
 
     @staticmethod
     def file_hash(path: Path) -> str:
@@ -358,33 +373,27 @@ class CompFolder:
         return data if isinstance(data, dict) else {}
 
     def save_admission(self, data: dict) -> None:
-        self._write_json(ADMISSION, data)
+        self.write_json(ADMISSION, data)
 
-    def _read_json(self, name: str) -> dict:
-        try:
-            data = json.loads((self.path / name).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
+    def read_json(self, name: str) -> dict:
+        return load_json(self.path / name)
 
-    def _write_json(self, name: str, data: dict) -> None:
-        tmp = self.path / f"~{name}"  # сначала во временный файл: оборвавшаяся запись не портит данные
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.path / name)
+    def write_json(self, name: str, data: dict) -> None:
+        save_json(self.path / name, data)
 
     def equipment(self) -> dict:
         """Проверка снаряжения: {"settings": {...}, "teams": {файл заявки: {...}}} (см. equipment.py)."""
-        return self._read_json(EQUIPMENT)
+        return self.read_json(EQUIPMENT)
 
     def save_equipment(self, data: dict) -> None:
-        self._write_json(EQUIPMENT, data)
+        self.write_json(EQUIPMENT, data)
 
     def results_data(self) -> dict:
         """Итоги: {"zachety": {ключ зачёта: {...}}, "judges": {...}, "report": {...}} (см. results.py)."""
-        return self._read_json(RESULTS)
+        return self.read_json(RESULTS)
 
     def save_results_data(self, data: dict) -> None:
-        self._write_json(RESULTS, data)
+        self.write_json(RESULTS, data)
 
     @property
     def out_dir(self) -> Path:
@@ -397,7 +406,7 @@ class CompFolder:
     def contracts(self) -> dict:
         """Договоры и табель: {"period", "accrual", "rates", "customer", "people", "extra"} (см. staff.py).
         На фестивале бригада («extra») — общая, а при «один договор и табель на фестиваль» — и всё остальное."""
-        data = self._read_json(CONTRACTS)
+        data = self.read_json(CONTRACTS)
         fest = self.festival()
         if fest is None:
             return data
@@ -409,7 +418,7 @@ class CompFolder:
     def save_contracts(self, data: dict) -> None:
         fest = self.festival()
         if fest is None:
-            self._write_json(CONTRACTS, data)
+            self.write_json(CONTRACTS, data)
             return
         data = dict(data)
         brigade = data.pop("extra", [])
@@ -422,8 +431,8 @@ class CompFolder:
 
         update_festival(self.path.parent, fest["id"], change)
         if not joint:  # свои дни и ставки — в папке соревнования; его прежняя бригада там же остаётся
-            own = self._read_json(CONTRACTS).get("extra")
-            self._write_json(CONTRACTS, {**data, **({"extra": own} if own is not None else {})})
+            own = self.read_json(CONTRACTS).get("extra")
+            self.write_json(CONTRACTS, {**data, **({"extra": own} if own is not None else {})})
 
     @property
     def contract_template(self) -> Path:
@@ -431,10 +440,10 @@ class CompFolder:
 
     def run_data(self) -> dict:
         """Результаты дистанции: {"zachety": {ключ зачёта: {"stages", "teams", …}}} (см. psr_run.py)."""
-        return self._read_json(RUN)
+        return self.read_json(RUN)
 
     def save_run_data(self, data: dict) -> None:
-        self._write_json(RUN, data)
+        self.write_json(RUN, data)
 
     @property
     def protocols_dir(self) -> Path:
@@ -514,15 +523,11 @@ class Store:
         """Сохранить форму (с тем же названием — заменить; old_name — её прежнее название при переименовании)."""
         items = [x for x in self.forms() if x["name"] not in (form["name"], old_name)] + [form]
         self.docs_root.mkdir(parents=True, exist_ok=True)
-        tmp = self.docs_root / f"~{FORMS}"
-        tmp.write_text(json.dumps({"forms": items}, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.forms_path)
+        save_json(self.forms_path, {"forms": items})
 
     def delete_form(self, name: str) -> None:
         items = [x for x in self.forms() if x["name"] != name]
-        tmp = self.docs_root / f"~{FORMS}"
-        tmp.write_text(json.dumps({"forms": items}, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.forms_path)
+        save_json(self.forms_path, {"forms": items})
 
     @property
     def doc_set_path(self) -> Path:
@@ -547,9 +552,7 @@ class Store:
         mine = {d["key"]: d for d in own}
         docs = [mine.pop(d["key"], d) for d in self.doc_set()["docs"] if d["key"] not in forget] + list(mine.values())
         self.docs_root.mkdir(parents=True, exist_ok=True)
-        tmp = self.docs_root / f"~{DOC_SET}"
-        tmp.write_text(json.dumps({"docs": docs, "last": last}, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.doc_set_path)
+        save_json(self.doc_set_path, {"docs": docs, "last": last})
 
     def apply_doc_set(self, f: CompFolder) -> None:
         """Новое соревнование: документы комиссии — как в прошлый раз на этом компьютере (если набор запомнен)."""
@@ -760,7 +763,7 @@ class Store:
             roles = list(dict.fromkeys(own.get(m, []) + fv.differing_roles(fest_off, comp.officials)))
             if roles:
                 own[m] = roles
-            raw = f._read_json(CONTRACTS)
+            raw = f.read_json(CONTRACTS)
             extras.append(raw.get("extra", []))
             if fv.mode(rec, "contracts") == "festival" and not restored:
                 rec["contracts"] = fv.merge_contracts([rec.get("contracts", {}), raw])
@@ -772,9 +775,9 @@ class Store:
         f = self.get(cid)
         if f is None:
             return
-        raw = f._read_json(CONTRACTS)
+        raw = f.read_json(CONTRACTS)
         raw["extra"] = fv.union_brigade([raw.get("extra", []), rec.get("brigade", [])])
-        f._write_json(CONTRACTS, raw)
+        f.write_json(CONTRACTS, raw)
 
     def sync_gsk(self, rec: dict) -> list[str]:
         """Записать действующую ГСК (фестиваля и свои замены) в карточки соревнований фестиваля. Возвращает
@@ -812,9 +815,7 @@ class Store:
 
     def _save_own(self, data: dict) -> None:
         self.docs_root.mkdir(parents=True, exist_ok=True)
-        tmp = self.docs_root / f"~{OWN_VALUES}"
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.own_values_path)
+        save_json(self.own_values_path, data)
 
     def remember_own(self, comp: Competition, known_groups=()) -> None:
         """Карточку неофициальных соревнований сохранили — запомнить свои группы, названия зачётов, дисциплины."""
@@ -851,9 +852,7 @@ class Store:
         data = self.personal()
         data[key] = {k: v for k, v in values.items() if v}
         self.docs_root.mkdir(parents=True, exist_ok=True)
-        tmp = self.docs_root / f"~{PERSONAL}"
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.personal_path)
+        save_json(self.personal_path, data)
 
     def contracts_dir(self, f: CompFolder) -> Path:
         """Договоры и табель соревнования — там же, где сканы: в них паспорта и счета. Один договор на весь

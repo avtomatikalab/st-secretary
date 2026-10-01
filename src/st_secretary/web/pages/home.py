@@ -20,7 +20,7 @@ from st_secretary import commission as cm
 from st_secretary import festival as fv
 from st_secretary import practice as pt_
 from st_secretary.importers.card_xlsx import CardError, load_card
-from st_secretary.web.common import HERE, XLSX, _base, _redirect, _with_done, log
+from st_secretary.web.common import HERE, XLSX, base_url, log, redirect, with_done
 from st_secretary.web.forms import (
     card_to_form,
     choices,
@@ -85,13 +85,13 @@ def register(app, cx) -> None:
     def journal_hide():
         if app.state.journal is not None:
             app.state.journal.crashed_before = False
-        return _redirect("/")
+        return redirect("/")
 
     @app.post("/open-data")
     def open_data(request: Request):
         store.root.mkdir(parents=True, exist_ok=True)
         app.state.opener(store.root)
-        return _redirect("/?done=opened")
+        return redirect("/?done=opened")
 
     @app.get("/new")
     def new_form(request: Request):
@@ -105,7 +105,7 @@ def register(app, cx) -> None:
             return page(request, "new.html", status_code=422, form=form, errors=errors, ch=choices())
         f = store.create(comp)
         store.apply_doc_set(f)  # документы комиссии — как в прошлый раз на этом компьютере (Правки, п. 30)
-        return _redirect(f"{_base(f)}/card/edit?done=created")
+        return redirect(f"{base_url(f)}/card/edit?done=created")
 
     @app.get("/help")
     def help_pdf():
@@ -120,7 +120,7 @@ def register(app, cx) -> None:
     def training_create():
         """Учебное соревнование на выдуманных данных — потренироваться до настоящих соревнований."""
         f = training.create(store, app.state.clock().date())
-        return _redirect(f"{_base(f)}?done=training")
+        return redirect(f"{base_url(f)}?done=training")
 
     @app.post("/import")
     async def import_card(request: Request):
@@ -141,24 +141,24 @@ def register(app, cx) -> None:
                                              "«Новое соревнование» или командой card-template."], 422)
         f = store.create(comp, card_bytes=data)
         store.apply_doc_set(f)
-        return _redirect(f"{_base(f)}?done=imported")
+        return redirect(f"{base_url(f)}?done=imported")
 
     @app.post("/restore")
     async def restore_backup(request: Request):
         """Соревнование из резервной копии (.zip) — новой папкой, ничего не затирая."""
         up = (await request.form()).get("backup")
         if up is None or not getattr(up, "filename", ""):
-            return _redirect("/?done=restore_none")
+            return redirect("/?done=restore_none")
         data = await up.read()
         try:
             if bk.is_festival(data):  # копия фестиваля — все его соревнования и сам фестиваль
                 rec, names = bk.restore_festival(data, store.root, app.state.clock())
                 fid = store.set_festival(None, rec["title"], names, data=rec)
-                return _redirect(f"/festival/{quote(fid, safe='')}?done=restored")
+                return redirect(f"/festival/{quote(fid, safe='')}?done=restored")
             name = bk.restore(data, store.root, app.state.clock())
         except bk.BackupError as e:
-            return _redirect(_with_done("/", "restore_bad", why=str(e)))
-        return _redirect(f"/c/{quote(name, safe='')}?done=restored")
+            return redirect(with_done("/", "restore_bad", why=str(e)))
+        return redirect(f"/c/{quote(name, safe='')}?done=restored")
 
     # ------------------------------------------------------------ фестиваль (решение 039, неспорная часть)
 
@@ -181,7 +181,7 @@ def register(app, cx) -> None:
                 for e in t.entries:
                     d = by.setdefault(cm.person_id(e), {"fio": e.name.full, "birth": e.birth or e.birth_year,
                                                         "where": []})
-                    d["where"].append({"comp": comp.title, "base": _base(f), "team": t.team,
+                    d["where"].append({"comp": comp.title, "base": base_url(f), "team": t.team,
                                        "zachet": e.zachet.title if e.zachet else "зачёт не найден"})
         out = [d for d in by.values() if len({w["comp"] for w in d["where"]}) > 1]
         return sorted(out, key=lambda d: d["fio"])
@@ -191,9 +191,9 @@ def register(app, cx) -> None:
         form = await request.form()
         members = [str(m) for m in form.getlist("member") if store.get(str(m))]
         if len(members) < 2:
-            return _redirect("/?done=festival_few")
+            return redirect("/?done=festival_few")
         fid = store.set_festival(None, str(form.get("title", "")), members)
-        return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_made")
+        return redirect(f"/festival/{quote(fid, safe='')}?done=festival_made")
 
     @app.get("/festival/{fid}")
     def festival_page(request: Request, fid: str):
@@ -234,7 +234,7 @@ def register(app, cx) -> None:
             got[str(form.get(f"f-{i}-key"))] = {"paid": int(paid) if paid else 0,
                                                  "method": method if method in cm.FEE_METHODS else ""}
         store.update_festival(fid, lambda x: x.__setitem__("fees", {**x.get("fees", {}), **got}))
-        return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_fees#fees")
+        return redirect(f"/festival/{quote(fid, safe='')}?done=festival_fees#fees")
 
     @app.get("/festival/{fid}/fees.xlsx")
     def festival_fees_xlsx(fid: str):
@@ -255,13 +255,13 @@ def register(app, cx) -> None:
         err: dict = {}
         people = officials_from_rows(officials_form(await request.form()), err)
         if err:
-            return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_gsk_role#gsk")
+            return redirect(f"/festival/{quote(fid, safe='')}?done=festival_gsk_role#gsk")
         rec = store.update_festival(fid, lambda x: x.__setitem__("officials", [fv.official_dict(o) for o in people]))
         locked = store.sync_gsk(rec)
         if locked:
-            return _redirect(_with_done(f"/festival/{quote(fid, safe='')}#gsk", "festival_gsk_locked",
+            return redirect(with_done(f"/festival/{quote(fid, safe='')}#gsk", "festival_gsk_locked",
                                         comps="», «".join(locked)))
-        return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_gsk#gsk")
+        return redirect(f"/festival/{quote(fid, safe='')}?done=festival_gsk#gsk")
 
     @app.post("/festival/{fid}/modes")
     async def festival_modes(request: Request, fid: str):
@@ -273,7 +273,7 @@ def register(app, cx) -> None:
         per = str(form.get("fee_per", ""))
         joint = new.get("contracts") == "festival" and fv.mode(x, "contracts") != "festival" \
             and not x.get("contracts")  # впервые один договор на фестиваль — собрать из договоров соревнований
-        datas = [f._read_json(CONTRACTS) for m in x["members"] if (f := store.get(m))] if joint else []
+        datas = [f.read_json(CONTRACTS) for m in x["members"] if (f := store.get(m))] if joint else []
 
         def change(rec):
             rec["modes"] = {**fv.modes(rec), **new}
@@ -282,7 +282,7 @@ def register(app, cx) -> None:
                 rec["contracts"] = fv.merge_contracts(datas)
 
         store.update_festival(fid, change)
-        return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_modes#modes")
+        return redirect(f"/festival/{quote(fid, safe='')}?done=festival_modes#modes")
 
     @app.post("/festival/{fid}/edit")
     async def festival_edit(request: Request, fid: str):
@@ -296,7 +296,7 @@ def register(app, cx) -> None:
         if form.get("do") == "split":
             members = []
         store.set_festival(fid, str(form.get("title", x["title"])), members)
-        return _redirect("/?done=festival_split" if not members else f"/festival/{quote(fid, safe='')}?done=festival_saved")
+        return redirect("/?done=festival_split" if not members else f"/festival/{quote(fid, safe='')}?done=festival_saved")
 
     @app.get("/festival/{fid}/backup.zip")
     def festival_backup(fid: str):
@@ -312,7 +312,7 @@ def register(app, cx) -> None:
         d = bk.backups_dir(store.root)
         d.mkdir(parents=True, exist_ok=True)
         app.state.opener(d)
-        return _redirect("/?done=opened")
+        return redirect("/?done=opened")
 
     # ------------------------------------------------------------ судейская практика (по всем соревнованиям)
 
@@ -347,6 +347,6 @@ def register(app, cx) -> None:
         try:
             pt_.write_practice(practice_all(), path, app.state.clock().date())
         except PermissionError:
-            return _redirect("/practice?done=doc_locked")
+            return redirect("/practice?done=doc_locked")
         app.state.opener(path)
-        return _redirect("/practice?done=opened")
+        return redirect("/practice?done=opened")

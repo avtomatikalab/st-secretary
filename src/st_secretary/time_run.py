@@ -29,9 +29,9 @@ from st_secretary.psr_run import (
     TeamInput,
     TeamResult,
     ZachetRun,
-    _status,
     parse_points,
     stages_of,
+    status_of,
     tours_of,
     unit_kind,
 )
@@ -237,7 +237,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 continue
             if x is not None:
                 pts[sid] = x
-        status = _status(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
+        status = status_of(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
         r = TeamResult(t, i, pts, raw, bad, status, str(d.get("note", "")), removals=removals,
                        chip=str(d.get("chip", "")).strip() or next((m.chip for m in t.members if getattr(m, "chip", "")), ""))
         r.total = sum(pts.values(), Fraction(0))  # пока — сумма баллов; ниже станет результатом

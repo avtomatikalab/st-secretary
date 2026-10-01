@@ -26,6 +26,7 @@ from st_secretary.competition import MONTHS_GEN, Competition
 from st_secretary.issues import ERROR, WARNING, Issue
 from st_secretary.money import number_words
 from st_secretary.reference import discipline_by_code
+from st_secretary.textclean import name_key
 
 READABLE = {".docx", ".xlsx", ".xlsm", ".xls", ".pdf"}
 _MONTH = {m: i for i, m in enumerate(MONTHS_GEN, start=1)}
@@ -284,7 +285,7 @@ class Known:
 
 
 def _key(s: str) -> str:
-    return " ".join(s.lower().replace("ё", "е").split())
+    return name_key(s)
 
 
 _FULL = re.compile(r"\b([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?)\s+([А-ЯЁ][а-яё]+)\s+([А-ЯЁ][а-яё]+(?:вич|вна|чна|ич|оглы|кызы))\b")

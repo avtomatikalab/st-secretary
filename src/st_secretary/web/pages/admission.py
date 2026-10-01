@@ -21,7 +21,7 @@ from st_secretary import equipment as eq
 from st_secretary import festival as fv
 from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.issues import ERROR
-from st_secretary.web.common import XLSX, _base, _redirect, _with_done, key_of, team_anchor
+from st_secretary.web.common import XLSX, base_url, key_of, redirect, team_anchor, with_done
 from st_secretary.web.review import DONE
 from st_secretary.web.store import COMMISSION_REPORT, IMAGE_TYPES, CompFolder
 
@@ -128,7 +128,7 @@ def register(app, cx) -> None:
         fest = f.festival()
         return {"pdocs": pdocs, "tdocs": tdocs, "adm_settings": cm.settings(data), "fee_methods": cm.FEE_METHODS,
                 "when_label": cm.WHEN_LABEL,
-                "base": _base(f), "docs_n": {p.name: len(store.team_docs(f, p.name)) for p in f.preapp_files()},
+                "base": base_url(f), "docs_n": {p.name: len(store.team_docs(f, p.name)) for p in f.preapp_files()},
                 "gear_on": bool(eq.settings(f.equipment())["items"]),
                 "fest_fee": fest if fv.mode(fest, "fee") == "festival" else None,
                 "fest_numbers": shared_numbers(f)}
@@ -182,7 +182,7 @@ def register(app, cx) -> None:
         d["fee_method"] = method if method in cm.FEE_METHODS else ""
         d["doctor"] = bool(form.get("doctor"))
         f.save_admission(data)
-        return _redirect(f"{_base(f)}/admission?by=delegation&done=adm_delegation#{deleg_anchor(key)}")
+        return redirect(f"{base_url(f)}/admission?by=delegation&done=adm_delegation#{deleg_anchor(key)}")
 
     @app.post("/c/{cid}/admission/delegation/folder")
     async def admission_delegation_folder(request: Request, cid: str):
@@ -199,7 +199,7 @@ def register(app, cx) -> None:
             for p in t.persons:
                 store.person_docs_dir(f, d.title, p.entry).mkdir(parents=True, exist_ok=True)
         app.state.opener(target)
-        return _redirect(f"{_base(f)}/admission?by=delegation&done=opened#{deleg_anchor(key)}")
+        return redirect(f"{base_url(f)}/admission?by=delegation&done=opened#{deleg_anchor(key)}")
 
     @app.post("/c/{cid}/admission/team")
     async def admission_team(request: Request, cid: str):
@@ -268,8 +268,8 @@ def register(app, cx) -> None:
                                  "by": {"all": len(teams), **{s: sum(x.status == s for x in teams)
                                                              for s in (cm.PENDING, cm.ADMITTED, cm.REJECTED)}}})
         if form.get("in_check"):
-            return _redirect(f"{_base(f)}/admission/check?{urlencode({'file': path.name, 'done': 'adm_saved'})}")
-        return _redirect(f"{_base(f)}/admission?done=adm_saved#{team_anchor(path.name)}")
+            return redirect(f"{base_url(f)}/admission/check?{urlencode({'file': path.name, 'done': 'adm_saved'})}")
+        return redirect(f"{base_url(f)}/admission?done=adm_saved#{team_anchor(path.name)}")
 
     @app.post("/c/{cid}/admission/settings")
     async def admission_settings(request: Request, cid: str):
@@ -295,7 +295,7 @@ def register(app, cx) -> None:
         f.save_admission(data)
         store.save_doc_set(own, forget - {d["key"] for d in own},
                            {k: data["settings"][k] for k in ("docs", "team_docs")})
-        return _redirect(f"{_base(f)}/admission?done=adm_settings")
+        return redirect(f"{base_url(f)}/admission?done=adm_settings")
 
     @app.post("/c/{cid}/admission/numbers")
     async def admission_numbers(request: Request, cid: str):
@@ -311,7 +311,7 @@ def register(app, cx) -> None:
                     if (g.id, t.file) in new:
                         gdata.setdefault("teams", {}).setdefault(t.file, {})["number"] = new[(g.id, t.file)]
                 g.save_admission(gdata)
-            return _redirect(f"{_base(f)}/admission?done=adm_numbers_fest")
+            return redirect(f"{base_url(f)}/admission?done=adm_numbers_fest")
         data, teams = commission(f, comp)
         taken = set() if again else {t.number for t in teams if t.number is not None}
         n = 1
@@ -323,7 +323,7 @@ def register(app, cx) -> None:
             data.setdefault("teams", {}).setdefault(t.file, {})["number"] = n
             taken.add(n)
         f.save_admission(data)
-        return _redirect(f"{_base(f)}/admission?done=adm_numbers")
+        return redirect(f"{base_url(f)}/admission?done=adm_numbers")
 
     def commission_report(f: CompFolder, path: Path | None = None) -> Path:
         comp = need_comp(f)
@@ -343,9 +343,9 @@ def register(app, cx) -> None:
         try:
             path = commission_report(f)
         except PermissionError:
-            return _redirect(f"{_base(f)}/admission?done=adm_locked")
+            return redirect(f"{base_url(f)}/admission?done=adm_locked")
         app.state.opener(path)
-        return _redirect(f"{_base(f)}/admission?done=adm_report")
+        return redirect(f"{base_url(f)}/admission?done=adm_report")
 
     @app.get("/c/{cid}/admission/report.xlsx")
     def admission_report_download(cid: str):
@@ -372,7 +372,7 @@ def register(app, cx) -> None:
         return {"s": s, "items_person": [i for i in s["items"] if i.kind != eq.GROUP],
                 "items_group": [i for i in s["items"] if i.kind == eq.GROUP], "kind_label": eq.KIND_LABEL,
                 "short_name": eq.short_name, "key_of": key_of, "verdict": eq.verdict, "missing_text": eq.missing_text,
-                "base": _base(f)}
+                "base": base_url(f)}
 
     @app.get("/c/{cid}/equipment")
     def equipment_page(request: Request, cid: str):
@@ -410,7 +410,7 @@ def register(app, cx) -> None:
             data["settings"] = {"items": items, "penalty": {k: int(v) for k, v in pen.items() if v.isdigit()},
                                 "limit": int(limit) if limit.isdigit() else eq.RULES["limit"]}
         f.save_equipment(data)
-        return _redirect(f"{_base(f)}/equipment?done=gear_settings")
+        return redirect(f"{base_url(f)}/equipment?done=gear_settings")
 
     @app.post("/c/{cid}/equipment/team")
     async def equipment_team(request: Request, cid: str):
@@ -454,7 +454,7 @@ def register(app, cx) -> None:
                                                                                                  **parts),
                                  "saved": datetime.now().strftime("%H:%M:%S"),
                                  "by": {"all": totals["teams"], **{k: totals["by"][k] for k in ("new", "ok", "out")}}})
-        return _redirect(f"{_base(f)}/equipment?done=gear_saved#{team_anchor(path.name)}")
+        return redirect(f"{base_url(f)}/equipment?done=gear_saved#{team_anchor(path.name)}")
 
     # ------------------------------------------------------------ документы команд
 
@@ -477,7 +477,7 @@ def register(app, cx) -> None:
             except ValueError:
                 skipped += 1
         back = docs_back(f, str(form.get("back", "")), path.name)
-        return _redirect(_with_done(back, "docs_added" if added and not skipped else "docs_skipped" if skipped
+        return redirect(with_done(back, "docs_added" if added and not skipped else "docs_skipped" if skipped
                                     else "docs_none"))
 
     @app.get("/c/{cid}/docs/view")
@@ -500,7 +500,7 @@ def register(app, cx) -> None:
             store.remove_team_doc(f, path.name, str(form.get("name", "")))
         except FileNotFoundError:
             raise HTTPException(404) from None
-        return _redirect(_with_done(docs_back(f, str(form.get("back", "")), path.name), "docs_removed"))
+        return redirect(with_done(docs_back(f, str(form.get("back", "")), path.name), "docs_removed"))
 
     @app.post("/c/{cid}/docs/open")
     async def docs_open(request: Request, cid: str):
@@ -517,7 +517,7 @@ def register(app, cx) -> None:
             target = store.team_docs_dir(f, path.name)
             target.mkdir(parents=True, exist_ok=True)
         app.state.opener(target)
-        return _redirect(_with_done(docs_back(f, str(form.get("back", "")), path.name), "opened"))
+        return redirect(with_done(docs_back(f, str(form.get("back", "")), path.name), "opened"))
 
     @app.get("/c/{cid}/admission/check")
     def admission_check(request: Request, cid: str, file: str = ""):
@@ -532,7 +532,7 @@ def register(app, cx) -> None:
         return page(request, "admission_check.html", active="admission", focus=True, t=teams[at],
                     docs=doc_list(f, path.name, teams[at]),
                     position=(at + 1, len(order)), prev_team=near.get("prev"), next_team=near.get("next"),
-                    docs_dir=store.team_docs_dir(f, path.name), here=f"{_base(f)}/admission/check?file={quote(path.name)}",
+                    docs_dir=store.team_docs_dir(f, path.name), here=f"{base_url(f)}/admission/check?file={quote(path.name)}",
                     **{**comp_ctx(f), **adm_parts(f, data)})
 
     def doc_list(f: CompFolder, file: str, t=None) -> list[dict]:
@@ -542,13 +542,13 @@ def register(app, cx) -> None:
             ext = p.suffix.lower()
             kind = "image" if ext in IMAGE_TYPES else "pdf" if ext == ".pdf" else "other"
             out.append({"name": p.name, "label": p.stem, "kind": kind,
-                        "url": f"{_base(f)}/docs/view?{urlencode({'file': file, 'name': p.name})}"})
+                        "url": f"{base_url(f)}/docs/view?{urlencode({'file': file, 'name': p.name})}"})
         if t is not None and t.team:
             for fio, p in store.person_docs(f, cm.delegation_title(t.team), [x.entry for x in t.persons]):
                 ext = p.suffix.lower()
                 kind = "image" if ext in IMAGE_TYPES else "pdf" if ext == ".pdf" else "other"
                 out.append({"name": p.name, "label": f"{fio}: {p.stem}", "kind": kind,
-                            "url": f"{_base(f)}/docs/person?{urlencode({'file': file, 'fio': fio, 'name': p.name})}"})
+                            "url": f"{base_url(f)}/docs/person?{urlencode({'file': file, 'fio': fio, 'name': p.name})}"})
         return out
 
     @app.get("/c/{cid}/docs/person")

@@ -21,6 +21,7 @@ from st_secretary.issues import CHECKED, ERROR, WARNING, Issue
 from st_secretary.preapp import Entry, PreappResult, TeamApplication
 from st_secretary.qualification import Qual
 from st_secretary.rank import GROUP
+from st_secretary.textclean import name_key
 
 ADMITTED, PENDING, REJECTED = "admitted", "pending", "rejected"
 PERSON_LABEL = {ADMITTED: "Допущен", PENDING: "Ожидает", REJECTED: "Не допущен"}
@@ -65,8 +66,8 @@ DECIDED_HERE = ("Возраст", "Допуск")  # замечания, по к
 
 
 def person_key(name: str) -> str:
-    """Чем участник отличается внутри заявки: ФИО без регистра и «ё»."""
-    return " ".join(name.lower().replace("ё", "е").split())
+    """Чем участник отличается внутри заявки: ФИО без регистра и «ё» (textclean.name_key)."""
+    return name_key(name)
 
 
 def settings(data: dict) -> dict:
@@ -494,7 +495,7 @@ DELEGATION_FEE = {FEE_TEAMS: "по командам", FEE_ONE: "одной ст�
 def delegation_key(team: TeamApplication) -> str:
     """Делегация — территория и представитель в заявке (без регистра, «ё» и лишних пробелов)."""
     def n(s) -> str:
-        return " ".join(str(s or "").lower().replace("ё", "е").split())
+        return name_key(s)
 
     return f"{n(team.territory)}|{n(team.representative)}"
 

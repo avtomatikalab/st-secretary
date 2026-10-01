@@ -15,7 +15,7 @@ from starlette.exceptions import HTTPException
 
 from st_secretary import feedback as fb
 from st_secretary import journal, updates, version_label
-from st_secretary.web.common import _redirect
+from st_secretary.web.common import redirect
 
 MAX_IMAGE = 15 * 1024 * 1024  # снимок экрана с пометками — не больше 15 МБ
 
@@ -112,10 +112,10 @@ def register(app, cx) -> None:
     def send(numbers: list[str] | None = None):
         made = fb.bundle(fb_folder(), tail(), version(), now=app.state.clock(), numbers=numbers)
         if made is None:
-            return _redirect("/feedback?done=fb_nothing")
+            return redirect("/feedback?done=fb_nothing")
         path, _ = made
         app.state.opener(path.parent)  # папка с файлом — перетащить его в письмо
-        return _redirect("/feedback?done=fb_sent&mail=1")
+        return redirect("/feedback?done=fb_sent&mail=1")
 
     @app.post("/feedback/send")
     def feedback_send():
@@ -126,7 +126,7 @@ def register(app, cx) -> None:
     def feedback_again():
         """«Собрать заново» — тот же набор, если письмо не ушло."""
         last = fb.last_bundle(fb_folder())
-        return send(list(last.get("numbers", []))) if last else _redirect("/feedback?done=fb_nothing")
+        return send(list(last.get("numbers", []))) if last else redirect("/feedback?done=fb_nothing")
 
     @app.get("/feedback/all.zip")
     def feedback_all():
@@ -141,13 +141,13 @@ def register(app, cx) -> None:
         folder = fb_folder()
         folder.mkdir(parents=True, exist_ok=True)
         app.state.opener(folder)
-        return _redirect("/feedback?done=opened")
+        return redirect("/feedback?done=opened")
 
     @app.post("/feedback/remove")
     async def feedback_remove(request: Request):
         name = str((await request.form()).get("name", ""))
         fb.remove(fb_folder(), name)
-        return _redirect("/feedback?done=fb_removed")
+        return redirect("/feedback?done=fb_removed")
 
     @app.post("/feedback/import")
     async def feedback_import(request: Request):
@@ -156,8 +156,8 @@ def register(app, cx) -> None:
         try:
             added, skipped = fb.import_bundle(fb_folder(), await up.read()) if up is not None else (0, 0)
         except Exception:  # noqa: BLE001 — не zip или повреждён: сказать, а не упасть
-            return _redirect("/feedback?done=fb_bad")
-        return _redirect(f"/feedback?done=fb_imported&added={added}&skipped={skipped}")
+            return redirect("/feedback?done=fb_bad")
+        return redirect(f"/feedback?done=fb_imported&added={added}&skipped={skipped}")
 
     @app.get("/feedback/img")
     def feedback_img(name: str = ""):

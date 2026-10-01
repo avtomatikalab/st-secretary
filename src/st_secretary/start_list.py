@@ -28,7 +28,7 @@ from typing import Any
 
 from st_secretary.issues import INFO, WARNING, Issue
 from st_secretary.qualification import Qual
-from st_secretary.textclean import alpha_key
+from st_secretary.textclean import alpha_key, name_key
 
 METHODS = {
     "random": "Общая жеребьёвка — случайный порядок (компьютерная, п. 8.4)",
@@ -77,7 +77,7 @@ def settings(zdata: dict) -> dict:
 def delegation_of(t) -> str:
     """Делегация участника зачёта: территория и представитель (как в комиссии по допуску)."""
     def n(s) -> str:
-        return " ".join(str(s or "").lower().replace("ё", "е").split())
+        return name_key(s)
 
     return f"{n(t.territory)}|{n(t.representative)}"
 
@@ -120,7 +120,7 @@ def spread(order: list[str], deleg: dict[str, str], blocks: dict) -> list[str]:
 
 
 def person_key(m) -> str:
-    return " ".join(m.fio.lower().replace("ё", "е").split()) + "|" + (m.birth or "")
+    return name_key(m.fio) + "|" + (m.birth or "")
 
 
 def busy_starts(lists: list[tuple[StartList, int | None]]) -> dict[str, list[tuple[datetime, int]]]:
@@ -371,7 +371,7 @@ def person_conflicts(lists: list[tuple[StartList, int | None]], break_min: int) 
                 continue
             at = datetime.combine(sl.start_day, time()) + timedelta(seconds=r.time)
             for m in r.inp.members:
-                key = " ".join(m.fio.lower().replace("ё", "е").split()) + "|" + (m.birth or "")
+                key = person_key(m)
                 starts.setdefault(key, []).append((at, m.fio, sl.zachet, expected))
     out = []
     for xs in starts.values():

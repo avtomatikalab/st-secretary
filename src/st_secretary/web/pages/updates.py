@@ -14,7 +14,7 @@ from starlette.exceptions import HTTPException
 
 from st_secretary import backup as bk
 from st_secretary import updates, version_label
-from st_secretary.web.common import _redirect, log
+from st_secretary.web.common import log, redirect
 
 
 def register(app, cx) -> None:
@@ -41,12 +41,12 @@ def register(app, cx) -> None:
     @app.post("/update/later")
     def update_later():
         app.state.update_hidden = True  # до следующего запуска программы
-        return _redirect("/")
+        return redirect("/")
 
     @app.get("/update")
     def update_page(request: Request):
         if app.state.update is None:
-            return _redirect("/")
+            return redirect("/")
         return page(request, "update.html", **ctx())
 
     @app.post("/update/install")
@@ -61,7 +61,7 @@ def register(app, cx) -> None:
                 raise updates.UpdateError(f"резервная копия не сделана ({e}) — обновление отменено") from e
 
         app.state.installer.start(app.state.update, before=backup_first)
-        return _redirect("/update")
+        return redirect("/update")
 
     @app.get("/update/status")
     def update_status():

@@ -20,7 +20,7 @@ from st_secretary import start_list as sl
 from st_secretary import time_run as tr
 from st_secretary.disciplines import Status
 from st_secretary.web.board import BoardServer, create_board_app, qr_svg
-from st_secretary.web.common import XLSX, _base, _parse_dt, _redirect, _with_done
+from st_secretary.web.common import XLSX, base_url, parse_dt, redirect, with_done
 from st_secretary.web.store import CompFolder
 
 
@@ -83,7 +83,7 @@ def register(app, cx) -> None:
             start = None
             if zdata.get("draw", {}).get("published"):  # стартовый протокол — с момента публикации
                 lst = start_ctx(f, comp, z, [r.inp for r in run.rows])[3]
-                pub = _parse_dt(lst.published["at"])
+                pub = parse_dt(lst.published["at"])
                 start = {"rows": lst.rows, "hm": sl.hm_text,
                          "label": f"Опубликован {pub:%d.%m в %H:%M}" + (" — после публикации менялся, уточняйте у "
                                                                          "секретаря" if lst.changed else "")}
@@ -258,7 +258,7 @@ def register(app, cx) -> None:
                 js.issue_token(data, zz.key, sid, app.state.clock().isoformat(timespec="minutes"))
             f.save_run_data(data)
         done = "judge_revoked" if do == "revoke" else "judge_issued"
-        return _redirect(f"{_base(f)}/judges?{urlencode({'z': zz.key, 'done': done})}")
+        return redirect(f"{base_url(f)}/judges?{urlencode({'z': zz.key, 'done': done})}")
 
     @app.post("/c/{cid}/judges/penalties")
     async def judges_penalties(request: Request, cid: str, z: str = ""):
@@ -267,24 +267,24 @@ def register(app, cx) -> None:
         f = folder(cid)
         zz = need_zachet(need_comp(f), z)
         form = await request.form()
-        back = f"{_base(f)}/judges?{urlencode({'z': zz.key})}#penalties"
+        back = f"{base_url(f)}/judges?{urlencode({'z': zz.key})}#penalties"
         if form.get("do") == "upload":
             up = form.get("file")
             name = getattr(up, "filename", "") or ""
             try:
                 rows = pen.read_excel(await up.read()) if name else []
             except ValueError as e:
-                return _redirect(_with_done(back, "penalty_bad", why=str(e)))
+                return redirect(with_done(back, "penalty_bad", why=str(e)))
             if not rows:
-                return _redirect(_with_done(back, "penalty_bad", why="выберите файл Excel с таблицей"))
+                return redirect(with_done(back, "penalty_bad", why="выберите файл Excel с таблицей"))
             custom = {"title": "Таблица штрафов (своя)", "source": name[:120], "rows": [asdict(r) for r in rows]}
             _save_zachet(f, zz.key, lambda zd: zd.update(penalty_custom=custom, penalty_table="custom"))
-            return _redirect(_with_done(back, "penalty_loaded", n=str(len(rows))))
+            return redirect(with_done(back, "penalty_loaded", n=str(len(rows))))
         c = str(form.get("table", "auto"))
         jar = "\n".join(line.strip() for line in str(form.get("jargon", "")).splitlines() if "=" in line)[:5000]
         _save_zachet(f, zz.key, lambda zd: zd.update(penalty_table=c if c in pen.CHOICES else "auto",
                                                      protocol_codes=bool(form.get("protocol_codes")), pen_jargon=jar))
-        return _redirect(_with_done(back, "penalty_saved"))
+        return redirect(with_done(back, "penalty_saved"))
 
     @app.post("/c/{cid}/judges/pen-code")
     async def judges_pen_code(request: Request, cid: str, z: str = ""):
@@ -294,14 +294,14 @@ def register(app, cx) -> None:
         form = await request.form()
         sid, file, pid = (str(form.get(k, "")) for k in ("sid", "file", "id"))
         code = str(form.get("code", "")).strip().rstrip(".")
-        back = f"{_base(f)}/judges?{urlencode({'z': zz.key})}#log-{sid}"
+        back = f"{base_url(f)}/judges?{urlencode({'z': zz.key})}#log-{sid}"
         zdata = f.run_data().get("zachety", {}).get(zz.key, {})
         table = pen.table_for(zz, zdata)
         row = next((r for r in table.rows if r.code == code), None) if table and code else None
         if code and row is None:
-            return _redirect(_with_done(back, "pen_code_bad", code=code))
+            return redirect(with_done(back, "pen_code_bad", code=code))
         _save_zachet(f, zz.key, lambda zd: js.map_pen(zd, sid, file, pid, row))
-        return _redirect(_with_done(back, "pen_code_saved"))
+        return redirect(with_done(back, "pen_code_saved"))
 
     def need_penalties(f: CompFolder, z: str):
         comp = need_comp(f)
@@ -336,13 +336,13 @@ def register(app, cx) -> None:
         key, phone = str(form.get("key", "")), " ".join(str(form.get("phone", "")).split())[:30]
         if key in {p.key for p in sf.people(comp, f.contracts())} and phone:
             store.save_personal(key, {**store.personal().get(key, {}), "phone": phone})
-        return _redirect(f"{_base(f)}/judges?{urlencode({'z': z, 'done': 'judge_phone'})}")
+        return redirect(f"{base_url(f)}/judges?{urlencode({'z': z, 'done': 'judge_phone'})}")
 
     @app.post("/c/{cid}/judges/server")
     async def judges_server(request: Request, cid: str, z: str = ""):
         f = folder(cid)
         ok = app.state.board.start()
-        return _redirect(f"{_base(f)}/judges?{urlencode({'z': z, 'done': 'board_started' if ok else 'board_failed'})}")
+        return redirect(f"{base_url(f)}/judges?{urlencode({'z': z, 'done': 'board_started' if ok else 'board_failed'})}")
 
     @app.get("/c/{cid}/judges/phone/{token}")
     def judges_phone(request: Request, cid: str, token: str):
@@ -350,7 +350,7 @@ def register(app, cx) -> None:
         folder(cid)
         info = judge_page(token)
         if info is not None:
-            info["payload"]["sync_url"] = f"{_base(folder(cid))}/judges/phone/{token}/sync"
+            info["payload"]["sync_url"] = f"{base_url(folder(cid))}/judges/phone/{token}/sync"
         return templates.TemplateResponse(request, "judge.html", {"info": info}, status_code=200 if info else 404,
                                           headers={"Cache-Control": "no-store"})
 
@@ -402,7 +402,7 @@ def register(app, cx) -> None:
             data = f.run_data()
             data["board"] = {"on": on}
             f.save_run_data(data)
-        return _redirect(f"{_base(f)}/board?done={'board_on' if on else 'board_off'}")
+        return redirect(f"{base_url(f)}/board?done={'board_on' if on else 'board_off'}")
 
     @app.post("/c/{cid}/board/server")
     async def board_server(request: Request, cid: str):
@@ -410,9 +410,9 @@ def register(app, cx) -> None:
         do = (await request.form()).get("do")
         if do == "stop":
             app.state.board.stop()
-            return _redirect(f"{_base(f)}/board?done=board_stopped")
+            return redirect(f"{base_url(f)}/board?done=board_stopped")
         ok = app.state.board.start()
-        return _redirect(f"{_base(f)}/board?done={'board_started' if ok else 'board_failed'}")
+        return redirect(f"{base_url(f)}/board?done={'board_started' if ok else 'board_failed'}")
 
     @app.get("/c/{cid}/board/preview")
     def board_preview(request: Request, cid: str):

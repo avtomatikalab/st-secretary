@@ -22,7 +22,7 @@ from st_secretary import units as un
 from st_secretary.disciplines import Status
 from st_secretary.exporters import results_protocol as rp
 from st_secretary.importers.si_reader import read_si_reader
-from st_secretary.web.common import PROTEST_DECISIONS, XLSX, _base, _parse_dt, _redirect, _with_done, team_anchor
+from st_secretary.web.common import PROTEST_DECISIONS, XLSX, base_url, parse_dt, redirect, team_anchor, with_done
 from st_secretary.web.store import CompFolder, safe_name
 
 
@@ -68,7 +68,7 @@ def register(app, cx) -> None:
 
     def results_parts(f: CompFolder, z, zdata: dict, run) -> dict:
         stage_by = {s.id: s for s in run.stages}
-        return {"base": _base(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text, "ck": tr.clock_text,
+        return {"base": base_url(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text, "ck": tr.clock_text,
                 "tod": tr.time_of_day_text,
                 "extra_fields": EXTRA_FIELDS.get(run.profile, ()) + tuple((f"add-{a['id']}", a["name"]) for a in run.adds),
                 "add_points": {f"add-{a['id']}" for a in run.adds if a["kind"] == "points"}, "add_kinds": tr.ADD_KINDS,
@@ -169,7 +169,7 @@ def register(app, cx) -> None:
                 zdata["adds"] = adds
 
         _save_zachet(f, zz.key, update)
-        return _redirect(f"{_base(f)}/results?{urlencode({'z': zz.key, 'done': 'run_stages'})}#stages")
+        return redirect(f"{base_url(f)}/results?{urlencode({'z': zz.key, 'done': 'run_stages'})}#stages")
 
     @app.post("/c/{cid}/results/import")
     async def results_import(request: Request, cid: str, z: str = ""):
@@ -178,9 +178,9 @@ def register(app, cx) -> None:
         comp = need_comp(f)
         zz = need_zachet(comp, z)
         up = (await request.form()).get("book")
-        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}"
+        back = f"{base_url(f)}/results?{urlencode({'z': zz.key})}"
         if up is None or not getattr(up, "filename", ""):
-            return _redirect(_with_done(back, "run_nofile"))
+            return redirect(with_done(back, "run_nofile"))
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / Path(up.filename).name
             p.write_bytes(await up.read())
@@ -188,12 +188,12 @@ def register(app, cx) -> None:
                 from st_secretary.importers.sekretar_xls import read_group_protocol
                 sheet = read_group_protocol(p)
             except ImportError:
-                return _redirect(_with_done(back, "res_noxlrd"))
+                return redirect(with_done(back, "res_noxlrd"))
             except Exception:  # noqa: BLE001 — не та книга: объяснить, а не упасть
-                return _redirect(_with_done(back, "run_badbook"))
+                return redirect(with_done(back, "run_badbook"))
         imported, notes = pr.import_group_protocol(sheet, zachet_inputs(f, comp, zz))
         _save_zachet(f, zz.key, lambda zdata: zdata.update(imported))
-        return _redirect(_with_done(back, "run_imported", n=str(len(imported["stages"])),
+        return redirect(with_done(back, "run_imported", n=str(len(imported["stages"])),
                                     t=str(len(imported["teams"])), notes=" ".join(notes)[:900]))
 
     @app.post("/c/{cid}/results/si")
@@ -203,17 +203,17 @@ def register(app, cx) -> None:
         comp = need_comp(f)
         zz = need_zachet(comp, z)
         up = (await request.form()).get("csv")
-        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}#points"
+        back = f"{base_url(f)}/results?{urlencode({'z': zz.key})}#points"
         if up is None or not getattr(up, "filename", ""):
-            return _redirect(_with_done(back, "si_nofile"))
+            return redirect(with_done(back, "si_nofile"))
         try:
             cards = read_si_reader(await up.read())
         except ValueError as e:
-            return _redirect(_with_done(back, "si_bad", why=str(e)))
+            return redirect(with_done(back, "si_bad", why=str(e)))
         teams = zachet_inputs(f, comp, zz)
         out = {}
         _save_zachet(f, zz.key, lambda zdata: out.update(tr.apply_si(zdata, cards, teams)))
-        return _redirect(_with_done(back, "si_done", n=str(len(cards)), t=str(out["teams"]),
+        return redirect(with_done(back, "si_done", n=str(len(cards)), t=str(out["teams"]),
                                     unknown=", ".join(out["unknown"])[:600], replaced=", ".join(out["replaced"])[:600]))
 
     @app.post("/c/{cid}/results/unmark")
@@ -230,7 +230,7 @@ def register(app, cx) -> None:
 
         _save_zachet(f, zz.key, update)
         q = {"z": zz.key, "done": "run_saved", "focus": f"c-{team_anchor(file)}-{sid}"}
-        return _redirect(f"{_base(f)}/results?{urlencode(q)}#points")
+        return redirect(f"{base_url(f)}/results?{urlencode(q)}#points")
 
     @app.post("/c/{cid}/results/points")
     async def results_points(request: Request, cid: str, z: str = ""):
@@ -270,7 +270,7 @@ def register(app, cx) -> None:
                                   "bad": r.bad} for r in run.rows}
             return JSONResponse({"cells": cells, "saved": datetime.now().strftime("%H:%M:%S"),
                                  "results": templates.get_template("_results_table.html").render(**parts)})
-        return _redirect(f"{_base(f)}/results?{urlencode({'z': zz.key, 'done': 'run_saved'})}#points")
+        return redirect(f"{base_url(f)}/results?{urlencode({'z': zz.key, 'done': 'run_saved'})}#points")
 
     # ------------------------------------------------------------ предварительный протокол → протесты → официальный
 
@@ -283,11 +283,11 @@ def register(app, cx) -> None:
 
     def protocol_state(zdata: dict, run, now: datetime) -> dict:
         pub, off = zdata.get("published"), zdata.get("official")
-        at = _parse_dt(pub["at"]) if pub else None
+        at = parse_dt(pub["at"]) if pub else None
         until = at + PROTEST_HOUR if at else None
         protests = zdata.get("protests", [])
         return {"published": pub, "published_at": at, "until": until, "official": off,
-                "official_at": _parse_dt(off["at"]) if off else None,
+                "official_at": parse_dt(off["at"]) if off else None,
                 "hour_passed": bool(until and now >= until),
                 "changed": bool(pub and pub.get("fp") != fingerprint(run)),
                 "changed_after_official": bool(off and off.get("fp") != fingerprint(run)),
@@ -307,9 +307,9 @@ def register(app, cx) -> None:
         zz = need_zachet(comp, z)
         _, _, run = run_ctx(f, comp, zz)
         now = app.state.clock()
-        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}"
+        back = f"{base_url(f)}/results?{urlencode({'z': zz.key})}"
         if not any(r.place for r in run.rows):
-            return _redirect(_with_done(back, "run_empty"))
+            return redirect(with_done(back, "run_empty"))
         f.protocols_dir.mkdir(exist_ok=True)
         path = f.protocols_dir / protocol_name(zz, "preliminary", now)
         rp.write_protocol(comp, run, rp.PRELIMINARY, now, path, now + PROTEST_HOUR)
@@ -320,7 +320,7 @@ def register(app, cx) -> None:
 
         _save_zachet(f, zz.key, update)
         app.state.opener(path)
-        return _redirect(_with_done(back + "#protocol", "run_published", until=f"{now + PROTEST_HOUR:%H:%M}"))
+        return redirect(with_done(back + "#protocol", "run_published", until=f"{now + PROTEST_HOUR:%H:%M}"))
 
     @app.post("/c/{cid}/results/protest")
     async def results_protest(request: Request, cid: str, z: str = ""):
@@ -329,11 +329,11 @@ def register(app, cx) -> None:
         comp = need_comp(f)
         zz = need_zachet(comp, z)
         form = await request.form()
-        at = _parse_dt(str(form.get("at", ""))) or app.state.clock()
+        at = parse_dt(str(form.get("at", ""))) or app.state.clock()
         text = " ".join(str(form.get("text", "")).split())
-        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}"
+        back = f"{base_url(f)}/results?{urlencode({'z': zz.key})}"
         if not text:
-            return _redirect(_with_done(back + "#protocol", "run_protest_empty"))
+            return redirect(with_done(back + "#protocol", "run_protest_empty"))
         _, zdata, run = run_ctx(f, comp, zz)
         state = protocol_state(zdata, run, app.state.clock())
         late = bool(state["until"] and at > state["until"])
@@ -345,7 +345,7 @@ def register(app, cx) -> None:
                                                  "decision": "", "note": ""})
 
         _save_zachet(f, zz.key, update)
-        return _redirect(_with_done(back + "#protocol", "run_protest_late" if late else "run_protest"))
+        return redirect(with_done(back + "#protocol", "run_protest_late" if late else "run_protest"))
 
     @app.post("/c/{cid}/results/protest/decide")
     async def results_protest_decide(request: Request, cid: str, z: str = ""):
@@ -362,7 +362,7 @@ def register(app, cx) -> None:
                     p["decided_at"] = app.state.clock().isoformat(timespec="minutes") if p["decision"] else ""
 
         _save_zachet(f, zz.key, update)
-        return _redirect(f"{_base(f)}/results?{urlencode({'z': zz.key, 'done': 'run_decided'})}#protocol")
+        return redirect(f"{base_url(f)}/results?{urlencode({'z': zz.key, 'done': 'run_decided'})}#protocol")
 
     @app.post("/c/{cid}/results/approve")
     async def results_approve(request: Request, cid: str, z: str = ""):
@@ -373,26 +373,26 @@ def register(app, cx) -> None:
         _, zdata, run = run_ctx(f, comp, zz)
         now = app.state.clock()
         st = protocol_state(zdata, run, now)
-        back = f"{_base(f)}/results?{urlencode({'z': zz.key})}#protocol"
+        back = f"{base_url(f)}/results?{urlencode({'z': zz.key})}#protocol"
         if not st["published"]:
-            return _redirect(_with_done(back, "run_not_published"))
+            return redirect(with_done(back, "run_not_published"))
         if st["changed"]:
-            return _redirect(_with_done(back, "run_changed"))
+            return redirect(with_done(back, "run_changed"))
         if st["open_protests"]:
-            return _redirect(_with_done(back, "run_open_protests"))
+            return redirect(with_done(back, "run_open_protests"))
         f.protocols_dir.mkdir(exist_ok=True)
         path = f.protocols_dir / protocol_name(zz, "official", now)
         try:
             rp.write_protocol(comp, run, rp.OFFICIAL, now, path)
         except PermissionError:
-            return _redirect(_with_done(back, "doc_locked"))
+            return redirect(with_done(back, "doc_locked"))
         _save_zachet(f, zz.key, lambda d: d.update(official={"at": now.isoformat(timespec="minutes"),
                                                              "fp": fingerprint(run), "file": path.name}))
         awards = f.results_data()
         awards.setdefault("zachety", {})[zz.key] = rp.awards_rows(run, f"СТ-Секретарь, утверждён {now:%d.%m.%Y %H:%M}")
         f.save_results_data(awards)
         app.state.opener(path)
-        return _redirect(_with_done(back, "run_official"))
+        return redirect(with_done(back, "run_official"))
 
     @app.get("/c/{cid}/results/file/{kind}")
     def results_file(cid: str, kind: str, z: str = ""):

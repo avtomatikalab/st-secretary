@@ -198,7 +198,7 @@ class ZachetRun:
                                          for r in self.rows if r.status is Status.FINISHED)
 
 
-def _status(v) -> Status:
+def status_of(v) -> Status:
     try:
         return Status(v)
     except ValueError:
@@ -227,7 +227,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 continue
             if x is not None:
                 pts[sid] = x
-        status = _status(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
+        status = status_of(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
         r = TeamResult(t, i, pts, raw, bad, status, str(d.get("note", "")))
         r.marks = stt.marks(zdata, stages, t.file, raw)
         r.codes = {s.id: c for s in stages if (c := js.pen_codes(js.pens_of(zdata, s.id, t.file)))}

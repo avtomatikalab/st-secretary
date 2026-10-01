@@ -18,7 +18,7 @@ from st_secretary import forms as fm
 from st_secretary.importers.preapp_xlsx import _grids
 from st_secretary.preapp import process
 from st_secretary.textclean import clean_spaces
-from st_secretary.web.common import _base, _redirect
+from st_secretary.web.common import base_url, redirect
 from st_secretary.web.store import NAMED_TEMPLATE, CompFolder
 
 SAMPLE_TYPES = (".xlsx", ".xls")
@@ -61,14 +61,14 @@ def register(app, cx) -> None:
         up = form.get("sample")
         name = getattr(up, "filename", "") or ""
         if not name or Path(name).suffix.lower() not in SAMPLE_TYPES:
-            return _redirect(f"{_base(f)}/forms?done=form_bad_sample")
+            return redirect(f"{base_url(f)}/forms?done=form_bad_sample")
         token = secrets.token_hex(8)
         store.samples_dir.mkdir(parents=True, exist_ok=True)
         (store.samples_dir / f"{token}{Path(name).suffix.lower()}").write_bytes(await up.read())
         q = {"sample": token, "file": Path(name).name}
         if saved_form(str(form.get("name", ""))):  # «Изменить сохранённую» — образец открывается в её настройке
             q["name"] = str(form.get("name"))
-        return _redirect(f"{_base(f)}/forms/edit?{urlencode(q)}")
+        return redirect(f"{base_url(f)}/forms/edit?{urlencode(q)}")
 
     def read_grids(token: str):
         p = sample_path(token)
@@ -196,7 +196,7 @@ def register(app, cx) -> None:
         saved = saved_form(name)
         grids = read_grids(sample) if sample else None
         if sample and grids is None:
-            return _redirect(f"{_base(f)}/forms?done=form_bad_sample")
+            return redirect(f"{base_url(f)}/forms?done=form_bad_sample")
         if not grids and saved is None:
             raise HTTPException(404)
         return render(request, f, sample, file, grids, initial(grids, saved), saved)
@@ -209,7 +209,7 @@ def register(app, cx) -> None:
         saved = saved_form(str(data.get("old_name", "")))
         grids = read_grids(token) if token else None
         if token and grids is None:
-            return _redirect(f"{_base(f)}/forms?done=form_bad_sample")
+            return redirect(f"{base_url(f)}/forms?done=form_bad_sample")
         state = from_post(data, grids, saved)
         if data.get("action") != "save":
             return render(request, f, token, file, grids, state, saved)
@@ -225,7 +225,7 @@ def register(app, cx) -> None:
         store.save_form(form, saved["name"] if saved else "")
         if (p := sample_path(token)) is not None:
             p.unlink(missing_ok=True)  # образец больше не нужен
-        return _redirect(f"{_base(f)}/forms?{urlencode({'done': 'form_saved', 'name': form['name']})}")
+        return redirect(f"{base_url(f)}/forms?{urlencode({'done': 'form_saved', 'name': form['name']})}")
 
     @app.get("/c/{cid}/forms/from-preapp")
     def forms_from_preapp(cid: str, file: str = ""):
@@ -241,13 +241,13 @@ def register(app, cx) -> None:
         grids = read_grids(token)
         if grids and (m := fm.match(store.forms(), grids)):
             q["name"] = m[0]["name"]
-        return _redirect(f"{_base(f)}/forms/edit?{urlencode(q)}")
+        return redirect(f"{base_url(f)}/forms/edit?{urlencode(q)}")
 
     @app.post("/c/{cid}/forms/delete")
     async def forms_delete(request: Request, cid: str):
         f = folder(cid)
         store.delete_form(str((await request.form()).get("name", "")))
-        return _redirect(f"{_base(f)}/forms?done=form_deleted")
+        return redirect(f"{base_url(f)}/forms?done=form_deleted")
 
     @app.get("/c/{cid}/forms/file")
     def forms_file(cid: str, name: str = ""):
@@ -273,9 +273,9 @@ def register(app, cx) -> None:
         ok = isinstance(data, dict) and data.get("name") and isinstance(data.get("signature"), list) \
             and isinstance(data.get("columns"), list) and all(c in known for c in data["columns"])
         if not ok:
-            return _redirect(f"{_base(f)}/forms?done=form_bad_file")
+            return redirect(f"{base_url(f)}/forms?done=form_bad_file")
         form = {k: data[k] for k in ("name", "headers", "signature", "columns", "team_in", "head", "sheets", "values")
                 if k in data}
         form["name"] = " ".join(str(form["name"]).split())[:120]
         store.save_form(form)
-        return _redirect(f"{_base(f)}/forms?{urlencode({'done': 'form_imported', 'name': form['name']})}")
+        return redirect(f"{base_url(f)}/forms?{urlencode({'done': 'form_imported', 'name': form['name']})}")

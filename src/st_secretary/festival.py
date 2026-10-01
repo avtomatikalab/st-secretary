@@ -22,6 +22,7 @@ from dataclasses import replace
 from datetime import date
 
 from st_secretary.competition import Competition, Official
+from st_secretary.textclean import name_key
 
 MODES = {
     "contracts": {"each": "по каждому соревнованию — свой договор и табель",
@@ -104,7 +105,7 @@ def joint_comp(fest: dict, comps: list[Competition]) -> Competition:
     title += f" ({'; '.join(c.title for c in comps)})"
     people, seen = [], set()
     for o in officials(fest) + [o for c in comps for o in c.officials]:
-        k = " ".join(o.fio.lower().replace("ё", "е").split())
+        k = name_key(o.fio)
         if k not in seen:
             seen.add(k)
             people.append(o)
@@ -152,7 +153,7 @@ def union_brigade(extras: list[list[dict]]) -> list[dict]:
     out, seen = [], set()
     for xs in extras:
         for x in xs:
-            k = " ".join(str(x.get("fio", "")).lower().replace("ё", "е").split())
+            k = name_key(x.get("fio", ""))
             if k and k not in seen:
                 seen.add(k)
                 out.append(dict(x))

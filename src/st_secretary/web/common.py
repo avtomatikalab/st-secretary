@@ -88,19 +88,19 @@ def cannot_open_text(path: Path, system_name: str = sys.platform) -> dict:
             "hint": "Скачайте файл кнопкой ниже и откройте его подходящей программой."}
 
 
-def _fmt_date(d) -> str:
+def fmt_date(d) -> str:
     return d.strftime("%d.%m.%Y") if isinstance(d, date) else ("" if d is None else str(d))
 
 
-def _base(f: CompFolder) -> str:
+def base_url(f: CompFolder) -> str:
     return "/c/" + quote(f.id, safe="")
 
 
-def _step_url(base: str, step) -> str:
+def step_url(base: str, step) -> str:
     return f"{base}/{step.slug}"
 
 
-def _redirect(url: str) -> RedirectResponse:
+def redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
 
@@ -115,7 +115,7 @@ def key_of(e) -> str:
     return cm.person_key(e.name.full)
 
 
-def _parse_dt(s: str) -> datetime | None:
+def parse_dt(s: str) -> datetime | None:
     """Дата и время из поля браузера («2025-09-20T10:00»)."""
     try:
         return datetime.fromisoformat(s) if s else None
@@ -128,7 +128,7 @@ def team_anchor(file: str) -> str:
     return "t-" + hashlib.sha1(file.encode("utf-8")).hexdigest()[:10]
 
 
-def _with_done(url: str, done: str, **extra: str) -> str:
+def with_done(url: str, done: str, **extra: str) -> str:
     """Адрес с сообщением о сделанном (?done=…) и подробностями для него; якорь (#…) сохраняется."""
     parts = urlsplit(url)
     q = [(k, v) for k, v in parse_qsl(parts.query) if k != "done" and k not in extra]
@@ -147,7 +147,7 @@ def _start_time_text(q) -> str:
     return f" Время старта — с {first}{step}; поменять — в разделе «Время старта» ниже."
 
 
-def _flash(request: Request) -> dict | None:
+def flash(request: Request) -> dict | None:
     q = request.query_params
     done = q.get("done")
     if done == "uploaded":
@@ -339,7 +339,7 @@ def _flash(request: Request) -> dict | None:
     return None
 
 
-def _preapp_view(files: list[Path], result, reviews: dict) -> dict:
+def preapp_view(files: list[Path], result, reviews: dict) -> dict:
     """Данные для страницы предзаявок: замечания и статусы по файлам (командам), счётчики для фильтров."""
     by_source: dict[str, list[Issue]] = defaultdict(list)
     for i in result.issues:

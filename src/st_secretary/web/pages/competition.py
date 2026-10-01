@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException
 from st_secretary import backup as bk
 from st_secretary import festival as fv
 from st_secretary.issues import ERROR, FIXED, WARNING
-from st_secretary.web.common import _base, _redirect, _with_done
+from st_secretary.web.common import base_url, redirect, with_done
 from st_secretary.web.forms import GROUP_SUGGESTIONS, card_to_form, choices, form_from_data, form_to_card
 from st_secretary.web.review import DONE
 
@@ -34,7 +34,7 @@ def register(app, cx) -> None:
     def backup_now(cid: str):
         f = folder(cid)
         path = bk.make(f.path, bk.backups_dir(store.root), app.state.clock())
-        return _redirect(_with_done(f"{_base(f)}#backup", "backup_made", file=path.name))
+        return redirect(with_done(f"{base_url(f)}#backup", "backup_made", file=path.name))
 
     @app.get("/c/{cid}/backup.zip")
     def backup_download(cid: str):
@@ -71,7 +71,7 @@ def register(app, cx) -> None:
             f.preapp_dir.mkdir(exist_ok=True)
         app.state.opener(target)
         back = urlsplit(request.headers.get("referer", "")).path
-        return _redirect(f"{back if back.startswith('/c/') else _base(f)}?done=opened")
+        return redirect(f"{back if back.startswith('/c/') else base_url(f)}?done=opened")
 
     @app.get("/c/{cid}/card")
     def card_view(request: Request, cid: str):
@@ -93,7 +93,7 @@ def register(app, cx) -> None:
         f = folder(cid)
         ctx = comp_ctx(f)
         if ctx["comp"] is None:  # файл не читается — исправлять в Excel, форма пустой не открывается
-            return _redirect(f"{_base(f)}/card")
+            return redirect(f"{base_url(f)}/card")
         return page(request, "card.html", active="card", form=card_to_form(ctx["comp"]), errors={}, ch=choices(),
                     issues=ctx["comp"].check(), card_version=f.version(), own=store.own_values(),
                     fest_gsk=fest_gsk(f), **ctx)
@@ -118,7 +118,7 @@ def register(app, cx) -> None:
             try:
                 f.save(comp)
                 store.remember_own(comp, GROUP_SUGGESTIONS)  # неофициальные: свои значения — в подсказки
-                return _redirect(f"{_base(f)}/card?done=saved")
+                return redirect(f"{base_url(f)}/card?done=saved")
             except PermissionError:
                 save_error = ("Файл карточки сейчас открыт в Excel, поэтому сохранить не получилось. Закройте его "
                               "в Excel и нажмите «Сохранить» ещё раз — всё, что вы ввели, осталось на странице.")
@@ -133,4 +133,4 @@ def register(app, cx) -> None:
         f = folder(cid)
         form = await request.form()
         store.forget_own(str(form.get("kind", "")), str(form.get("value", "")))
-        return _redirect(f"{_base(f)}/card/edit#own-values")
+        return redirect(f"{base_url(f)}/card/edit#own-values")

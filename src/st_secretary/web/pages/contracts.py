@@ -21,7 +21,7 @@ from st_secretary import staff as sf
 from st_secretary.exporters import contracts as ct
 from st_secretary.money import money
 from st_secretary.names import initials
-from st_secretary.web.common import DOCX, XLSX, _base, _redirect, _with_done
+from st_secretary.web.common import DOCX, XLSX, base_url, redirect, with_done
 from st_secretary.web.store import CompFolder, safe_name
 
 
@@ -82,7 +82,7 @@ def register(app, cx) -> None:
                 "per_person": {p.key: [i for i in issues if i.person == p.fio] for p in team}}
 
     def staff_parts(f: CompFolder, ctx: dict) -> dict:
-        return {"base": _base(f), "weekday": ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"], "money": money,
+        return {"base": base_url(f), "weekday": ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"], "money": money,
                 "missing_personal": sf.missing_personal, "personal_problems": sf.personal_problems, **ctx}
 
     @app.get("/c/{cid}/contracts")
@@ -125,7 +125,7 @@ def register(app, cx) -> None:
             return JSONResponse({"team": templates.get_template("_contracts_tabel.html").render(**parts),
                                  "tiles": templates.get_template("_contracts_tiles.html").render(**parts),
                                  "saved": datetime.now().strftime("%H:%M:%S")})
-        return _redirect(f"{_base(f)}/contracts?done=ct_saved#tabel")
+        return redirect(f"{base_url(f)}/contracts?done=ct_saved#tabel")
 
     @app.post("/c/{cid}/contracts/settings")
     async def contracts_settings(request: Request, cid: str):
@@ -157,7 +157,7 @@ def register(app, cx) -> None:
             for k in [k[5:] for k in form if k.startswith("rate-") and not str(form.get(k, "")).strip()]:
                 data["rates"].pop(k, None)
         f.save_contracts(data)
-        return _redirect(f"{_base(f)}/contracts?done=ct_settings#settings")
+        return redirect(f"{base_url(f)}/contracts?done=ct_settings#settings")
 
     @app.post("/c/{cid}/contracts/customer")
     async def contracts_customer(request: Request, cid: str):
@@ -166,7 +166,7 @@ def register(app, cx) -> None:
         data = f.contracts()
         data["customer"] = {k: str(form.get(k, "")).strip() for k, _, _ in ct.CUSTOMER_FIELDS}
         f.save_contracts(data)
-        return _redirect(f"{_base(f)}/contracts?done=ct_customer#customer")
+        return redirect(f"{base_url(f)}/contracts?done=ct_customer#customer")
 
     @app.post("/c/{cid}/contracts/add")
     async def contracts_add(request: Request, cid: str):
@@ -177,14 +177,14 @@ def register(app, cx) -> None:
         role = " ".join(str(form.get("role", "")).split())
         cat = str(form.get("category", "б/к"))
         if not fio or not role:
-            return _redirect(f"{_base(f)}/contracts?done=ct_need#add")
+            return redirect(f"{base_url(f)}/contracts?done=ct_need#add")
         data = f.contracts()
         if res.person_key(fio) in {p.key for p in sf.people(comp, data)}:
-            return _redirect(f"{_base(f)}/contracts?done=ct_exists#add")
+            return redirect(f"{base_url(f)}/contracts?done=ct_exists#add")
         data.setdefault("extra", []).append({"fio": fio, "role": role,
                                              "category": cat if cat in sf.CATEGORIES else "б/к"})
         f.save_contracts(data)
-        return _redirect(f"{_base(f)}/contracts?done=ct_added#tabel")
+        return redirect(f"{base_url(f)}/contracts?done=ct_added#tabel")
 
     def need_person(f: CompFolder, comp, key: str):
         p = next((x for x in sf.people(comp, f.contracts()) if x.key == key), None)
@@ -223,7 +223,7 @@ def register(app, cx) -> None:
                     x["role"] = role or x.get("role", "")
                     x["category"] = cat if cat in sf.CATEGORIES else x.get("category", "б/к")
             f.save_contracts(data)
-        return _redirect(f"{_base(f)}/contracts/person?{urlencode({'key': p.key, 'done': 'ct_person'})}")
+        return redirect(f"{base_url(f)}/contracts/person?{urlencode({'key': p.key, 'done': 'ct_person'})}")
 
     @app.post("/c/{cid}/contracts/remove")
     async def contracts_remove(request: Request, cid: str):
@@ -233,7 +233,7 @@ def register(app, cx) -> None:
         data["extra"] = [x for x in data.get("extra", []) if res.person_key(x.get("fio", "")) != key]
         data.get("people", {}).pop(key, None)
         f.save_contracts(data)
-        return _redirect(f"{_base(f)}/contracts?done=ct_removed#tabel")
+        return redirect(f"{base_url(f)}/contracts?done=ct_removed#tabel")
 
     def build_contract_doc(f: CompFolder, kind: str, key: str = "", path: Path | None = None) -> tuple[Path, set]:
         comp = staff_comp(f)
@@ -262,8 +262,8 @@ def register(app, cx) -> None:
 
     def contracts_back(f: CompFolder, key: str) -> str:
         if key:
-            return f"{_base(f)}/contracts/person?{urlencode({'key': key})}"
-        return f"{_base(f)}/contracts#docs"
+            return f"{base_url(f)}/contracts/person?{urlencode({'key': key})}"
+        return f"{base_url(f)}/contracts#docs"
 
     @app.post("/c/{cid}/contracts/doc/{kind}")
     async def contracts_doc_open(request: Request, cid: str, kind: str):
@@ -273,11 +273,11 @@ def register(app, cx) -> None:
         try:
             path, unknown = build_contract_doc(f, kind, key)
         except PermissionError:
-            return _redirect(_with_done(back, "doc_locked"))
+            return redirect(with_done(back, "doc_locked"))
         app.state.opener(path)
         if unknown:
-            return _redirect(_with_done(back, "ct_unknown", fields=", ".join(sorted(unknown))))
-        return _redirect(_with_done(back, "ct_doc"))
+            return redirect(with_done(back, "ct_unknown", fields=", ".join(sorted(unknown))))
+        return redirect(with_done(back, "ct_doc"))
 
     @app.get("/c/{cid}/contracts/file/{kind}")
     def contracts_doc_download(cid: str, kind: str, key: str = ""):
@@ -303,7 +303,7 @@ def register(app, cx) -> None:
             else:
                 ct.default_template().save(str(target))
         app.state.opener(target)
-        return _redirect(_with_done(f"{_base(f)}/contracts#docs", "ct_template", file=target.name))
+        return redirect(with_done(f"{base_url(f)}/contracts#docs", "ct_template", file=target.name))
 
     @app.post("/c/{cid}/contracts/folder")
     def contracts_folder(cid: str):
@@ -311,4 +311,4 @@ def register(app, cx) -> None:
         d = store.contracts_dir(f)
         d.mkdir(parents=True, exist_ok=True)
         app.state.opener(d)
-        return _redirect(f"{_base(f)}/contracts?done=opened#docs")
+        return redirect(f"{base_url(f)}/contracts?done=opened#docs")

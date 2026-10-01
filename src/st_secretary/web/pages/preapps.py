@@ -21,7 +21,7 @@ from st_secretary.importers.preapp_xlsx import read_preapplication
 from st_secretary.issues import CHECKED, ERROR, SEVERITY_ORDER, WARNING, Issue
 from st_secretary.qualification import Qual
 from st_secretary.web import preapp_form as pf
-from st_secretary.web.common import DOCX, XLSX, _base, _parse_dt, _preapp_view, _redirect, _with_done, team_anchor
+from st_secretary.web.common import DOCX, XLSX, base_url, parse_dt, preapp_view, redirect, team_anchor, with_done
 from st_secretary.web.review import DONE, SAVE, STATUS_LABEL, is_clean, issue_key
 from st_secretary.web.store import NAMED_TEMPLATE, SUMMARY, CompFolder, safe_name
 
@@ -59,7 +59,7 @@ def register(app, cx) -> None:
             blocked = [i for i in comp.check() if i.severity == ERROR]
             if not blocked and files:
                 result, reviews = store.review(f, comp)
-                view = _preapp_view(files, result, reviews)
+                view = preapp_view(files, result, reviews)
         plain_rows = [{"file": p.name, "team": None, "counts": {}} for p in files]
         return page(request, "preapps.html", active="preapps", files=files, blocked=blocked, result=result,
                     view=view, plain_rows=plain_rows, **ctx)
@@ -89,7 +89,7 @@ def register(app, cx) -> None:
                 locked += 1
         q = urlencode({"done": "uploaded", "added": added, "replaced": replaced, "skipped": skipped, "locked": locked,
                        "split": "; ".join(split)})
-        return _redirect(f"{_base(f)}/preapps?{q}")
+        return redirect(f"{base_url(f)}/preapps?{q}")
 
     @app.post("/c/{cid}/preapps/remove")
     async def preapps_remove(request: Request, cid: str):
@@ -99,7 +99,7 @@ def register(app, cx) -> None:
             f.remove_preapp(name)
         except FileNotFoundError:
             raise HTTPException(404) from None
-        return _redirect(f"{_base(f)}/preapps?{urlencode({'done': 'removed', 'name': name})}")
+        return redirect(f"{base_url(f)}/preapps?{urlencode({'done': 'removed', 'name': name})}")
 
     # ------------------------------------------------------------ заявка в форме
 
@@ -123,7 +123,7 @@ def register(app, cx) -> None:
                     empty_row=pf.empty_row(comp), **comp_ctx(f), **extra)
 
     def team_url(f: CompFolder, name: str, **q) -> str:
-        return f"{_base(f)}/preapps/team?{urlencode({'file': name, **q})}"
+        return f"{base_url(f)}/preapps/team?{urlencode({'file': name, **q})}"
 
     def need_file(f: CompFolder, name: str) -> Path:
         path = f.preapp_path(name)
@@ -133,7 +133,7 @@ def register(app, cx) -> None:
 
     def back_to(request: Request, f: CompFolder, sent: str, default: str) -> str:
         """Вернуться туда, откуда нажали кнопку (только внутри этого соревнования)."""
-        return sent if sent.startswith(_base(f) + "/") else default
+        return sent if sent.startswith(base_url(f) + "/") else default
 
     @app.get("/c/{cid}/preapps/team")
     def preapp_team(request: Request, cid: str, file: str = ""):
@@ -161,7 +161,7 @@ def register(app, cx) -> None:
                     show=pf.columns(comp, [vars(e) for e in team.entries] if team else []),
                     here=team_url(f, path.name), docs=doc_list(f, path.name),
                     docs_dir=store.team_docs_dir(f, path.name),
-                    check_url=f"{_base(f)}/admission/check?{urlencode({'file': path.name})}", **comp_ctx(f))
+                    check_url=f"{base_url(f)}/admission/check?{urlencode({'file': path.name})}", **comp_ctx(f))
 
     @app.post("/c/{cid}/preapps/status")
     async def preapp_status(request: Request, cid: str):
@@ -181,7 +181,7 @@ def register(app, cx) -> None:
             f.set_checked(path.name, [issue_key(i) for i in mine if i.severity == WARNING])
         f.set_status(path.name, status)
         back = back_to(request, f, str(data.get("back", "")), team_url(f, path.name))
-        return _redirect(_with_done(back, "status"))
+        return redirect(with_done(back, "status"))
 
     @app.post("/c/{cid}/preapps/check")
     async def preapp_check(request: Request, cid: str):
@@ -191,12 +191,12 @@ def register(app, cx) -> None:
         on = data.get("on", "1") == "1"
         f.set_checked(path.name, [str(data.get("key", ""))], on)
         back = back_to(request, f, str(data.get("back", "")), team_url(f, path.name))
-        return _redirect(_with_done(back, "checked" if on else "unchecked"))
+        return redirect(with_done(back, "checked" if on else "unchecked"))
 
     def reentry_info(f: CompFolder, name: str) -> dict:
         """Для формы перезаявки: время сейчас, начало соревнований, не поздно ли, не повторная ли (п. 8.5)."""
         data = f.admission()
-        start = _parse_dt(cm.settings(data)["start_at"])
+        start = parse_dt(cm.settings(data)["start_at"])
         now = datetime.now()
         return {"now": now.strftime("%d.%m.%Y %H:%M"), "start": start.strftime("%d.%m.%Y %H:%M") if start else "",
                 "late": bool(start and (start - now).total_seconds() < 3600),
@@ -249,8 +249,8 @@ def register(app, cx) -> None:
                 if reentry:
                     rec = log_reentry(f, saved, before, rows)
                     done = "reentry_late" if rec["late"] else "reentry_repeat" if rec["repeat"] else "reentry"
-                    return _redirect(f"{_base(f)}/admission?done={done}#{team_anchor(saved)}")
-                return _redirect(team_url(f, saved, done=done))
+                    return redirect(f"{base_url(f)}/admission?done={done}#{team_anchor(saved)}")
+                return redirect(team_url(f, saved, done=done))
             except PermissionError:
                 save_error = ("Файл заявки сейчас открыт в Excel, поэтому сохранить не получилось. Закройте его в "
                               "Excel и нажмите «Сохранить» ещё раз — всё, что вы ввели, осталось на странице.")
@@ -261,7 +261,7 @@ def register(app, cx) -> None:
     def log_reentry(f: CompFolder, name: str, before: list, rows: list[dict]) -> dict:
         data = f.admission()
         tm = data.setdefault("teams", {}).setdefault(name, {})
-        start = _parse_dt(cm.settings(data)["start_at"])
+        start = parse_dt(cm.settings(data)["start_at"])
         rec = cm.reentry_record(before, [{"fio": r["fio"], "group": r["group"], "cls": r["cls"]} for r in rows],
                                 datetime.now(), start, tm.get("reentries", []))
         tm.setdefault("reentries", []).append(rec)
@@ -274,7 +274,7 @@ def register(app, cx) -> None:
         data = await request.form()
         path = need_file(f, str(data.get("name", "")))
         app.state.opener(path)
-        return _redirect(_with_done(back_to(request, f, str(data.get("back", "")), team_url(f, path.name)), "opened"))
+        return redirect(with_done(back_to(request, f, str(data.get("back", "")), team_url(f, path.name)), "opened"))
 
     @app.post("/c/{cid}/preapps/summary")
     def preapps_summary_open(request: Request, cid: str):
@@ -283,9 +283,9 @@ def register(app, cx) -> None:
         try:
             path = f.write_summary(result, comp, statuses=statuses)
         except PermissionError:
-            return _redirect(f"{_base(f)}/preapps?done=locked")
+            return redirect(f"{base_url(f)}/preapps?done=locked")
         app.state.opener(path)
-        return _redirect(f"{_base(f)}/preapps?done=summary")
+        return redirect(f"{base_url(f)}/preapps?done=summary")
 
     @app.get("/c/{cid}/preapps/summary.xlsx")
     def preapps_summary_download(cid: str):
@@ -333,12 +333,12 @@ def register(app, cx) -> None:
         form = await request.form()
         if form.get("do") == "delete":
             named_template(f).unlink(missing_ok=True)
-            return _redirect(f"{_base(f)}/forms?done=named_deleted#named")
+            return redirect(f"{base_url(f)}/forms?done=named_deleted#named")
         up = form.get("template")
         name = getattr(up, "filename", "") or ""
         if not name.lower().endswith(".docx"):
-            return _redirect(f"{_base(f)}/forms?done=named_bad#named")
+            return redirect(f"{base_url(f)}/forms?done=named_bad#named")
         named_template(f).write_bytes(await up.read())
-        return _redirect(f"{_base(f)}/forms?done=named_saved#named")
+        return redirect(f"{base_url(f)}/forms?done=named_saved#named")
 
     cx.update(back_to=back_to, need_comp=need_comp, need_file=need_file, team_url=team_url)

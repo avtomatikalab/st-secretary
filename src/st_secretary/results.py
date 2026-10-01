@@ -16,6 +16,7 @@ from st_secretary.competition import Competition
 from st_secretary.preapp import PreappResult
 from st_secretary.qualification import parse_members_with_quals
 from st_secretary.rank import CREW, GROUP, INDIVIDUAL, PAIR
+from st_secretary.textclean import name_key
 
 ROMAN = {1: "I", 2: "II", 3: "III"}
 MANUAL = "вручную"
@@ -24,7 +25,8 @@ MONTHS_GEN = ["января", "февраля", "марта", "апреля", "�
 
 
 def person_key(name: str) -> str:
-    return " ".join(name.lower().replace("ё", "е").split())
+    """ФИО для сравнения (textclean.name_key)."""
+    return name_key(name)
 
 
 @dataclass

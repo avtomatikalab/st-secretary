@@ -27,14 +27,14 @@ from st_secretary.textclean import from_years
 from st_secretary.web.common import (
     HERE,
     CannotOpen,
-    _base,
-    _flash,
-    _fmt_date,
-    _step_url,
+    base_url,
     cannot_open_text,
     fix_url,
+    flash,
+    fmt_date,
     log,
     open_in_os,
+    step_url,
     team_anchor,
 )
 from st_secretary.web.forms import empty_zachet
@@ -78,13 +78,13 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     run_lock = threading.RLock()  # Результаты_дистанции.json: пишут и страница секретаря, и телефоны судей
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
-    templates.env.filters["d"] = _fmt_date
+    templates.env.filters["d"] = fmt_date
     templates.env.filters["from_years"] = from_years
     templates.env.filters["team_anchor"] = team_anchor
     templates.env.filters["row_place"] = row_place  # «строка 12» или «лист 2, строка 12»
     # Метка для адресов стилей и скриптов: меняется вместе с файлами, чтобы браузер не держал старую версию.
     static_version = f"{__version__}-{max(int(p.stat().st_mtime) for p in (HERE / 'static').iterdir())}"
-    templates.env.globals.update(steps=STEPS, step_url=_step_url, version=static_version, app_version=version_label(),
+    templates.env.globals.update(steps=STEPS, step_url=step_url, version=static_version, app_version=version_label(),
                                  labels=SEVERITY_LABEL,
                                  level_labels=LEVEL_LABELS, empty_zachet=empty_zachet(),
                                  ERROR=ERROR, WARNING=WARNING, CHECKED=CHECKED, FIXED=FIXED, INFO=INFO,
@@ -94,7 +94,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
 
     def page(request: Request, name: str, status_code: int = 200, background=None, **ctx):
         endpoint = request.scope.get("endpoint")
-        ctx = {"flash": _flash(request), "can_stop": app.state.shutdown is not None,
+        ctx = {"flash": flash(request), "can_stop": app.state.shutdown is not None,
                "journal_on": app.state.journal is not None,
                # для «Сообщить» (п. 43): какой шаблон и модуль показали эту страницу — найти место в коде
                "page_template": name, "page_module": getattr(endpoint, "__module__", ""), **ctx}
@@ -117,7 +117,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
         fest = store.festival_of(f.id)  # фестиваль: переключатель на другие его соревнования
         if fest:
             fest = {**fest, "others": [m for m in fest["members"] if m != f.id]}
-        return {"folder": f, "comp": comp, "card_errors": card_errors, "base": _base(f), "festival": fest}
+        return {"folder": f, "comp": comp, "card_errors": card_errors, "base": base_url(f), "festival": fest}
 
     class Ctx:  # общее для страниц: хранилище, шаблоны, помощники; страницы добавляют свои
         def update(self, **kw):
