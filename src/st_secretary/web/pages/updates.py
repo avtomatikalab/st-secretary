@@ -18,6 +18,7 @@ from st_secretary.web.common import log, redirect
 
 
 def register(app, cx) -> None:
+    """Новая версия программы: баннер, страница обновления, установка (/update…)."""
     page = cx.page
     store = cx.store
 

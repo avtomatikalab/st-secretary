@@ -27,6 +27,7 @@ from st_secretary.web.store import CompFolder, safe_name
 
 
 def register(app, cx) -> None:
+    """Договоры, акты и табель бригады (/c/{cid}/contracts…)."""
     comp_ctx = cx.comp_ctx
     folder = cx.folder
     page = cx.page
@@ -58,6 +59,7 @@ def register(app, cx) -> None:
         return ct.find_template([f.path, store.root], role)
 
     def staff_ctx(f: CompFolder, comp) -> dict:
+        """Бригада, дни, ставки, заказчик и замечания — для страницы договоров."""
         data = f.contracts()
         s = sf.settings(comp, data)
         team = sf.people(comp, data)
@@ -86,6 +88,7 @@ def register(app, cx) -> None:
 
     @app.get("/c/{cid}/contracts")
     def contracts_page(request: Request, cid: str):
+        """Страница договоров, актов и табеля."""
         f = folder(cid)
         comp = staff_comp(f)
         ctx = staff_ctx(f, comp)
@@ -128,6 +131,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/contracts/settings")
     async def contracts_settings(request: Request, cid: str):
+        """Заказчик, начисления, дни работы бригады."""
         f = folder(cid)
         comp = staff_comp(f)
         form = await request.form()
@@ -169,6 +173,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/contracts/add")
     async def contracts_add(request: Request, cid: str):
+        """Добавить человека в бригаду (не из ГСК)."""
         f = folder(cid)
         comp = staff_comp(f)
         form = await request.form()
@@ -208,6 +213,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/contracts/person")
     async def contracts_person_save(request: Request, cid: str):
+        """Личные данные человека — только на этом компьютере."""
         f = folder(cid)
         comp = staff_comp(f)
         form = await request.form()
@@ -235,6 +241,7 @@ def register(app, cx) -> None:
         return redirect(f"{base_url(f)}/contracts?done=ct_removed#tabel")
 
     def build_contract_doc(f: CompFolder, kind: str, key: str = "", path: Path | None = None) -> tuple[Path, set]:
+        """Договор и акт человека по шаблону Word (свой — если есть)."""
         comp = staff_comp(f)
         ctx = staff_ctx(f, comp)
         team, personal, customer = ctx["team"], ctx["personal"], ctx["customer"]

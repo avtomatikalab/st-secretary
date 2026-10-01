@@ -16,6 +16,7 @@ from st_secretary.web.store import CompFolder
 
 
 def register(app, cx) -> None:
+    """Сверка документов (/c/{cid}/verify)."""
     comp_ctx = cx.comp_ctx
     folder = cx.folder
     page = cx.page

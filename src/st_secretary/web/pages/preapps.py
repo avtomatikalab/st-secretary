@@ -28,6 +28,8 @@ from st_secretary.web.store import NAMED_TEMPLATE, SUMMARY, CompFolder, safe_nam
 
 
 def register(app, cx) -> None:
+    """Предварительные заявки (/c/{cid}/preapps…): загрузка, проверка, статусы, форма заявки, перезаявки, сводка,
+    именная заявка."""
     comp_ctx = cx.comp_ctx
     folder = cx.folder
     page = cx.page
@@ -65,6 +67,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/preapps/upload")
     async def preapps_upload(request: Request, cid: str):
+        """Загрузка заявок: Excel — в «Предзаявки», заявки делегаций — делятся по командам."""
         f = folder(cid)
         added = replaced = skipped = locked = 0
         split: list[str] = []
@@ -146,6 +149,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/preapps/status")
     async def preapp_status(request: Request, cid: str):
+        """Статус заявки: «Проверено» (только без ошибок), «Исправить», «Новая»."""
         f = folder(cid)
         comp = need_comp(f)
         data = await request.form()
@@ -204,6 +208,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/preapps/save")
     async def preapp_save(request: Request, cid: str):
+        """Сохранить заявку из формы: в стандартный бланк, прежний файл — в «Прежние версии»."""
         f = folder(cid)
         comp = need_comp(f)
         data = await request.form()

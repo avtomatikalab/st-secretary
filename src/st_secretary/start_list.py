@@ -307,6 +307,8 @@ class StartList:
 
 
 def _rows(zdata: dict, teams: list, ranks: dict) -> list[StartRow]:
+    """Строки стартового протокола: порядок жеребьёвки (не бывшие при ней — в конце), время по первому старту и
+    интервалу, вписанное вручную, ранги."""
     d = zdata.get("draw", {})
     st = settings(zdata)
     order = d.get("order") or []

@@ -20,6 +20,7 @@ from st_secretary.web.shared import adm_totals, commission
 
 
 def register(app, cx) -> None:
+    """Обзор соревнования, карточка (/c/{cid}/card…), резервные копии, открыть папку."""
     comp_ctx = cx.comp_ctx
     folder = cx.folder
     page = cx.page
@@ -42,6 +43,7 @@ def register(app, cx) -> None:
 
     @app.get("/c/{cid}")
     def overview(request: Request, cid: str):
+        """Обзор соревнования: карточка, заявки, допуск, дальше по порядку."""
         f = folder(cid)
         ctx = comp_ctx(f)
         comp = ctx["comp"]
@@ -97,6 +99,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/card/edit")
     async def card_save(request: Request, cid: str):
+        """Сохранить карточку из формы (на фестивале — с ГСК фестиваля и «своей» заменой)."""
         f = folder(cid)
         data = await request.form()
         form = form_from_data(data)

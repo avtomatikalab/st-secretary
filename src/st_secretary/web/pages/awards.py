@@ -24,6 +24,7 @@ from st_secretary.web.store import CompFolder
 
 
 def register(app, cx) -> None:
+    """Награждение и документы по итогам (/c/{cid}/awards…)."""
     comp_ctx = cx.comp_ctx
     folder = cx.folder
     page = cx.page
@@ -49,6 +50,7 @@ def register(app, cx) -> None:
 
     @app.get("/c/{cid}/awards")
     def awards_page(request: Request, cid: str):
+        """Страница награждения: места по зачётам, откуда взяты, документы."""
         f = folder(cid)
         comp = need_comp(f)
         data, zres, preapps = awards_ctx(f, comp)
@@ -71,6 +73,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/awards/import")
     async def awards_import(request: Request, cid: str):
+        """Места из итогового протокола СЕКРЕТАРЬ_ST (.xls)."""
         f = folder(cid)
         comp = need_comp(f)
         form = await request.form()
@@ -97,6 +100,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/awards/manual")
     async def awards_manual(request: Request, cid: str):
+        """Места, вписанные вручную."""
         f = folder(cid)
         comp = need_comp(f)
         form = await request.form()

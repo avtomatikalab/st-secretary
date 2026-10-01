@@ -25,6 +25,7 @@ def _lines(items, limit: int = 10) -> list[str]:
 
 
 def register(app, cx) -> None:
+    """«Сообщить» и «Мои сообщения» (/feedback…)."""
     store = cx.store
     page = cx.page
 

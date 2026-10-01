@@ -36,6 +36,7 @@ from st_secretary.web.store import CONTRACTS
 
 
 def register(app, cx) -> None:
+    """Главная, новое соревнование, загрузка карточки и копии, учебное, фестивали, судейская практика, выключение."""
     comp_ctx = cx.comp_ctx
     page = cx.page
     store = cx.store
@@ -127,6 +128,7 @@ def register(app, cx) -> None:
 
     @app.post("/import")
     async def import_card(request: Request):
+        """Новое соревнование из карточки Excel."""
         up = (await request.form()).get("card")
         if up is None or not getattr(up, "filename", ""):
             return render_home(request, ["Выберите файл карточки соревнования (Excel)."], 400)
@@ -200,6 +202,7 @@ def register(app, cx) -> None:
 
     @app.get("/festival/{fid}")
     def festival_page(request: Request, fid: str):
+        """Страница фестиваля: соревнования, ГСК, режимы, взносы."""
         x = need_festival(fid)
         folders = [store.get(m) for m in x["members"]]
         items = []

@@ -61,6 +61,7 @@ def _name(n: str, sex: str | None) -> str:
 
 
 def _surname(s: str, sex: str | None) -> str:
+    """Фамилия в дательном падеже (кому) — с учётом пола; несклоняемые — как есть."""
     low = s.lower()
     if low.endswith(("ых", "их", "ко", "аго", "яго")) or low[-1] in "еиоуэю":
         return s  # Черных, Шевченко — не склоняются
@@ -139,6 +140,7 @@ def _name_gen(n: str, sex: str | None) -> str:
 
 
 def _surname_gen(s: str, sex: str | None) -> str:
+    """Фамилия в родительном падеже (кого) — с учётом пола; несклоняемые — как есть."""
     low = s.lower()
     if low.endswith(("ых", "их", "ко", "аго", "яго")) or low[-1] in "еиоуэю":
         return s

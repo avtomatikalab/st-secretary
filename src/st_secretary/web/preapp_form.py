@@ -59,6 +59,7 @@ def _is_blank(r: dict) -> bool:
 
 
 def _entry_row(e: Entry, v: dict) -> dict:
+    """Участник → строка формы заявки (как вписано в файле, дата — дд.мм.гггг)."""
     if e.birth:
         birth = f"{e.birth:%d.%m.%Y}"
     elif e.birth_year:

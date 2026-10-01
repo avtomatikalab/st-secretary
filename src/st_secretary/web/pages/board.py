@@ -34,6 +34,8 @@ from st_secretary.web.store import CompFolder
 
 
 def register(app, cx) -> None:
+    """Телефоны судей (/c/{cid}/judges…), таблицы штрафов (/penalties…), табло (/c/{cid}/board…) и сервер табло для
+    Wi-Fi."""
     board_host = cx.board_host
     comp_ctx = cx.comp_ctx
     folder = cx.folder
@@ -147,6 +149,8 @@ def register(app, cx) -> None:
         return {"heads": [h for h in heads if h["phone"]], "stages": stages}
 
     def judge_page(token: str) -> dict | None:
+        """Данные страницы судьи по коду ссылки: этап (или составляющая результата), команды, записи, таблица
+        штрафов, контакты."""
         found = judge_link(token)
         if found is None:
             return None
@@ -197,6 +201,7 @@ def register(app, cx) -> None:
 
     @app.get("/c/{cid}/judges")
     def judges_page(request: Request, cid: str, z: str = ""):
+        """Страница «Телефоны судей этапов»: ссылки, кто судит, журналы, таблица штрафов."""
         f = folder(cid)
         comp = need_comp(f)
         if not comp.zachety:
@@ -236,6 +241,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/judges/link")
     async def judges_link(request: Request, cid: str, z: str = ""):
+        """Выдать или отозвать ссылку судьи (этапу, составляющей или всем)."""
         f = folder(cid)
         zz = need_zachet(need_comp(f), z)
         form = await request.form()

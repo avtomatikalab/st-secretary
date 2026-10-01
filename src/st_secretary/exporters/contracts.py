@@ -78,6 +78,7 @@ def _cap(s: str) -> str:
 
 
 def contract_values(comp: Competition, p: Person, customer: dict, pd: dict) -> dict[str, str]:
+    """Значения полей договора и акта ({{…}} в шаблоне): заказчик, исполнитель, суммы и даты."""
     c = {k: str(customer.get(k, "") or "").strip() for k, _, _ in CUSTOMER_FIELDS}
     head_post = c["head_post"] or "директор"
     in_person = f"{role_genitive(head_post) or head_post} {genitive(c['head_fio'])}".strip() if c["head_fio"] else ""

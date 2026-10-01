@@ -134,6 +134,7 @@ def norm_editions() -> tuple[str, ...]:
 
 @cache
 def norm_edition(edition: str) -> NormEdition:
+    """Редакция разрядных норм из справочника: баллы ранга и таблицы процентов по классам и рангам."""
     if edition not in norm_editions():
         raise KeyError(f"Нет редакции норм {edition!r}; есть: {', '.join(norm_editions())}")
     d = _load(f"norms/{edition}.toml")

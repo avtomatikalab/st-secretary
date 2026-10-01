@@ -25,6 +25,7 @@ DEFAULT_FIRST, DEFAULT_INTERVAL = "10:00", "5"  # время старта по �
 
 
 def register(app, cx) -> None:
+    """Жеребьёвка и стартовые протоколы (/c/{cid}/start…), расписание стартов."""
     run_lock = cx.run_lock
     comp_ctx = cx.comp_ctx
     folder = cx.folder
@@ -86,6 +87,7 @@ def register(app, cx) -> None:
 
     @app.get("/c/{cid}/start")
     def start_page(request: Request, cid: str, z: str = ""):
+        """Страница жеребьёвки зачёта: способ, время старта, порядок, перерыв участника, публикация."""
         f = folder(cid)
         comp = need_comp(f)
         if not comp.zachety:

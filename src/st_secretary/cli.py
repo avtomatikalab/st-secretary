@@ -90,6 +90,7 @@ def cmd_card_check(a) -> int:
 
 
 def cmd_preapp(a) -> int:
+    """Команда «preapp»: обработать папку предзаявок без браузера и записать сводку для СЕКРЕТАРЬ_ST."""
     from st_secretary.exporters.preapp_xlsx import write_preapp_report
     from st_secretary.importers.preapp_xlsx import read_preapplication
     from st_secretary.preapp import process
@@ -323,6 +324,7 @@ def cmd_web(a) -> int:
 
 
 def main(argv=None) -> int:
+    """Командная строка: web, card-template, card-check, preapp; ошибки пользователя — понятным текстом."""
     _utf8()
     ap = argparse.ArgumentParser(prog="st-secretary", description="СТ-Секретарь — помощник секретариата соревнований")
     sub = ap.add_subparsers(dest="cmd", required=True)

@@ -139,6 +139,8 @@ class Console:
             self.update(what)
 
     def update(self, what: str) -> bool:
+        """Обновить из окна программы: исходники — git, переносная — новый архив (сначала копия данных); True —
+        обновлено, нужен перезапуск."""
         if what == "git":
             self.out("Обновляю исходники с GitHub…")
             ok, msg = updates.git_update(self.source, self.run, uv=shutil.which("uv"))

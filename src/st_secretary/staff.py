@@ -269,6 +269,8 @@ def missing_personal(pd: dict) -> list[str]:
 
 
 def check(team: list[Person], personal: dict[str, dict], customer: dict) -> list[Issue]:
+    """Замечания по бригаде: дни вне периода и без дней, нет ставки, незнакомая должность, ошибки и пропуски в данных
+    для договора, человек дважды; нет данных заказчика."""
     src = "Договоры и табель"
     out: list[Issue] = []
     for p in team:

@@ -88,6 +88,7 @@ def _same_region(territory: str, comp: Competition) -> bool:
 
 
 def _table(doc, head: list[str], rows: list[list[str]], widths_cm: list[float]):
+    """Таблица Word с заголовком и шириной колонок (см)."""
     from docx.shared import Cm
 
     t = doc.add_table(rows=1, cols=len(head))

@@ -190,6 +190,7 @@ def _discipline_name(code: str) -> str | None:
 
 
 def check_codes(doc: Doc, comp: Competition) -> list[Issue]:
+    """Коды ВРВС в документе: есть ли они в карточке, совпадают ли названия дисциплин."""
     card = {z.discipline_code: z.discipline_name for z in comp.zachety}
     expected = "; ".join(f"{c} — «{n}»" for c, n in card.items())
     out, seen = [], set()
@@ -257,6 +258,7 @@ def _norm_title(s: str) -> str:
 
 
 def check_title(doc: Doc, comp: Competition) -> list[Issue]:
+    """Название соревнований в документе — как в карточке (вид и остальное название, без учёта регистра и кавычек)."""
     ref = _TITLE.search(comp.title)
     if not ref:
         return []
@@ -296,6 +298,7 @@ _CAT = re.compile(r"\b(ССВК|СС1К|СС2К|СС3К|ЮС)\b")
 
 
 def check_people(doc: Doc, people: list[Known]) -> list[Issue]:
+    """ФИО в документе — как у людей соревнования (по фамилии, имени и отчеству; опечатки и инициалы)."""
     by_surname: dict[str, list[Known]] = {}
     for p in people:
         parts = _key(p.fio).split()
@@ -566,6 +569,7 @@ class Report:
 
 
 def verify(docs: list[Doc], comp: Competition, people: list[Known]) -> Report:
+    """Сверка набора документов: каждый с карточкой, табель — с договорами и актами."""
     files, tabel, contracts = [], [], []
     for d in docs:
         if d.error:

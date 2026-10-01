@@ -133,6 +133,7 @@ class BoardServer:
         raise OSError(f"порты {self.port}–{self.port + 19} заняты")
 
     def start(self) -> bool:
+        """Запустить сервер табло для Wi-Fi в фоне (свободный порт); False — не запустился, причина в error."""
         if self.running:
             return True
         import uvicorn

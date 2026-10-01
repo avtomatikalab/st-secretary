@@ -416,6 +416,8 @@ class CompFolder:
         return data
 
     def save_contracts(self, data: dict) -> None:
+        """Сохранить бригаду, дни и ставки: на фестивале бригада общая, договоры — у фестиваля или у соревнования
+        (режим фестиваля)."""
         fest = self.festival()
         if fest is None:
             self.write_json(CONTRACTS, data)
@@ -749,6 +751,8 @@ class Store:
             return None
 
     def _join_festival(self, rec: dict, joined: list[str], restored: bool = False) -> None:
+        """Соревнование в фестиваль: ГСК фестиваля — из самого раннего, своя замена — «своя», бригада и номера — по
+        режимам."""
         loaded = {m: x for m in rec["members"] if (x := self._comp(m))}
         if not rec.get("officials"):  # ГСК фестиваля — из самого раннего соревнования
             first = min((c for _, c in loaded.values() if c.officials), key=lambda c: c.date_from, default=None)

@@ -166,6 +166,8 @@ def _table_head(grid: list[list[object]]) -> int | None:
 
 
 def _read_sheet(app: RawApplication, name: str, grid: list[list[object]], head: int, offset: int) -> None:
+    """Один лист бланка: шапка команды (если есть) и строки участников ниже строки заголовков; «ОБРАЗЕЦ», пример и
+    «Итого» — пропустить."""
     def cell(r, c):
         return grid[r][c] if r < len(grid) and c < len(grid[r]) else None
 

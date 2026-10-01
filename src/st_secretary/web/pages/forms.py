@@ -27,6 +27,7 @@ PREVIEW_ROWS, PREVIEW_COLS = 14, 24
 
 
 def register(app, cx) -> None:
+    """Свои формы заявок (/c/{cid}/forms…)."""
     folder = cx.folder
     page = cx.page
     store = cx.store
@@ -122,6 +123,7 @@ def register(app, cx) -> None:
                 "sheets": state["sheets"], "values": {k: v for k, v in state["values"].items() if v}}
 
     def from_post(data, grids, saved: dict | None) -> dict:
+        """Форма редактора → состояние: колонки, шапка, листы, значения; другая строка заголовков — угадать заново."""
         sheet =int(data.get("sheet", 0)) if str(data.get("sheet", "")).isdigit() else 0
         row = int(data.get("row", 1)) - 1 if str(data.get("row", "")).isdigit() else 0
         moved = (sheet, row) != (int(data.get("sheet_was", -1) or -1), int(data.get("row_was", 0) or 0) - 1)
@@ -155,6 +157,7 @@ def register(app, cx) -> None:
 
     def render(request: Request, f: CompFolder, token: str, file: str, grids, state: dict, saved: dict | None,
                errors: list[str] | None = None, show_preview: bool = True, status_code: int = 200):
+        """Страница редактора формы: сетка образца, колонки, значения, предпросмотр прочитанного."""
         form = build(grids, state, saved)
         values_rows = {}
         if grids:
@@ -202,6 +205,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/forms/edit")
     async def forms_save(request: Request, cid: str):
+        """Обновить предпросмотр или сохранить форму (с проверкой обязательного)."""
         f = folder(cid)
         data = await request.form()
         token, file = str(data.get("sample", "")), str(data.get("file", ""))
@@ -262,6 +266,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/forms/import")
     async def forms_import(request: Request, cid: str):
+        """Загрузить форму из файла (.json, переданного другим секретарём)."""
         f = folder(cid)
         up = (await request.form()).get("form")
         try:

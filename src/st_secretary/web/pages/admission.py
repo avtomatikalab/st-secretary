@@ -36,6 +36,7 @@ from st_secretary.web.store import COMMISSION_REPORT, CompFolder
 
 
 def register(app, cx) -> None:
+    """Комиссия по допуску (/c/{cid}/admission…), снаряжение (/equipment…), сканы документов (/docs…)."""
     comp_ctx = cx.comp_ctx
     folder = cx.folder
     page = cx.page
@@ -77,6 +78,7 @@ def register(app, cx) -> None:
 
     @app.get("/c/{cid}/admission")
     def admission_page(request: Request, cid: str, by: str = ""):
+        """Страница комиссии: плитки, команды (или делегации), настройки."""
         f = folder(cid)
         ctx = comp_ctx(f)
         comp = ctx["comp"]
@@ -215,6 +217,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/admission/settings")
     async def admission_settings(request: Request, cid: str):
+        """Какие документы проверять (и свои по Положению), начало соревнований; набор — запомнить на компьютере."""
         f = folder(cid)
         form = await request.form()
         data = f.admission()
@@ -326,6 +329,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/equipment/settings")
     async def equipment_settings(request: Request, cid: str):
+        """Перечень снаряжения и баллы за недостающее, порог снятия."""
         f = folder(cid)
         form = await request.form()
         data = f.equipment()
@@ -356,6 +360,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/equipment/team")
     async def equipment_team(request: Request, cid: str):
+        """Отметки снаряжения у команды (автосохранение — ответ с блоком команды)."""
         f = folder(cid)
         comp = need_comp(f)
         form = await request.form()
@@ -405,6 +410,7 @@ def register(app, cx) -> None:
 
     @app.post("/c/{cid}/docs/upload")
     async def docs_upload(request: Request, cid: str):
+        """Сканы документов команды — в папку на этом компьютере (не в облако)."""
         f = folder(cid)
         form = await request.form()
         path = need_file(f, str(form.get("file", "")))

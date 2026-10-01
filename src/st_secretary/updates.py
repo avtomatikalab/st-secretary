@@ -278,6 +278,8 @@ class Installer:
         self.done, self.total = done, total
 
     def _run(self, rel: Release, before, opener) -> None:
+        """Установка в фоне: скачать архив со сверкой sha256, распаковать рядом как program.new, подготовить
+        перезапуск; ошибка — понятным текстом."""
         archive = self.root / ("program.new" + (".tar.gz" if rel.asset_url.endswith(".tar.gz") else ".zip"))
         try:
             if before:

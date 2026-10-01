@@ -49,6 +49,7 @@ def draw_line(sl: StartList) -> str:
 
 
 def write_start_protocol(comp: Competition, sl: StartList, path: str | Path, at: datetime | None = None) -> Path:
+    """Стартовый протокол зачёта (Excel): шапка, порядок и время старта, составы, строка о жеребьёвке, подписи."""
     z = sl.zachet
     wb = Workbook()
     ws = wb.active

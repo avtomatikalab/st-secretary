@@ -70,6 +70,7 @@ def _caption(doc, text: str) -> None:
 
 def write_standard(comp: Competition, team: TeamApplication, path: str | Path,
                    appendix: list[str] | None = None) -> Path:
+    """Именная заявка по Правилам (как образцы ЧК и Кубка): шапка, таблица участников, врач, представитель, подписи."""
     doc = Document()
     sec = doc.sections[0]
     sec.left_margin = sec.right_margin = Cm(1.5)

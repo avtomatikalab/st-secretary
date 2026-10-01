@@ -71,6 +71,7 @@ def _box(ws, row: int, first: int, last: int, align=CENTER) -> None:
 
 
 def _protocol(ws, teams: list[TeamCheck], comp: Competition) -> None:
+    """Лист «Протокол комиссии» по форме Правил: команды, участники по разрядам, полу и возрасту, замечания, решения."""
     ws.title = "Протокол комиссии"
     nq, na = len(QUAL_COLUMNS), len(AGE_COLUMNS)
     c_total, c_q, c_sex = 5, 6, 6 + nq
@@ -134,6 +135,8 @@ def _protocol(ws, teams: list[TeamCheck], comp: Competition) -> None:
 
 
 def _fees(ws, teams: list[TeamCheck], comp: Competition, data: dict, note: str = "") -> None:
+    """Ведомость заявочных взносов: к оплате, оплачено, способ; делегация одной строкой; на фестивале — пометка, что
+    взнос у фестиваля."""
     head = ["№ п/п", "Номер", "Команда", "Территория", "Представитель", "Участников", "Взнос к оплате, ₽",
             "Оплачено, ₽", "Способ оплаты", "Отметка", "Подпись представителя"]
     r = _title_block(ws, comp, "Ведомость заявочных взносов", len(head))

@@ -112,6 +112,8 @@ def _to_int(v) -> int | None:
 
 
 def process(apps: list[RawApplication], comp: Competition) -> PreappResult:
+    """Заявки команд → проверенные команды и замечания: шапка, строки участников, состав команды, сквозные проверки
+    между заявками."""
     issues: list[Issue] = []
     teams: list[TeamApplication] = []
     all_group_format = bool(comp.zachety) and all(
@@ -157,6 +159,8 @@ def process(apps: list[RawApplication], comp: Competition) -> PreappResult:
 
 
 def _team_header(app: RawApplication, comp: Competition, known: Counter, issues: list[Issue]) -> TeamApplication:
+    """Шапка заявки: команда (из шапки или из строк), территория, представитель, контакты, заявленное число
+    участников."""
     src = app.path.name
     row_teams = [normalize_team(r.values["team"]) for r in app.rows]
     head_team = normalize_team(app.team)
@@ -378,6 +382,7 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
 
 
 def _admission(e: Entry, comp: Competition, add) -> None:
+    """Допуск по Правилам и Положению: возраст и разряд для класса и зачёта."""
     z = e.zachet
     age = e.age_in(comp.year)
     if z is None or age is None:
@@ -455,6 +460,8 @@ def _pair_checks(members: list[Entry], z, add) -> None:
 
 
 def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> None:
+    """Состав команды по Положению: число участников, мужчин и женщин; ПСР — руководитель 18+; связки — состав
+    смешанной связки."""
     by_zachet: dict[str, list[Entry]] = {}
     for e in t.entries:
         if e.zachet:
@@ -532,6 +539,8 @@ def _person(e: Entry) -> tuple:
 
 
 def _cross_checks(teams: list[TeamApplication], issues: list[Issue], comp: Competition | None = None) -> None:
+    """Проверки между заявками: один человек в двух командах (и в двух классах, если так в Положении), одинаковые
+    названия команд."""
     if comp is not None and comp.one_class:
         _one_class(teams, issues)
     seen: dict[tuple, TeamApplication] = {}

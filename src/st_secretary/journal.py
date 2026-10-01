@@ -55,6 +55,8 @@ class Journal:
     # ------------------------------------------------------------------ запуск и остановка
 
     def start(self, **info) -> Journal:
+        """Начать журнал: файл с ротацией, сбои Python, метка «работает» (была — прошлый раз закрылась неожиданно),
+        запись о запуске."""
         self.folder.mkdir(parents=True, exist_ok=True)
         marker = self.folder / RUNNING
         self.crashed_before = marker.exists()

@@ -65,6 +65,7 @@ def write_preapp_report(result: PreappResult, comp: Competition, path: str | Pat
 
 
 def _summary(ws, r: PreappResult, comp: Competition):
+    """Лист «Итог» сводки предзаявок: соревнование, сколько команд и участников, ошибок и «проверить»."""
     ws.title = "Итог"
     ws.column_dimensions["A"].width = 34
     ws.column_dimensions["B"].width = 90
@@ -108,6 +109,7 @@ def _summary(ws, r: PreappResult, comp: Competition):
 
 
 def _sekretar_sheet(ws, r: PreappResult):
+    """Лист для СЕКРЕТАРЬ_ST: участники в его колонках, худшее замечание по человеку."""
     _head(ws, SEKRETAR_HEADERS, [5, 22, 16, 30, 36, 13, 9, 6, 10, 9, 12, 10, 10, 10, 12, 14])
     worst_by_person = {}
     for i in r.issues:
@@ -153,6 +155,7 @@ def _issues_sheet(ws, r: PreappResult):
 
 
 def _teams_sheet(ws, r: PreappResult, statuses: dict[str, str] | None = None):
+    """Лист «Команды»: представитель, контакты, состав по полу, ошибки, статус заявки."""
     _head(ws, ["№", "Команда", "Территория", "Представитель", "Телефон", "E-mail", "Участников", "Мужчин",
                "Женщин", "Ошибок", "Проверить", "Файл", "Статус заявки"],
           [5, 24, 16, 32, 18, 28, 11, 9, 9, 9, 10, 28, 14])

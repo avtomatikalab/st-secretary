@@ -427,6 +427,8 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
 
 
 def _team_problems(t: TeamCheck, comp: Competition) -> list[tuple[str, str]]:
+    """Почему команда ещё не допущена — (текст, где исправить): заявка не проверена, нет основания решения, ошибки
+    заявки, документы команды, участники ждут, состав после недопуска."""
     if t.team is None:
         return ["заявку не удалось прочитать — исправьте её или заполните в программе"]
     problems = []  # (текст, где исправить)

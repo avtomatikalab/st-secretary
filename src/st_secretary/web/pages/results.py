@@ -35,6 +35,7 @@ from st_secretary.web.store import CompFolder, safe_name
 
 
 def register(app, cx) -> None:
+    """Протоколы этапов и результаты (/c/{cid}/results…): этапы, баллы, SI, протесты, публикация и утверждение."""
     store = cx.store
     comp_ctx = cx.comp_ctx
     folder = cx.folder
@@ -90,6 +91,7 @@ def register(app, cx) -> None:
         idx = sorted({int(m.group(1)) for k in form if (m := re.fullmatch(r"st-(\d+)-name", k))})
 
         def update(zdata):
+            """Этапы, параметры дистанции и настройки расчёта — в данные зачёта."""
             used = {str(s.get("id")) for s in zdata.get("stages", [])}
             stages = []
             for i in idx:
@@ -222,6 +224,7 @@ def register(app, cx) -> None:
         idx = sorted({int(m.group(1)) for k in form if (m := re.fullmatch(r"p-(\d+)-file", k))})
 
         def update(zdata):
+            """Баллы этапов и поля команд из таблицы — в данные зачёта."""
             ids = [str(s["id"]) for s in zdata.get("stages", [])]
             teams = zdata.setdefault("teams", {})
             for i in idx:
