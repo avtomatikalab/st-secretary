@@ -50,11 +50,36 @@ def register(app, cx) -> None:
         data = f.admission()
         files = [p.name for p in f.preapp_files()]
         gear = eq.admission_problems(eq.evaluate(result, files, f.equipment(), key_of), f.equipment())
-        teams = cm.evaluate(result, files, comp, data, gear, {k: r.status == DONE for k, r in reviews.items()})
-        if fv.mode(f.festival(), "fee") == "festival":
+        fest = f.festival()
+        teams = cm.evaluate(result, files, comp, data, gear, {k: r.status == DONE for k, r in reviews.items()},
+                            outside=festival_marks(fest, f.id) if fest else None,
+                            doctor_files=cm.doctor_files(result, data))
+        if fv.mode(fest, "fee") == "festival":
             for t in teams:
                 t.fee_due = t.fee_paid = 0
+        else:
+            cm.apply_delegation_fees(teams, data)  # делегация платит одной строкой — оплата по её командам
         return data, teams
+
+    def festival_marks(fest: dict, cid: str) -> dict[str, dict[str, tuple[str, str]]]:
+        """Документы людей, отмеченные в других соревнованиях фестиваля: {человек: {документ: (команда,
+        соревнование)}} — человек проверяется один раз (Правки, п. 20)."""
+        out: dict[str, dict[str, tuple[str, str]]] = {}
+        for m in fest["members"]:
+            g = store.get(m) if m != cid else None
+            try:
+                comp = g.load() if g else None
+            except Exception:  # noqa: BLE001 — карточка не читается
+                comp = None
+            if comp is None or any(i.severity == ERROR for i in comp.check()):
+                continue
+            result, _ = store.review(g, comp)
+            data = g.admission()
+            marks = cm.own_marks(result, [p.name for p in g.preapp_files()], data, cm.doctor_files(result, data))
+            for pid, docs in marks.items():
+                for k, team in docs.items():
+                    out.setdefault(pid, {}).setdefault(k, (team, comp.title))
+        return out
 
     def festival_members(fest: dict) -> list[tuple]:
         """Соревнования фестиваля с комиссией: [(папка, карточка, отметки комиссии, команды)]; соревнования с
@@ -107,20 +132,6 @@ def register(app, cx) -> None:
                 "fest_fee": fest if fv.mode(fest, "fee") == "festival" else None,
                 "fest_numbers": shared_numbers(f)}
 
-    def delegations(teams: list) -> list[dict]:
-        """Делегации — пока по территории и представителю (Правки, п. 20, решение 040): кто, команды, взнос."""
-        out: dict[tuple, dict] = {}
-        for t in teams:
-            if not t.team:
-                continue
-            k = (t.team.territory, t.team.representative)
-            d = out.setdefault(k, {"territory": k[0] or "территория не указана", "representative": k[1], "teams": [],
-                                   "fee_due": 0, "fee_paid": 0})
-            d["teams"].append(t)
-            d["fee_due"] += t.fee_due
-            d["fee_paid"] += t.fee_paid
-        return sorted(out.values(), key=lambda d: (-len(d["teams"]), d["territory"]))
-
     @app.get("/c/{cid}/admission")
     def admission_page(request: Request, cid: str, by: str = ""):
         f = folder(cid)
@@ -134,8 +145,47 @@ def register(app, cx) -> None:
                 notes = fv.number_problems([(g.id, c.title, ts) for g, c, _, ts in festival_members(fest)])
         return page(request, "admission.html", active="admission", blocked=blocked, teams=teams,
                     totals=adm_totals(teams), all_person_docs=cm.PERSON_DOCS, all_team_docs=cm.TEAM_DOCS,
-                    by_delegation=by == "delegation", delegations=delegations(teams), number_notes=notes,
-                    **{**ctx, **adm_parts(f, data)})
+                    by_delegation=by == "delegation", delegations=cm.delegations(teams, data), number_notes=notes,
+                    deleg_fee=cm.DELEGATION_FEE, deleg_anchor=deleg_anchor, **{**ctx, **adm_parts(f, data)})
+
+    def deleg_anchor(key: str) -> str:
+        import hashlib
+
+        return "d-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+
+    @app.post("/c/{cid}/admission/delegation")
+    async def admission_delegation(request: Request, cid: str):
+        """Делегация: взнос одной строкой или по командам, оплата, заявка делегации с печатью врача (Правки, п. 20)."""
+        f = folder(cid)
+        form = await request.form()
+        key = str(form.get("key", ""))
+        data = f.admission()
+        d = data.setdefault("delegations", {}).setdefault(key, {})
+        d["fee_mode"] = cm.FEE_ONE if form.get("fee_mode") == cm.FEE_ONE else cm.FEE_TEAMS
+        paid = re.sub(r"\D", "", str(form.get("fee_paid", "")).split(",")[0].split(".")[0])
+        d["fee_paid"] = int(paid) if paid else 0
+        method = str(form.get("fee_method", ""))
+        d["fee_method"] = method if method in cm.FEE_METHODS else ""
+        d["doctor"] = bool(form.get("doctor"))
+        f.save_admission(data)
+        return _redirect(f"{_base(f)}/admission?by=delegation&done=adm_delegation#{deleg_anchor(key)}")
+
+    @app.post("/c/{cid}/admission/delegation/folder")
+    async def admission_delegation_folder(request: Request, cid: str):
+        """Папка сканов делегации: внутри — папка на каждого её участника (ФИО и дата рождения)."""
+        f = folder(cid)
+        comp = need_comp(f)
+        key = str((await request.form()).get("key", ""))
+        data, teams = commission(f, comp)
+        d = next((x for x in cm.delegations(teams, data) if x.key == key), None)
+        if d is None:
+            raise HTTPException(404)
+        target = store.delegation_docs_dir(f, d.title)
+        for t in d.teams:
+            for p in t.persons:
+                store.person_docs_dir(f, d.title, p.entry).mkdir(parents=True, exist_ok=True)
+        app.state.opener(target)
+        return _redirect(f"{_base(f)}/admission?by=delegation&done=opened#{deleg_anchor(key)}")
 
     @app.post("/c/{cid}/admission/team")
     async def admission_team(request: Request, cid: str):
@@ -153,8 +203,9 @@ def register(app, cx) -> None:
         keys = [str(form.get(k)) for k in form if re.fullmatch(r"p-\d+-key", k)]
         _, before = commission(f, comp)
         shared = {p.key: set(p.shared_docs) for t in before if t.file == path.name for p in t.persons}
-        auto_med = {key for key in keys if cm.doctor_covers(tm, key, pdocs, tdocs)
-                    and not tm.get("people", {}).get(key, {}).get("docs", {}).get(cm.MED)}
+        # мед. допуск, стоявший сам — по допуску врача у команды или у её делегации
+        auto_med = {p.key for t in before if t.file == path.name for p in t.persons if cm.MED in p.auto_docs}
+        auto_med &= set(keys)
         tm["team_docs"] = {**tm.get("team_docs", {}),
                            **{d.key: everything or bool(form.get(f"td-{d.key}")) for d in tdocs}}
         number = str(form.get("number", "")).strip()
@@ -450,18 +501,43 @@ def register(app, cx) -> None:
         at = order.index(path.name)
         near = {k: teams[j] for k, j in (("prev", at - 1), ("next", at + 1)) if 0 <= j < len(order)}
         return page(request, "admission_check.html", active="admission", focus=True, t=teams[at],
-                    docs=doc_list(f, path.name),
+                    docs=doc_list(f, path.name, teams[at]),
                     position=(at + 1, len(order)), prev_team=near.get("prev"), next_team=near.get("next"),
                     docs_dir=store.team_docs_dir(f, path.name), here=f"{_base(f)}/admission/check?file={quote(path.name)}",
                     **{**comp_ctx(f), **adm_parts(f, data)})
 
-    def doc_list(f: CompFolder, file: str) -> list[dict]:
+    def doc_list(f: CompFolder, file: str, t=None) -> list[dict]:
+        """Сканы команды и — если есть — её участников из папки делегации (Правки, п. 20)."""
         out = []
         for p in store.team_docs(f, file):
             ext = p.suffix.lower()
             kind = "image" if ext in IMAGE_TYPES else "pdf" if ext == ".pdf" else "other"
             out.append({"name": p.name, "label": p.stem, "kind": kind,
                         "url": f"{_base(f)}/docs/view?{urlencode({'file': file, 'name': p.name})}"})
+        if t is not None and t.team:
+            for fio, p in store.person_docs(f, cm.delegation_title(t.team), [x.entry for x in t.persons]):
+                ext = p.suffix.lower()
+                kind = "image" if ext in IMAGE_TYPES else "pdf" if ext == ".pdf" else "other"
+                out.append({"name": p.name, "label": f"{fio}: {p.stem}", "kind": kind,
+                            "url": f"{_base(f)}/docs/person?{urlencode({'file': file, 'fio': fio, 'name': p.name})}"})
         return out
+
+    @app.get("/c/{cid}/docs/person")
+    def docs_person(cid: str, file: str = "", fio: str = "", name: str = ""):
+        """Скан участника из папки делегации — показать на странице проверки."""
+        f = folder(cid)
+        comp = need_comp(f)
+        path = need_file(f, file)
+        _, teams = commission(f, comp)
+        t = next((x for x in teams if x.file == path.name), None)
+        e = next((p.entry for p in (t.persons if t else []) if p.entry.name.full == fio), None)
+        if t is None or e is None or not t.team:
+            raise HTTPException(404)
+        d = store.person_docs_dir(f, cm.delegation_title(t.team), e)
+        doc = d / Path(str(name).replace("\\", "/")).name
+        if not name or not doc.is_file():
+            raise HTTPException(404)
+        return FileResponse(doc, content_disposition_type="inline", filename=doc.name,
+                            headers={"Cache-Control": "no-store"})
 
     cx.update(adm_totals=adm_totals, commission=commission, doc_list=doc_list, festival_members=festival_members)

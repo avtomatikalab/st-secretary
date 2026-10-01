@@ -58,6 +58,7 @@ class Entry:
     pair_num: str
     team_dist: str
     zachet: Zachet | None = None
+    extra: dict[str, str] = field(default_factory=dict)  # свои колонки заявки справа от бланка: заголовок → значение
 
     def age_in(self, year: int) -> int | None:
         if self.birth:
@@ -133,7 +134,9 @@ def process(apps: list[RawApplication], comp: Competition) -> PreappResult:
         t = _team_header(app, comp, known_territories, issues)
         teams.append(t)
         for n, raw in enumerate(app.rows, start=1):
-            t.entries.append(_entry(raw.row, n, raw.values, t, comp, all_group_format, issues))
+            e = _entry(raw.row, n, raw.values, t, comp, all_group_format, issues)
+            e.extra = {k: clean_spaces(v) for k, v in getattr(raw, "extra", {}).items() if clean_spaces(v)}
+            t.entries.append(e)
         _team_checks(t, comp, issues)
 
     _cross_checks(teams, issues)

@@ -97,8 +97,31 @@
   <span class="muted">(делегация — территория и представитель в заявке)</span></p>
 <section data-team-list aria-label="Команды">
 {% if by_delegation %}{% for d in delegations %}
-<div class="adm-deleg"><h3>{{ d.territory }}{% if d.representative %} · {{ d.representative }}{% endif %}</h3>
-  <span class="muted">{{ d.teams|length }} {{ "команда" if d.teams|length == 1 else "команды" if d.teams|length < 5 else "команд" }}{% if d.fee_due %} · взнос {{ "{:,}".format(d.fee_due).replace(",", " ") }} ₽, оплачено {{ "{:,}".format(d.fee_paid).replace(",", " ") }} ₽{% endif %}</span></div>
+<div class="adm-deleg" id="{{ deleg_anchor(d.key) }}">
+  <div class="adm-deleg-head">
+    <h3>Делегация: {{ d.territory or "территория не указана" }}</h3>
+    <span class="muted">Представитель: {{ d.representative or "не указан" }}{% if d.phone %}, <a href="tel:{{ d.phone|replace(' ', '')|replace('-', '') }}">{{ d.phone }}</a>{% endif %}
+      · {{ d.teams|length }} {{ "команда" if d.teams|length == 1 else "команды" if d.teams|length < 5 else "команд" }}, {{ d.people }} чел.:
+      {% for t in d.teams %}{{ t.title }}{% for z in t.persons|map(attribute="entry")|selectattr("zachet")|map(attribute="zachet.title")|unique %}{% if loop.first %} ({% endif %}{{ z }}{% if loop.last %}){% else %}, {% endif %}{% endfor %}{% if not loop.last %}; {% endif %}{% endfor %}</span>
+  </div>
+  <form method="post" action="{{ base }}/admission/delegation" class="adm-deleg-form">
+    <input type="hidden" name="key" value="{{ d.key }}">
+    <label class="check" title="Заявка делегации с подписью и печатью врача: мед. допуск всем её участникам, кроме добавленных перезаявкой"><input type="checkbox" name="doctor" value="1"{% if d.doctor %} checked{% endif %}> Допуск врача у делегации (заявка с печатью врача) — мед. допуск всем её участникам</label>
+    {% if not fest_fee %}
+    <span class="adm-fee">
+      <label>Взнос <select name="fee_mode" aria-label="Как платит делегация">{% for k, v in deleg_fee.items() %}<option value="{{ k }}"{% if d.fee_mode == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+      <b>{{ "{:,}".format(d.fee_due).replace(",", " ") }} ₽</b>
+      {% if d.fee_mode == "one" %}<label>оплачено <input type="text" inputmode="numeric" name="fee_paid" value="{{ d.fee_paid or '' }}" placeholder="0" aria-label="Оплачено делегацией, рублей"> ₽</label>
+      <select name="fee_method" aria-label="Способ оплаты делегации"><option value="">способ оплаты</option>{% for m in fee_methods %}<option value="{{ m }}"{% if m == d.fee_method %} selected{% endif %}>{{ m }}</option>{% endfor %}</select>{% endif %}
+      <span class="badge {{ 'badge-fixed' if d.fee_status in ('оплачено', 'нет взноса') else 'badge-warning' }}">{{ d.fee_status }}</span>
+    </span>
+    {% endif %}
+    <button class="btn btn-small" type="submit">{{ icon("check", 16) }}Сохранить</button>
+  </form>
+  <form method="post" action="{{ base }}/admission/delegation/folder" class="adm-deleg-folder"><input type="hidden" name="key" value="{{ d.key }}">
+    <button class="btn btn-ghost btn-small" type="submit">{{ icon("folder", 16) }}Папка сканов делегации</button>
+    <span class="muted">одна на делегацию, внутри — папка каждого участника; сканы оттуда видны в «проверить в одном окне»</span></form>
+</div>
 {% for t in d.teams %}{% include "_admission_team.html" %}{% endfor %}
 {% endfor %}{% else %}
 {% for t in teams %}{% include "_admission_team.html" %}{% endfor %}

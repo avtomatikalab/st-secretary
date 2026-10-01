@@ -101,7 +101,7 @@
     {% for e in team.entries %}{% set w = worst.get(e.row) %}
       <tr{% if w in (ERROR, WARNING) %} class="sev-{{ w }}"{% endif %}>
         <td>{{ e.num_in_team }}</td>
-        <td>{{ e.name.full }}</td>
+        <td>{{ e.name.full }}{% if e.extra %}<span class="adm-sub" title="Свои колонки заявки">{% for k, v in e.extra.items() %}{{ k }}: {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</span>{% endif %}</td>
         <td>{% if e.birth %}{{ e.birth|d }}{% elif e.birth_year %}{{ e.birth_year }}{% else %}—{% endif %}</td>
         <td>{{ e.qual.label if e.qual is not none else "?" }}</td>
         <td>{{ e.sex or "?" }}</td>

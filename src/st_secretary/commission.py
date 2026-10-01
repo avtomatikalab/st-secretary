@@ -105,13 +105,34 @@ def reentry_added(reentries: list[dict]) -> set[str]:
     return out
 
 
-def doctor_covers(m: dict, key: str, pdocs: list[Doc], tdocs: list[Doc]) -> bool:
-    """Мед. допуск участника ставится сам — по допуску врача в заявке: у команды отмечен «Допуск врача», участник
-    был в заявке (не добавлен перезаявкой) и секретарь не снимал у него эту галочку (врач его не допустил)."""
-    return (any(d.key == MED for d in pdocs) and any(d.key == DOCTOR for d in tdocs)
-            and bool(m.get("team_docs", {}).get(DOCTOR))
+def doctor_covers(m: dict, key: str, pdocs: list[Doc], tdocs: list[Doc], by_delegation: bool = False) -> bool:
+    """Мед. допуск участника ставится сам — по допуску врача в заявке: у команды отмечен «Допуск врача» (или у её
+    делегации — заявка делегации с печатью врача, Правки, п. 20), участник был в заявке (не добавлен перезаявкой)
+    и секретарь не снимал у него эту галочку (врач его не допустил)."""
+    team_doctor = any(d.key == DOCTOR for d in tdocs) and bool(m.get("team_docs", {}).get(DOCTOR))
+    return (any(d.key == MED for d in pdocs) and (team_doctor or by_delegation)
             and not m.get("people", {}).get(key, {}).get("med_off")
             and key not in reentry_added(m.get("reentries", [])))
+
+
+def own_marks(result: PreappResult, files: list[str], data: dict,
+              doctor_files: set[str] | None = None) -> dict[str, dict[str, str]]:
+    """Документы, отмеченные у людей в этом соревновании (сами отметки и мед. допуск по допуску врача), —
+    {человек: {документ: команда}}: на фестивале они засчитываются в других его соревнованиях (Правки, п. 20)."""
+    pdocs, tdocs = required_docs(data)
+    teams = {t.source: t for t in result.teams}
+    out: dict[str, dict[str, str]] = {}
+    for file in files:
+        team = teams.get(file)
+        m = data.get("teams", {}).get(file, {})
+        for e in (team.entries if team else []):
+            key = person_key(e.name.full)
+            docs = {k for k, v in m.get("people", {}).get(key, {}).get("docs", {}).items() if v}
+            if doctor_covers(m, key, pdocs, tdocs, file in (doctor_files or ())):
+                docs.add(MED)
+            for k in docs:
+                out.setdefault(person_id(e), {}).setdefault(k, team.team)
+    return out
 
 
 # ------------------------------------------------------------------ состояние участников и команд
@@ -130,6 +151,7 @@ class PersonCheck:
     reason: str = ""  # причина недопуска или основание решения
     auto_docs: set[str] = field(default_factory=set)  # отмечены сами: мед. допуск — по допуску врача в заявке
     shared_docs: dict[str, str] = field(default_factory=dict)  # отмечены у этого человека в другой команде: док → команда
+    shared_comp: dict[str, str] = field(default_factory=dict)  # …в другом соревновании фестиваля: док → соревнование
 
     @property
     def label(self) -> str:
@@ -179,6 +201,7 @@ class TeamCheck:
     extra: list[str] = field(default_factory=list)  # что ещё мешает допуску (проверка снаряжения)
     problem_targets: list[str] = field(default_factory=list)  # где исправить каждую из problems (Issue.target)
     unreviewed: bool = False  # секретарь не отметил заявку «Проверено» (п. 24 правок)
+    fee_by: str = ""  # взнос платит делегация одной строкой — её название (Правки, п. 20)
 
     @property
     def by_decision(self) -> bool:
@@ -217,12 +240,16 @@ def _int(v) -> int | None:
 
 
 def evaluate(result: PreappResult, files: list[str], comp: Competition, data: dict,
-             extra: dict[str, list[str]] | None = None, reviewed: dict[str, bool] | None = None) -> list[TeamCheck]:
+             extra: dict[str, list[str]] | None = None, reviewed: dict[str, bool] | None = None,
+             outside: dict[str, dict[str, tuple[str, str]]] | None = None,
+             doctor_files: set[str] | None = None) -> list[TeamCheck]:
     """Состояние допуска по каждому файлу заявки (в порядке списка заявок).
 
     result — заявки с отметками «проверено» (замечания, отмеченные проверенными, уже не WARNING);
     extra — что ещё мешает допуску команды (например, итоги проверки снаряжения), по файлам;
-    reviewed — отметил ли секретарь заявку «Проверено» (None — не учитывать): без этого команда сама не допускается."""
+    reviewed — отметил ли секретарь заявку «Проверено» (None — не учитывать): без этого команда сама не допускается;
+    outside — документы людей, отмеченные в других соревнованиях фестиваля: {человек: {документ: (команда,
+    соревнование)}}; doctor_files — заявки, чья делегация сдала заявку с печатью врача (Правки, п. 20)."""
     pdocs, tdocs = required_docs(data)
     teams = {t.source: t for t in result.teams}
     marked = docs_by_person(result, files, data)  # документы человека отмечают один раз — в любой его команде
@@ -240,18 +267,23 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
             pm = m.get("people", {}).get(key, {})
             mine = [i for i in issues if i.row == e.row]
             docs = {d.key: bool(pm.get("docs", {}).get(d.key)) for d in pdocs}
-            auto = {MED} if MED in docs and not docs[MED] and doctor_covers(m, key, pdocs, tdocs) else set()
+            auto = {MED} if MED in docs and not docs[MED] and \
+                doctor_covers(m, key, pdocs, tdocs, file in (doctor_files or ())) else set()
             docs |= dict.fromkeys(auto, True)
             elsewhere = marked.get(person_id(e), {})
             shared = {d.key: teams[elsewhere[d.key]].team for d in pdocs if not docs[d.key]
                       and elsewhere.get(d.key, file) != file and elsewhere[d.key] in teams}
+            far = (outside or {}).get(person_id(e), {})
+            far = {d.key: far[d.key] for d in pdocs if not docs[d.key] and d.key not in shared and d.key in far}
+            shared |= {k: v[0] for k, v in far.items()}
             docs |= dict.fromkeys(shared, True)
             # «проверено» на предзаявках снимает сомнение в данных (ФИО, территория), но не решает допуск:
             # возраст младше, чем в Положении, — только решением ГСК на комиссии
             waiting = [i for i in mine if i.severity == WARNING or (i.severity == CHECKED and i.field in DECIDED_HERE)]
             p = PersonCheck(e, key, PENDING, docs, [d for d in pdocs if not docs[d.key]],
                             [i for i in mine if i.severity == ERROR], waiting,
-                            pm.get("decision", ""), pm.get("reason", ""), auto, shared)
+                            pm.get("decision", ""), pm.get("reason", ""), auto, shared,
+                            {k: v[1] for k, v in far.items()})
             if p.decision == REJECTED:
                 p.status = REJECTED
             elif p.errors:
@@ -339,6 +371,117 @@ def fee_due(t: TeamCheck, comp: Competition) -> int:
         if z.fee:
             total += z.fee if z.fee_per == "команду" else z.fee * len(members)
     return total
+
+
+# ------------------------------------------------------------------ делегации (Правки, п. 20; решение 040)
+
+FEE_TEAMS, FEE_ONE = "teams", "one"
+DELEGATION_FEE = {FEE_TEAMS: "по командам", FEE_ONE: "одной строкой за делегацию"}
+
+
+def delegation_key(team: TeamApplication) -> str:
+    """Делегация — территория и представитель в заявке (без регистра, «ё» и лишних пробелов)."""
+    def n(s) -> str:
+        return " ".join(str(s or "").lower().replace("ё", "е").split())
+
+    return f"{n(team.territory)}|{n(team.representative)}"
+
+
+def delegation_title(team: TeamApplication) -> str:
+    """«Красноярск · Лебедев Антон Игоревич» — так делегация называется на странице и в папке сканов."""
+    return " · ".join(x for x in (team.territory or "территория не указана", team.representative) if x)
+
+
+def doctor_files(result: PreappResult, data: dict) -> set[str]:
+    """Заявки команд, чья делегация сдала заявку с печатью врача («Допуск врача» у делегации)."""
+    marks = data.get("delegations", {})
+    return {t.source for t in result.teams if marks.get(delegation_key(t), {}).get("doctor")}
+
+
+@dataclass
+class Delegation:
+    key: str
+    territory: str
+    representative: str
+    phone: str
+    teams: list[TeamCheck]
+    fee_mode: str = FEE_TEAMS
+    fee_paid: int = 0
+    fee_method: str = ""
+    doctor: bool = False
+
+    @property
+    def title(self) -> str:
+        return delegation_title(self.teams[0].team) if self.teams and self.teams[0].team else self.territory
+
+    @property
+    def fee_due(self) -> int:
+        return sum(t.fee_due for t in self.teams)
+
+    @property
+    def people(self) -> int:
+        return sum(len(t.counted) for t in self.teams)
+
+    @property
+    def fee_status(self) -> str:
+        if not self.fee_due:
+            return "нет взноса"
+        paid = self.fee_paid if self.fee_mode == FEE_ONE else sum(t.fee_paid for t in self.teams)
+        return "оплачено" if paid >= self.fee_due else "частично" if paid else "не оплачено"
+
+
+def delegations(teams: list[TeamCheck], data: dict) -> list[Delegation]:
+    """Делегации комиссии: команды одной территории и представителя, их взнос, допуск врача делегации."""
+    marks = data.get("delegations", {})
+    out: dict[str, Delegation] = {}
+    for t in teams:
+        if not t.team:
+            continue
+        k = delegation_key(t.team)
+        if k not in out:
+            m = marks.get(k, {})
+            out[k] = Delegation(k, t.team.territory, t.team.representative, t.team.phone, [],
+                                FEE_ONE if m.get("fee_mode") == FEE_ONE else FEE_TEAMS, _int(m.get("fee_paid")) or 0,
+                                str(m.get("fee_method", "")), bool(m.get("doctor")))
+        out[k].teams.append(t)
+        if not out[k].phone and t.team.phone:
+            out[k].phone = t.team.phone
+    return sorted(out.values(), key=lambda d: (-len(d.teams), d.territory.lower()))
+
+
+def apply_delegation_fees(teams: list[TeamCheck], data: dict) -> list[Delegation]:
+    """Делегации, платящие одной строкой: оплата делегации раскладывается по её командам по порядку (сколько
+    причитается с каждой), чтобы итоги и отметки команд сходились с ведомостью; у команд — «платит делегация»."""
+    found = delegations(teams, data)
+    for d in found:
+        if d.fee_mode != FEE_ONE:
+            continue
+        left = d.fee_paid
+        for i, t in enumerate(d.teams):
+            t.fee_by = d.title
+            t.fee_method = d.fee_method
+            t.fee_paid = left if i == len(d.teams) - 1 else min(left, t.fee_due)
+            left -= t.fee_paid
+    return found
+
+
+def fee_lines(teams: list[TeamCheck], found: list[Delegation]) -> list[dict]:
+    """Строки ведомости взносов: команды, а делегации «одной строкой» — одной строкой на месте первой команды."""
+    one = {t.file: d for d in found if d.fee_mode == FEE_ONE for t in d.teams}
+    out, done = [], set()
+    for t in teams:
+        d = one.get(t.file)
+        if d is None:
+            out.append({"number": t.number, "team": t.title, "territory": t.team.territory if t.team else "",
+                        "representative": t.team.representative if t.team else "", "people": len(t.counted),
+                        "due": t.fee_due, "paid": t.fee_paid, "method": t.fee_method, "status": t.fee_status})
+        elif d.key not in done:
+            done.add(d.key)
+            out.append({"number": ", ".join(str(x.number) for x in d.teams if x.number is not None),
+                        "team": "Делегация: " + ", ".join(x.title for x in d.teams), "territory": d.territory,
+                        "representative": d.representative, "people": d.people, "due": d.fee_due,
+                        "paid": d.fee_paid, "method": d.fee_method, "status": d.fee_status})
+    return out
 
 
 # ------------------------------------------------------------------ сводка для протокола

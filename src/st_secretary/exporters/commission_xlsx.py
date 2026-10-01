@@ -21,6 +21,8 @@ from st_secretary.commission import (
     QUAL_COLUMNS,
     REJECTED,
     TeamCheck,
+    delegations,
+    fee_lines,
     protocol_row,
     required_docs,
 )
@@ -131,7 +133,7 @@ def _protocol(ws, teams: list[TeamCheck], comp: Competition) -> None:
     ws.print_title_rows = f"{h1}:{h3}"
 
 
-def _fees(ws, teams: list[TeamCheck], comp: Competition, note: str = "") -> None:
+def _fees(ws, teams: list[TeamCheck], comp: Competition, data: dict, note: str = "") -> None:
     head = ["№ п/п", "Номер", "Команда", "Территория", "Представитель", "Участников", "Взнос к оплате, ₽",
             "Оплачено, ₽", "Способ оплаты", "Отметка", "Подпись представителя"]
     r = _title_block(ws, comp, "Ведомость заявочных взносов", len(head))
@@ -144,14 +146,14 @@ def _fees(ws, teams: list[TeamCheck], comp: Competition, note: str = "") -> None
     _box(ws, r, 1, len(head))
     r += 1
     due = paid = 0
-    for n, t in enumerate(teams, start=1):
-        values = [n, t.number, t.title, t.team.territory if t.team else "", t.team.representative if t.team else "",
-                  len(t.counted), t.fee_due or None, t.fee_paid or None, t.fee_method, t.fee_status, ""]
+    for n, x in enumerate(fee_lines(teams, delegations(teams, data)), start=1):  # делегация может платить одной строкой
+        values = [n, x["number"], x["team"], x["territory"], x["representative"], x["people"], x["due"] or None,
+                  x["paid"] or None, x["method"], x["status"], ""]
         for c, v in enumerate(values, start=1):
             ws.cell(r, c, v)
         _box(ws, r, 1, len(head), WRAP)
         ws.row_dimensions[r].height = 28
-        due, paid = due + t.fee_due, paid + t.fee_paid
+        due, paid = due + x["due"], paid + x["paid"]
         r += 1
     ws.cell(r, 3, "Итого:").font = Font(bold=True)
     ws.cell(r, 7, due).font = Font(bold=True)
@@ -270,7 +272,7 @@ def write_commission_report(teams: list[TeamCheck], comp: Competition, data: dic
     fee_note — взнос не по соревнованию (один за фестиваль): в ведомости только эта строка."""
     wb = Workbook()
     _protocol(wb.active, teams, comp)
-    _fees(wb.create_sheet("Ведомость взносов"), teams, comp, fee_note)
+    _fees(wb.create_sheet("Ведомость взносов"), teams, comp, data, fee_note)
     if gear:
         _gear(wb.create_sheet("Проверка снаряжения"), gear, gear_data or {}, comp)
     _people(wb.create_sheet("Документы участников"), teams, data)

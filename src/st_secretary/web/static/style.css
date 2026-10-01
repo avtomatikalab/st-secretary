@@ -710,9 +710,13 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 
 /* Комиссия «по делегациям» */
 .adm-view { margin: 0 0 10px; }
-.adm-deleg { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin: 18px 0 6px;
-  padding: 8px 12px; border-left: 4px solid var(--primary); background: var(--primary-soft); border-radius: 8px; }
+.adm-deleg { display: grid; gap: 8px; margin: 18px 0 6px;
+  padding: 10px 12px; border-left: 4px solid var(--primary); background: var(--primary-soft); border-radius: 8px; }
 .adm-deleg h3 { margin: 0; font-size: 1.05rem; }
+.adm-deleg-head { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; }
+.adm-deleg-form, .adm-deleg-folder { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 0; }
+.adm-deleg-form .adm-fee { display: inline-flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.adm-deleg-form input[type="text"] { width: 7rem; } .adm-deleg-form select { width: auto; }
 
 /* Фестиваль — группа соревнований (решение 039) */
 .fest-group { margin: 0 0 18px; padding: 10px 12px 12px; border: 2px solid var(--primary-soft); border-radius: var(--radius); }

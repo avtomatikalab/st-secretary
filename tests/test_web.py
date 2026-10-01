@@ -1566,7 +1566,7 @@ def test_admission_by_delegation_view(client, tmp_path, psr_card):
     f.add_preapp("Сосна.xlsx", sosna(tmp_path))
     page = client.get(base(f) + "/admission?by=delegation").text
     assert "<b>по делегациям</b>" in page and page.count('class="adm-deleg"') == 2
-    assert "Красноярск · Лебедев Антон Игоревич" in page and "1 команда" in page
+    assert "Делегация: Красноярск" in page and "Представитель: Лебедев Антон Игоревич" in page and "1 команда" in page
     assert "по делегациям</a>" in client.get(base(f) + "/admission").text
 
 

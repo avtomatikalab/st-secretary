@@ -88,6 +88,22 @@ def default_docs_root() -> Path:
 EXCEL = (".xlsx", ".xls")
 
 
+def keep_extra(rows: list[dict], old_rows: list) -> list[dict]:
+    """Строкам исправленной заявки — свои колонки прежнего файла: по ФИО, иначе по месту в списке."""
+    def key(s) -> str:
+        return " ".join(str(s or "").lower().replace("ё", "е").split())
+
+    by_name = {key(r.values.get("fio")): r.extra for r in old_rows if r.extra}
+    out = []
+    for i, row in enumerate(rows):
+        extra = row.get("extra") or by_name.get(key(row.get("fio")))
+        if extra is None and i < len(old_rows) and key(old_rows[i].values.get("fio")) not in \
+                {key(r.get("fio")) for r in rows}:
+            extra = old_rows[i].extra
+        out.append({**row, "extra": extra or {}})
+    return out
+
+
 def read_festivals(root: Path) -> list[dict]:
     """Записи фестивалей из «Фестивали.json» как есть (см. festival.py)."""
     try:
@@ -220,6 +236,8 @@ class CompFolder:
         else:
             target = self._unique(self.preapp_dir / f"{safe_name(head.get('team', ''), 80) or 'Заявка'}.xlsx")
             note = f"Заполнено в программе СТ-Секретарь {now:%d.%m.%Y %H:%M}."
+        if old is not None:  # свои колонки заявки (справа от бланка) — переносятся к тем же участникам
+            rows = keep_extra(rows, read_preapplication(old).rows)
         tmp = self.preapp_dir / f"~$сохранение {now:%H%M%S%f}.xlsx"  # «~$» — такие файлы в список заявок не попадают
         write_preapplication(tmp, head, rows, note, qual_labels)
         try:
@@ -461,6 +479,28 @@ class Store:
     def team_docs_dir(self, f: CompFolder, file: str) -> Path:
         """Папка документов команды: <корень>/<соревнование>/<имя файла заявки без расширения>."""
         return self.docs_root / f.id / safe_name(Path(file).stem)
+
+    def delegation_docs_dir(self, f: CompFolder, title: str) -> Path:
+        """Сканы делегации (Правки, п. 20): одна папка на делегацию — на фестивале общая для его соревнований,
+        внутри — по людям."""
+        fest = f.festival()
+        scope = safe_name(f"Фестиваль {fest.get('title', '')}") if fest else f.id
+        return self.docs_root / scope / safe_name(f"Делегация {title}")
+
+    def person_docs_dir(self, f: CompFolder, title: str, e) -> Path:
+        """Папка человека в папке делегации: «Фамилия Имя Отчество 05.06.1996»."""
+        born = f"{e.birth:%d.%m.%Y}" if getattr(e, "birth", None) else str(getattr(e, "birth_year", "") or "")
+        return self.delegation_docs_dir(f, title) / safe_name(f"{e.name.full} {born}".strip())
+
+    def person_docs(self, f: CompFolder, title: str, entries: list) -> list[tuple[str, Path]]:
+        """Сканы людей из папки делегации: [(ФИО, файл)]."""
+        out = []
+        for e in entries:
+            d = self.person_docs_dir(f, title, e)
+            if d.is_dir():
+                out += [(e.name.full, p) for p in sorted(d.iterdir(), key=lambda p: p.name)
+                        if p.is_file() and p.suffix.lower() in DOC_TYPES and not p.name.startswith("~$")]
+        return out
 
     def team_docs(self, f: CompFolder, file: str) -> list[Path]:
         d = self.team_docs_dir(f, file)

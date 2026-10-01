@@ -43,6 +43,7 @@ BLANK_HOW = ("Программа ищет лист «Заявка» (или пе
 class RawRow:
     row: int  # номер строки в файле (как видит человек)
     values: dict[str, object]
+    extra: dict[str, object] = field(default_factory=dict)  # свои колонки справа от бланка: заголовок → значение
 
 
 @dataclass
@@ -119,6 +120,9 @@ def read_preapplication(path: str | Path) -> RawApplication:
         app.team, app.territory, app.representative = (clean_spaces(cell(r, c)) for c in (1, 2, 3))
         app.contacts = clean_spaces(cell(r, 4))
         app.declared_count = cell(r, 5)
+    # свои колонки справа от бланка (чип, размер футболки, питание…): читаются как есть и ничего не ломают
+    width = max((len(row) for row in grid[head:]), default=0)
+    own = {c: clean_spaces(cell(head, c)) for c in range(len(COLUMNS), width) if clean_spaces(cell(head, c))}
     for r in range(head + 1, len(grid)):
         first = clean_spaces(cell(r, 0))
         if first.upper() == "ОБРАЗЕЦ" or first == "0":
@@ -126,7 +130,8 @@ def read_preapplication(path: str | Path) -> RawApplication:
         values = {key: cell(r, c) for key, (c, _) in COLUMNS.items()}
         if not clean_spaces(values["fio"]):
             continue  # пустые строки бланка (№ проставлен заранее)
-        app.rows.append(RawRow(r + 1, values))
+        extra = {h: cell(r, c) for c, h in own.items() if clean_spaces(cell(r, c))}
+        app.rows.append(RawRow(r + 1, values, extra))
     return app
 
 
@@ -155,7 +160,8 @@ def _value(v):
 def write_preapplication(path: str | Path, head: dict, rows: list[dict], note: str = "",
                          qual_labels: list[str] | None = None) -> Path:
     """Заявка в раскладке бланка. head — team, territory, representative, contacts, declared;
-    rows — ключи COLUMNS без num/team/territory/representative (их программа проставляет из шапки)."""
+    rows — ключи COLUMNS без num/team/territory/representative (их программа проставляет из шапки) и «extra» —
+    свои колонки заявки (заголовок → значение), они пишутся справа от бланка."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.worksheet.datavalidation import DataValidation
@@ -182,11 +188,20 @@ def write_preapplication(path: str | Path, head: dict, rows: list[dict], note: s
         h.font, h.fill, h.border, h.alignment = Font(bold=True), fill, box, wrap
     common = {"team": head.get("team", ""), "territory": head.get("territory", ""),
               "representative": head.get("representative", "")}
+    own = list(dict.fromkeys(h for row in rows for h in (row.get("extra") or {})))
+    for i, label in enumerate(own, start=len(TABLE_LABELS) + 1):
+        h = ws.cell(TABLE_ROW, i, label)
+        h.font, h.border, h.alignment = Font(bold=True), box, wrap
     for n, row in enumerate(rows, start=1):
         r = FIRST_ROW + n - 1
         values = {**row, **common, "num": n}
         for key, (c, _) in COLUMNS.items():
             cell = ws.cell(r, c + 1, _value(values.get(key)))
+            cell.border = box
+            if isinstance(cell.value, (date, datetime)):
+                cell.number_format = "DD.MM.YYYY"
+        for i, label in enumerate(own, start=len(TABLE_LABELS) + 1):
+            cell = ws.cell(r, i, _value((row.get("extra") or {}).get(label)))
             cell.border = box
             if isinstance(cell.value, (date, datetime)):
                 cell.number_format = "DD.MM.YYYY"
