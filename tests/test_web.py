@@ -45,8 +45,8 @@ class FormFields(HTMLParser):
             self.tpl += 1
         if not self.inside or self.tpl:
             return
-        if tag == "input" and a.get("type") == "checkbox":
-            if a.get("name") and "checked" in a:  # браузер отправляет только отмеченные галочки
+        if tag == "input" and a.get("type") in ("checkbox", "radio"):
+            if a.get("name") and "checked" in a:  # браузер отправляет только отмеченные галочки и переключатели
                 self.fields[a["name"]] = a.get("value") or "on"
         elif tag == "input" and a.get("name") and a.get("type") not in ("file", "submit"):
             self.fields[a["name"]] = a.get("value") or ""

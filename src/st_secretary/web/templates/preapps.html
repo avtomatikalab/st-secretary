@@ -32,7 +32,9 @@
   <span class="muted">Или скопируйте файлы в папку заявок и обновите страницу (F5):</span>
   <form method="post" action="{{ base }}/open/preapps"><button class="btn btn-ghost btn-small" type="submit">{{ icon("folder", 18) }}Открыть папку «Предзаявки»</button></form>
   {% if comp and not blocked %}<span class="muted">Команда прислала состав текстом?</span>
-  <a class="btn btn-ghost btn-small" href="{{ base }}/preapps/new">{{ icon("plus", 18) }}Заполнить заявку вручную</a>{% endif %}
+  <a class="btn btn-ghost btn-small" href="{{ base }}/preapps/new">{{ icon("plus", 18) }}Заполнить заявку вручную</a>
+  <span class="muted">Заявки не по бланку программы (своя форма, заявка делегации)?</span>
+  <a class="btn btn-ghost btn-small" href="{{ base }}/forms">{{ icon("table", 18) }}Свои формы заявок</a>{% endif %}
 </div>
 
 {% if result %}

@@ -741,3 +741,14 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .fest-fee select { min-width: 8rem; }
 .fest-comps span { display: block; font-size: .85rem; color: var(--muted); line-height: 1.3; }
 
+/* Свои формы заявок (Правки, п. 37) */
+.form-sheet { margin: 8px 0; } .form-sheet summary { cursor: pointer; font-weight: 600; }
+.form-grid { font-size: .8rem; } .form-grid td, .form-grid th { padding: 3px 6px; white-space: nowrap; max-width: 14rem;
+  overflow: hidden; text-overflow: ellipsis; }
+.form-grid tbody th { color: var(--muted); font-weight: 400; }
+.form-grid tr.form-head-row td { background: var(--primary-soft); font-weight: 600; }
+.form-cols select { min-width: 16rem; }
+.form-head { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 8px 0; }
+.form-head input { width: 6rem; }
+.form-values td:last-child input { width: 10rem; }
+

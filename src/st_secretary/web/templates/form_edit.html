@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_form.html" import issue_list %}
+{% block title %}Своя форма заявки — СТ-Секретарь{% endblock %}
+{% block content %}
+<a class="back" href="{{ base }}/forms">← Свои формы заявок</a>
+<h1>{% if saved %}Форма «{{ saved.name }}»{% else %}Новая форма заявки{% endif %}</h1>
+<p class="lead">{% if file %}Образец: «{{ file }}». {% endif %}Программа угадала, где что, — проверьте и поправьте, если
+  нужно. Внизу — как она прочитает файл. Сохраните форму, и заявки с такой же шапкой будут читаться по ней сами.</p>
+
+{% if errors %}<div class="flash flash-err" role="alert">{{ icon("alert") }}<div>Форма не сохранена: {{ errors|join("; ") }}.</div></div>{% endif %}
+
+<form method="post" action="{{ base }}/forms/edit" class="form-edit">
+  <input type="hidden" name="sample" value="{{ token }}"><input type="hidden" name="file" value="{{ file }}">
+  <input type="hidden" name="old_name" value="{{ saved.name if saved else '' }}">
+  <input type="hidden" name="sheet_was" value="{{ state.sheet }}"><input type="hidden" name="row_was" value="{{ state.row + 1 }}">
+
+  <section class="panel">
+    <div class="field"><label for="f-name">Название формы</label>
+      <input id="f-name" type="text" name="name" value="{{ state.name }}" placeholder="Кубок г. Красноярска — заявка делегации" required></div>
+  </section>
+
+  {% if sheets %}
+  <section class="panel" id="sheets">
+    <h2>1. Где таблица участников</h2>
+    <p class="muted">Строка заголовков подсвечена. Если программа ошиблась — выберите лист и номер строки и нажмите «Обновить».</p>
+    <div class="fest-add">
+      <label for="f-sheet">Лист</label>
+      <select id="f-sheet" name="sheet">{% for s in sheets %}<option value="{{ loop.index0 }}"{% if loop.index0 == state.sheet %} selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+      <label for="f-row">строка заголовков</label>
+      <input id="f-row" type="number" name="row" min="1" value="{{ state.row + 1 }}" inputmode="numeric">
+      <button class="btn" type="submit" name="action" value="preview">Обновить</button>
+    </div>
+    {% for s in sheets %}
+    <details class="form-sheet"{% if loop.index0 == state.sheet %} open{% endif %}>
+      <summary>Лист «{{ s.name }}»{% if s.same %} — такая же шапка{% endif %}</summary>
+      <div class="table-wrap"><table class="tbl form-grid">
+        <thead><tr><th></th>{% for c in range(s.rows|map("length")|max if s.rows else 0) %}<th>{{ cell_ref(0, c)[:-1] }}</th>{% endfor %}</tr></thead>
+        <tbody>{% set outer = loop %}{% for row in s.rows %}<tr{% if outer.index0 == state.sheet and loop.index0 == state.row %} class="form-head-row"{% endif %}>
+          <th>{{ loop.index }}</th>{% for v in row %}<td>{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table></div>
+    </details>
+    {% endfor %}
+    {% set same = sheets|selectattr("same")|list %}
+    {% if same|length > 1 %}
+    <fieldset><legend>Какие листы читать</legend>
+      {% for s in same %}<label class="check"><input type="checkbox" name="sheets" value="{{ s.name }}"{% if not state.sheets or s.name in state.sheets %} checked{% endif %}> {{ s.name }}</label>{% endfor %}
+      <p class="hint">Отмечены все — читаются все листы с такой шапкой (и те, что появятся в других файлах). Класс, если в
+        колонке пусто, берётся из названия листа («3 КЛАСС»).</p>
+    </fieldset>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section class="panel" id="columns">
+    <h2>2. Что в каждой колонке</h2>
+    {% if missing %}<p class="text-err">{{ icon("alert", 16) }} Не хватает: {{ missing|join("; ") }}.</p>{% endif %}
+    <div class="table-wrap"><table class="tbl form-cols">
+      <thead><tr><th>Колонка</th><th>Заголовок в форме</th><th>Что это в программе</th></tr></thead>
+      <tbody>{% for h in form.headers %}{% set i = loop.index0 %}<tr>
+        <td>{{ cell_ref(0, i)[:-1] }}</td><td>{{ h or "—" }}</td>
+        <td><select name="col-{{ i }}" aria-label="Колонка {{ cell_ref(0, i)[:-1] }}: {{ h }}">
+          {% for k, label, _ in fields %}<option value="{{ k }}"{% if form.columns[i] == k %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          <option value="{{ own }}"{% if form.columns[i] == own %} selected{% endif %}>{{ labels[own] }}</option>
+          <option value="{{ skip }}"{% if form.columns[i] == skip %} selected{% endif %}>{{ labels[skip] }}</option>
+        </select></td></tr>{% endfor %}</tbody>
+    </table></div>
+    <p class="hint">«Своя колонка» — значение сохранится у участника как есть (чип, размер футболки, питание) и будет видно в
+      карточке заявки.</p>
+  </section>
+
+  <section class="panel" id="team">
+    <h2>3. Команда</h2>
+    <label class="check"><input type="radio" name="team_in" value="head"{% if state.team_in != "row" %} checked{% endif %}> Одна команда — в шапке заявки (ячейки ниже)</label>
+    <label class="check"><input type="radio" name="team_in" value="row"{% if state.team_in == "row" %} checked{% endif %}> Заявка делегации — команда в каждой строке: при загрузке программа разделит файл по командам</label>
+    <div class="form-head">{% for k, label in head_fields %}
+      <label>{{ label }} <input type="text" name="head-{{ k }}" value="{{ state.head.get(k, '') }}" placeholder="например, B4" size="6"></label>{% endfor %}</div>
+    <p class="hint">Ячейки шапки — как в Excel: буква колонки и номер строки (на первом листе). Пусто — нет в шапке
+      (территория и представитель тогда — из строк участников).</p>
+  </section>
+
+  {% if values_rows %}
+  <section class="panel" id="values">
+    <h2>4. Значения: как в форме → как в программе</h2>
+    <p class="muted">Программа сама предложила, как понимать значения из образца. Поправьте, где не так: разряд — «КМС», «I»,
+      «1ю», «б/р»; пол — «м» или «ж»; участие — «1» (участвует) или пусто; связка — «м», «ж», «см».</p>
+    {% for fld, rows in values_rows.items() %}
+    <h3>{{ labels[fld] }}</h3>
+    <div class="table-wrap"><table class="tbl form-values"><tbody>
+      {% for raw, to in rows %}<tr><td>{{ raw }}<input type="hidden" name="val-{{ fld }}-{{ loop.index0 }}-raw" value="{{ raw }}"></td>
+        <td>→ <input type="text" name="val-{{ fld }}-{{ loop.index0 }}-to" value="{{ to }}" aria-label="{{ labels[fld] }}: {{ raw }}"></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if sheets %}
+  <section class="panel" id="preview">
+    <h2>5. Так программа прочитает этот файл</h2>
+    {% if parts > 1 %}<p>{{ icon("info", 16) }} Заявка делегации: при загрузке разделится на <b>{{ parts }}</b> команд(ы) — по файлу на команду.</p>{% endif %}
+    {% if preview %}
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th>Команда</th><th>Участник</th><th>Дата рождения</th><th>Разряд</th><th>Пол</th><th>Зачёт</th><th>Своё</th></tr></thead>
+      <tbody>{% for e in preview %}<tr><td>{{ e.team }}</td><td>{{ e.name.full }}</td>
+        <td>{% if e.birth %}{{ e.birth|d }}{% elif e.birth_year %}{{ e.birth_year }}{% else %}—{% endif %}</td>
+        <td>{{ e.qual.label if e.qual is not none else "—" }}</td><td>{{ e.sex or "—" }}</td>
+        <td>{{ e.zachet.title if e.zachet else (e.group ~ " " ~ (e.distance_class or "")) ~ " — не найден в карточке" }}</td>
+        <td class="muted">{% for k, v in e.extra.items() %}{{ k }}: {{ v }}{% if not loop.last %}; {% endif %}{% endfor %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="muted">Участников не нашлось — проверьте строку заголовков и колонку ФИО.</p>{% endif %}
+    {% set shown = issues|rejectattr("severity", "equalto", "fixed")|list %}
+    {% if shown %}<details><summary>Замечания проверки: {{ shown|length }}</summary>{{ issue_list(shown[:15]) }}</details>{% endif %}
+  </section>
+  {% endif %}
+
+  <div class="savebar">
+    <button class="btn btn-primary btn-big" type="submit" name="action" value="save">{{ icon("check") }}Сохранить форму</button>
+    {% if sheets %}<button class="btn" type="submit" name="action" value="preview">Проверить ещё раз</button>{% endif %}
+    <a class="btn btn-ghost" href="{{ base }}/forms">Отмена</a>
+  </div>
+</form>
+{% endblock %}

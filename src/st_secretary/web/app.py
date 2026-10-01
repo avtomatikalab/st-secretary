@@ -44,6 +44,7 @@ from st_secretary.web.pages import (
     board,
     competition,
     contracts,
+    forms,
     home,
     preapps,
     results,
@@ -122,7 +123,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     cx.update(store=store, templates=templates, run_lock=run_lock, page=page, folder=folder, comp_ctx=comp_ctx,
               board_host=board_host)
     # страницы по шагам работы (pages/); общие помощники страниц — в cx, их берут и другие страницы
-    for module in (home, competition, preapps, admission, awards, contracts, results, start, board, verify,
+    for module in (home, competition, preapps, forms, admission, awards, contracts, results, start, board, verify,
                    update_pages):
         module.register(app, cx)
 

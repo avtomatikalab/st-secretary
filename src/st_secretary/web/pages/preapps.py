@@ -23,7 +23,7 @@ from st_secretary.qualification import Qual
 from st_secretary.web import preapp_form as pf
 from st_secretary.web.common import XLSX, _base, _parse_dt, _preapp_view, _redirect, _with_done, team_anchor
 from st_secretary.web.review import DONE, SAVE, STATUS_LABEL, is_clean, issue_key
-from st_secretary.web.store import SUMMARY, CompFolder
+from st_secretary.web.store import SUMMARY, CompFolder, safe_name
 
 
 def register(app, cx) -> None:
@@ -68,6 +68,7 @@ def register(app, cx) -> None:
     async def preapps_upload(request: Request, cid: str):
         f = folder(cid)
         added = replaced = skipped = locked = 0
+        split: list[str] = []
         for up in (await request.form()).getlist("files"):
             name = getattr(up, "filename", "") or ""
             if not name:
@@ -78,11 +79,16 @@ def register(app, cx) -> None:
                     replaced += 1
                 else:
                     added += 1
+                # заявка делегации по своей форме (команда в каждой строке) — по файлу на команду (Правки, п. 37)
+                teams = store.split_delegation(f, safe_name(Path(name.replace("\\", "/")).name))
+                if teams:
+                    split.append(f"{name} → {len(teams)}")
             except ValueError:
                 skipped += 1
             except PermissionError:
                 locked += 1
-        q = urlencode({"done": "uploaded", "added": added, "replaced": replaced, "skipped": skipped, "locked": locked})
+        q = urlencode({"done": "uploaded", "added": added, "replaced": replaced, "skipped": skipped, "locked": locked,
+                       "split": "; ".join(split)})
         return _redirect(f"{_base(f)}/preapps?{q}")
 
     @app.post("/c/{cid}/preapps/remove")
@@ -203,7 +209,7 @@ def register(app, cx) -> None:
         path = need_file(f, file)
         result, _ = store.review(f, comp)
         team = next((t for t in result.teams if t.source == path.name), None)
-        form = pf.app_to_form(read_preapplication(path), team, comp)
+        form = pf.app_to_form(read_preapplication(path, store.forms()), team, comp)
         return render_edit(request, f, comp, form, file=path.name, version=f.file_version(path),
                            issues=[i for i in result.issues if i.source == path.name], team=team,
                            reentry=reentry_info(f, path.name) if reentry else None,
@@ -234,7 +240,7 @@ def register(app, cx) -> None:
                 if reentry:  # состав до перезаявки — чтобы записать, что изменилось
                     result, _ = store.review(f, comp)
                     before = next((t.entries for t in result.teams if t.source == path.name), [])
-                saved = f.save_preapp(name if path else None, head, rows, [q.label for q in Qual])
+                saved = f.save_preapp(name if path else None, head, rows, [q.label for q in Qual], store.forms())
                 done = "psaved" if path else "pcreated"
                 result, _ = store.review(f, comp)  # проверка заново — уже с сохранённым файлом
                 if is_clean([i for i in result.issues if i.source == saved]):

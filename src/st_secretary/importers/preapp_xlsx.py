@@ -59,6 +59,8 @@ class RawApplication:
     problems: list[tuple[str, str]] = field(default_factory=list)  # (что не так, почему) — файл не прочитан как бланк
     notes: list[tuple[str, str]] = field(default_factory=list)  # (что не так, почему) — прочитан, но не всё
     sheets: list[str] = field(default_factory=list)  # листы с таблицей участников, по порядку
+    form: str = ""  # прочитан по своей форме (Правки, п. 37) — её название; пусто — стандартный бланк
+    team_in_row: bool = False  # по форме команда — в каждой строке (заявка делегации)
 
 
 SHEET_ROWS = 1000  # строка участника на втором листе — 1000 + номер строки, на третьем — 2000 + … (Правки, п. 29)
@@ -100,8 +102,9 @@ def _grids(path: Path) -> list[tuple[str, list[list[object]]]]:
 _CLASS_IN_NAME = re.compile(r"(\d)\s*[- ]?\s*(?:кл|класс)", re.IGNORECASE)
 
 
-def read_preapplication(path: str | Path) -> RawApplication:
-    """Заявка из всех листов книги, где есть таблица участников по бланку (по листу на класс — тоже)."""
+def read_preapplication(path: str | Path, forms: list[dict] | None = None) -> RawApplication:
+    """Заявка из всех листов книги, где есть таблица участников по бланку (по листу на класс — тоже). forms —
+    свои формы заявок (Правки, п. 37): файл с шапкой одной из них читается по ней."""
     path = Path(path)
     app = RawApplication(path)
     try:
@@ -110,10 +113,23 @@ def read_preapplication(path: str | Path) -> RawApplication:
         app.problems.append((f"файл не открывается: {e}",
                              "Файл повреждён, защищён паролем или это не таблица Excel."))
         return app
+    found = None
+    if forms:
+        from st_secretary import forms as fm
+
+        found = fm.match(forms, grids)
+        if found and found[1]:
+            return fm.read_with_form(path, grids, found[0])
     tables = [(name, grid, head) for name, grid in grids if (head := _table_head(grid)) is not None]
     if not tables:
+        if found:  # похоже на свою форму, но шапка изменилась
+            app.problems.append((f"шапка таблицы похожа на форму «{found[0].get('name', '')}», но не совпадает с ней",
+                                 "В файле переименовали, добавили или убрали колонки. Откройте «Свои формы заявок» "
+                                 "и добавьте форму по этому файлу (или поправьте файл)."))
+            return app
         app.problems.append(("не найдена таблица участников (строка заголовков «№ п/п … Фамилия, имя»)",
-                             f"Похоже, заявка заполнена не по бланку. {BLANK_HOW}"))
+                             f"Похоже, заявка заполнена не по бланку. {BLANK_HOW} Если у соревнования своя форма "
+                             "заявки — покажите её программе один раз: «Свои формы заявок» на странице заявок."))
         return app
     many = len(grids) > 1
     for name, grid, head in tables:

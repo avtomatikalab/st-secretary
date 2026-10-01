@@ -72,6 +72,9 @@ OWN_VALUES = "Свои значения (неофициальные).json"
 OWN_KINDS = ("groups", "names", "disciplines")
 # Фестивали — группы соревнований одного выезда (решение 039): в папке «данные», соревнования не трогаются
 FESTIVALS = "Фестивали.json"
+# Свои формы предзаявок (Правки, п. 37) — на этом компьютере, рядом с личными данными судей
+FORMS = "Свои формы заявок.json"
+DELEGATION_SOURCES = "Заявки делегаций (исходные)"
 CONTRACTS_DIR = "Договоры и табель"
 # Сканы и фото документов участников (паспорта, полисы, справки): только на этом компьютере и не в облачной
 # папке — поэтому отдельно от данных соревнования (их часто держат на Google Диске или передают на флешке).
@@ -221,7 +224,8 @@ class CompFolder:
         target.write_bytes(data)
         return replaced
 
-    def save_preapp(self, name: str | None, head: dict, rows: list[dict], qual_labels: list[str] | None = None) -> str:
+    def save_preapp(self, name: str | None, head: dict, rows: list[dict], qual_labels: list[str] | None = None,
+                    forms: list[dict] | None = None) -> str:
         """Записать заявку из формы программы. name — файл, который исправляли (None — новая заявка).
         Прежний файл переносится в «Прежние версии»; .xls сохраняется как .xlsx. Возвращает имя файла."""
         self.preapp_dir.mkdir(exist_ok=True)
@@ -237,7 +241,7 @@ class CompFolder:
             target = self._unique(self.preapp_dir / f"{safe_name(head.get('team', ''), 80) or 'Заявка'}.xlsx")
             note = f"Заполнено в программе СТ-Секретарь {now:%d.%m.%Y %H:%M}."
         if old is not None:  # свои колонки заявки (справа от бланка) — переносятся к тем же участникам
-            rows = keep_extra(rows, read_preapplication(old).rows)
+            rows = keep_extra(rows, read_preapplication(old, forms).rows)
         tmp = self.preapp_dir / f"~$сохранение {now:%H%M%S%f}.xlsx"  # «~$» — такие файлы в список заявок не попадают
         write_preapplication(tmp, head, rows, note, qual_labels)
         try:
@@ -466,13 +470,92 @@ class Store:
     def preapps(self, f: CompFolder, comp: Competition) -> PreappResult:
         """Обработать заявки. Результат запоминается, пока не изменились файлы заявок и карточка."""
         files = f.preapp_files()
-        key = (f.version(), tuple((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in files))
+        key = (f.version(), tuple((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in files),
+               self.forms_version())
         hit = self._preapp_cache.get(f.id)
         if hit and hit[0] == key:
             return hit[1]
-        result = process([read_preapplication(p) for p in files], comp)
+        forms = self.forms()
+        result = process([read_preapplication(p, forms) for p in files], comp)
         self._preapp_cache[f.id] = (key, result)
         return result
+
+    # ------------------------------------------------------------ свои формы заявок (Правки, п. 37)
+
+    @property
+    def forms_path(self) -> Path:
+        return self.docs_root / FORMS
+
+    def forms_version(self) -> int:
+        try:
+            return self.forms_path.stat().st_mtime_ns
+        except OSError:
+            return 0
+
+    def forms(self) -> list[dict]:
+        """Свои формы заявок — на этом компьютере (forms.py)."""
+        try:
+            data = json.loads(self.forms_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        items = data.get("forms", []) if isinstance(data, dict) else []
+        return [x for x in items if isinstance(x, dict) and x.get("name") and x.get("signature")]
+
+    def save_form(self, form: dict, old_name: str = "") -> None:
+        """Сохранить форму (с тем же названием — заменить; old_name — её прежнее название при переименовании)."""
+        items = [x for x in self.forms() if x["name"] not in (form["name"], old_name)] + [form]
+        self.docs_root.mkdir(parents=True, exist_ok=True)
+        tmp = self.docs_root / f"~{FORMS}"
+        tmp.write_text(json.dumps({"forms": items}, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.forms_path)
+
+    def delete_form(self, name: str) -> None:
+        items = [x for x in self.forms() if x["name"] != name]
+        tmp = self.docs_root / f"~{FORMS}"
+        tmp.write_text(json.dumps({"forms": items}, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.forms_path)
+
+    @property
+    def samples_dir(self) -> Path:
+        """Образцы, по которым секретарь показывает форму, — только на этом компьютере, удаляются после сохранения."""
+        return self.docs_root / "Формы заявок — образцы"
+
+    def split_delegation(self, f: CompFolder, name: str) -> list[str]:
+        """Заявка делегации по своей форме (команда в каждой строке) → файлы команд по стандартному бланку;
+        исходный файл — в «Предзаявки/Заявки делегаций (исходные)». Возвращает имена файлов команд ([] — делить
+        нечего)."""
+        from st_secretary import forms as fm
+
+        path = f.preapp_path(name)
+        if path is None:
+            return []
+        raw = read_preapplication(path, self.forms())
+        parts = fm.split_by_team(raw) if raw.team_in_row and not raw.problems else []
+        if len(parts) < 2:
+            return []
+        now = datetime.now()
+        keep = f.preapp_dir / DELEGATION_SOURCES
+        keep.mkdir(exist_ok=True)
+        dest, n = keep / path.name, 2
+        while dest.exists():
+            dest, n = keep / f"{path.stem} ({n}){path.suffix}", n + 1
+        out = []
+        for part in parts:
+            target = f.preapp_dir / f"{safe_name(part.team, 80) or 'Команда'}.xlsx"
+            if target == path:  # файл делегации назван как одна из её команд
+                target = target.with_name(f"{target.stem} (команда).xlsx")
+            if target.exists():
+                f.keep_version(target)  # делегация прислала исправленную заявку — прежняя в «Прежних версиях»
+            head ={"team": part.team, "territory": part.territory, "representative": part.representative,
+                    "contacts": part.contacts, "declared": len(part.rows)}
+            note = (f"Из заявки делегации «{path.name}» (форма «{raw.form}»), {now:%d.%m.%Y %H:%M}. Исходный файл — "
+                    f"в папке «{PREAPPS}\\{DELEGATION_SOURCES}».")
+            tmp = f.preapp_dir / f"~$деление {now:%H%M%S%f}.xlsx"
+            write_preapplication(tmp, head, fm.standard_rows(part), note)
+            os.replace(tmp, target)
+            out.append(target.name)
+        shutil.move(path, dest)
+        return out
 
     # ------------------------------------------------------------ документы команд (сканы, фото)
 
