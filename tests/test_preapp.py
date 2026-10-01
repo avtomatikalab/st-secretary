@@ -247,3 +247,32 @@ def test_mixed_pairs_marks_and_composition(tmp_path, psr_card):
     assert errs == ["смешанная связка «см 2»: мужчин 2, женщин 0 — по Положению нужно не менее 1 м и 1 ж"]
     result = process([read_preapplication(app)], replace(comp, zachety=[replace(pairs, min_men=0, min_women=0)]))
     assert not [i for i in result.issues if i.severity == ERROR]  # без требования Положения — любой состав
+
+
+def test_one_class_per_athlete_by_regulations(tmp_path, psr_card):
+    """Правки, п. 35 (ИБ Кубка г. Красноярска, п. 3): «участник — только в одном классе» — настройка карточки;
+    заявленный во 2 и 3 классе (в разных командах или на разных листах одной заявки) — ошибка; без настройки — можно."""
+    from dataclasses import replace
+
+    from st_secretary.competition import Zachet
+
+    z2, z3 = Zachet("М/Ж", 2, "0840131811Я"), Zachet("М/Ж", 3, "0840131811Я")
+    comp = replace(psr_card, zachety=[z2, z3], one_class=True)
+    row = ["Сталактит", "Красноярск", "Пещерин Олег Петрович"]
+    a = make_application(tmp_path / "Сталактит.xlsx", "Сталактит", "Красноярск", "Пещерин Олег Петрович", "", 3, [
+        [*row, "Сводов Артём Игоревич", "05.06.1992", "II", "м", "М/Ж", 2, "", 1, "", ""],
+        [*row, "Сводов Артём Игоревич", "05.06.1992", "II", "м", "М/Ж", 3, "", 1, "", ""],
+        [*row, "Натёкова Лиза Андреевна", "03.04.1995", "I", "ж", "М/Ж", 3, "", 1, "", ""],
+    ])
+    result = process([read_preapplication(a)], comp)
+    errs = [(i.person, i.text) for i in result.issues if i.field == "Класс"]
+    assert errs == [("Сводов Артём Игоревич", "Сводов А.И.: заявлен во 2 и 3 классе — по Положению можно только в "
+                                                "одном")] * 2
+    result = process([read_preapplication(a)], replace(comp, one_class=False))
+    assert not [i for i in result.issues if i.field == "Класс"]
+    from st_secretary.importers.card_xlsx import load_card
+    from st_secretary.web import forms
+
+    assert load_card(write_card(tmp_path / "Карточка.xlsx", comp)).one_class
+    back, err = forms.form_to_card(forms.card_to_form(comp))
+    assert not err and back.one_class

@@ -53,6 +53,8 @@ MAIN_FIELDS = [
     ("Приём предзаявок до", "preapp_deadline", "Дата окончания приёма предварительных заявок"),
     ("Неофициальные соревнования", "unofficial",
      "«да» — клубные, учебные, слёт: свои зачёты и дисциплины, без ранга и разрядов; пусто — официальные"),
+    ("Участник — только в одном классе", "one_class",
+     "«да» — по Положению спортсмен выступает только в одном классе дистанции (проверка заявок); пусто — в любых"),
 ]
 YES = ("да", "yes", "1", "true", "+", "x", "х", "истина")
 RESULT_WORDS = {"points": "баллы", "time": "время", "time_points": "время + баллы"}
@@ -195,6 +197,7 @@ def _main_values(c: Competition) -> dict:
         "organizers": "\n".join(c.organizers), "calendar_number": c.calendar_number or None,
         "norms_edition": c.norms_edition, "percent_method": PERCENT_LABELS[c.percent_method],
         "preapp_deadline": c.preapp_deadline, "unofficial": "да" if c.unofficial else None,
+        "one_class": "да" if c.one_class else None,
     }
 
 
@@ -322,6 +325,7 @@ def load_card(path: str | Path) -> Competition:
         organizers=organizers,
         calendar_number=clean_spaces(raw["calendar_number"]),
         unofficial=clean_spaces(raw.get("unofficial")).lower() in YES,
+        one_class=clean_spaces(raw.get("one_class")).lower() in YES,
         norms_edition=clean_spaces(raw["norms_edition"]),
         percent_method=percent,
         preapp_deadline=dates["preapp_deadline"],

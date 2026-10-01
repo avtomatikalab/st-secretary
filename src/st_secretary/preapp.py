@@ -16,6 +16,7 @@ from st_secretary.admission import age_in_year, check_athlete, full_years
 from st_secretary.competition import Competition, Zachet
 from st_secretary.importers.preapp_xlsx import RawApplication
 from st_secretary.issues import ERROR, FIXED, INFO, WARNING, Issue
+from st_secretary.names import initials
 from st_secretary.qualification import Qual, parse_qual
 from st_secretary.rank import GROUP, PAIR
 from st_secretary.textclean import (
@@ -148,7 +149,7 @@ def process(apps: list[RawApplication], comp: Competition) -> PreappResult:
             t.entries.append(e)
         _team_checks(t, comp, issues)
 
-    _cross_checks(teams, issues)
+    _cross_checks(teams, issues, comp)
     return PreappResult(teams, issues)
 
 
@@ -478,11 +479,39 @@ def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> 
                     "участник.")
 
 
-def _cross_checks(teams: list[TeamApplication], issues: list[Issue]) -> None:
+def _one_class(teams: list[TeamApplication], issues: list[Issue]) -> None:
+    """Положение: «участник — только в одном классе дистанции» (Правки, п. 35) — человек (ФИО и дата рождения) во
+    всех заявках, в том числе в одной заявке на разных листах (бланк делегации по классам)."""
+    classes: dict[tuple, set[int]] = {}
+    for t in teams:
+        for e in t.entries:
+            if e.zachet and e.zachet.distance_class:
+                classes.setdefault(_person(e), set()).add(e.zachet.distance_class)
+    for t in teams:
+        for e in t.entries:
+            got = sorted(classes.get(_person(e), ()))
+            if len(got) > 1:
+                where = " и ".join(str(c) for c in got)
+                issues.append(Issue(
+                    ERROR, f"{initials(e.name.full)}: заявлен во {where} классе — по Положению можно только в одном",
+                    source=t.source, team=t.team, person=e.name.full, field="Класс", row=e.row,
+                    why="В карточке соревнования отмечено «Участник — только в одном классе дистанции» (из Положения: "
+                        "«разрешено участие одного спортсмена в соревнованиях в одном классе»).",
+                    todo="Уточните у представителя, в каком классе выступает участник, и уберите его из другого "
+                         "зачёта в заявке."))
+
+
+def _person(e: Entry) -> tuple:
+    return e.name.full.lower().replace("ё", "е"), e.birth or e.birth_year
+
+
+def _cross_checks(teams: list[TeamApplication], issues: list[Issue], comp: Competition | None = None) -> None:
+    if comp is not None and comp.one_class:
+        _one_class(teams, issues)
     seen: dict[tuple, TeamApplication] = {}
     for t in teams:
         for e in t.entries:
-            key = (e.name.full.lower().replace("ё", "е"), e.birth or e.birth_year)
+            key = _person(e)
             if key in seen and seen[key] is not t:
                 other = seen[key]
                 issues.append(Issue(

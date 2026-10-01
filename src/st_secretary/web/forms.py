@@ -26,7 +26,7 @@ from st_secretary.reference import Level, disciplines, norm_editions
 from st_secretary.textclean import clean_spaces
 
 MAIN_FIELDS = ["title", "kind", "level", "date_from", "date_to", "place", "host_territory", "organizers",
-               "calendar_number", "norms_edition", "percent_method", "preapp_deadline", "unofficial"]
+               "calendar_number", "norms_edition", "percent_method", "preapp_deadline", "unofficial", "one_class"]
 REQUIRED = {"title": "Наименование", "kind": "Вид", "level": "Уровень", "date_from": "Дата начала",
             "date_to": "Дата окончания", "place": "Место проведения",
             "host_territory": "Территория организаторов", "norms_edition": "Редакция норм"}
@@ -81,6 +81,7 @@ def card_to_form(comp: Competition | None) -> dict:
         "percent_method": comp.percent_method.name if comp.percent_method else "",
         "preapp_deadline": comp.preapp_deadline.isoformat() if comp.preapp_deadline else "",
         "unofficial": "1" if comp.unofficial else "",
+        "one_class": "1" if comp.one_class else "",
     }
     officials = official_rows(comp.officials)
     zachety = [{
@@ -232,7 +233,7 @@ def form_to_card(form: dict) -> tuple[Competition | None, dict[str, str]]:
         date_to=dates["date_to"], place=clean_spaces(m["place"]), host_territory=clean_spaces(m["host_territory"]),
         organizers=organizers, calendar_number=clean_spaces(m["calendar_number"]), norms_edition=m["norms_edition"],
         percent_method=percent, preapp_deadline=dates["preapp_deadline"], officials=officials, zachety=zachety,
-        unofficial=unofficial,
+        unofficial=unofficial, one_class=bool(m.get("one_class")),
     ), {}
 
 

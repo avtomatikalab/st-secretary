@@ -171,6 +171,7 @@ class Competition:
     officials: list[Official] = field(default_factory=list)
     zachety: list[Zachet] = field(default_factory=list)
     unofficial: bool = False  # неофициальные (клубные, учебные, слёт): свои зачёты, без ранга и разрядов (решение 038)
+    one_class: bool = False  # по Положению участник выступает только в одном классе дистанции (Правки, п. 35)
 
     @property
     def year(self) -> int:
