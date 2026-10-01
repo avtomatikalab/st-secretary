@@ -1367,7 +1367,7 @@ def test_admission_doctor_mark_sets_med_for_team(client, tmp_path, psr_card):
 
 
 def test_author_in_footer_quietly(client):
-    """Правки.md, п. 11: «СТ-Секретарь 0.2.0 · автор Udnikov Denis» — мелко в подвале страниц программы; на печати и
+    """Правки.md, п. 11: «СТ-Секретарь <версия> · автор Udnikov Denis» — мелко в подвале страниц программы; на печати и
     на страницах для судей и табло — нет."""
     import tomllib
 
