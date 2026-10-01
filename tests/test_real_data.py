@@ -159,3 +159,28 @@ def test_verify_2025_folder():
     assert sum("имя и отчество слитно" in x for x in t) == 2
     assert (rep.contracts, rep.tabel_rows) == (17, 17)
     assert rep.cross == []  # дни, ставки и суммы договоров сходятся с табелем
+
+
+SPELEO2021 = "Эталонные_данные/Спелео/2021_ЧК_ПК_края/протоколы.json"
+
+
+def test_speleo_2021_protocols_recomputed():
+    """Правки, п. 34: протоколы ЧК и ПК Красноярского края 2021 (спелео, СЕКРЕТАРЬ_ST) пересчитаны программой — ранг
+    совпал везде, результаты и места — кроме известных расхождений (отчёт «Отчёты/Сверка_спелео-2021.md»: 1 балл =
+    60 с в группе ЧК; места 12–13 у ПК-3 различаются долями секунды, которых на скане нет)."""
+    path = DATA / SPELEO2021
+    if not path.is_file():
+        pytest.skip("нет эталона спелео-2021")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+    import verify_speleo_2021 as v
+
+    known = {("ЧК-5", 3), ("ЧК-5", 5), ("ПК-3", 13)}
+    for p in json.loads(path.read_text(encoding="utf-8"))["protocols"]:
+        c = v.compare(p)
+        ref, ours = c["rank"]
+        assert (ref is None) == (ours is None), p["id"]
+        if ref:
+            assert float(ref.replace(",", ".")) == float(ours.replace(",", ".")), p["id"]
+        for x in c["rows"]:
+            if (p["id"], x["n"]) not in known:
+                assert not {"result", "place"} & set(x["diff"]), (p["id"], x)
