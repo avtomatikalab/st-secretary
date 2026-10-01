@@ -84,9 +84,9 @@ class Journal:
         if self.crashed_before:
             log.warning("Прошлый запуск (%s) закончился неожиданно — программа не выключалась штатно",
                         self.previous or "время неизвестно")
-        from st_secretary import __version__
+        from st_secretary import version_label
 
-        log.info("Запуск: СТ-Секретарь %s; %s; Python %s%s", __version__, platform.platform(), platform.python_version(),
+        log.info("Запуск: СТ-Секретарь %s; %s; Python %s%s", version_label(), platform.platform(), platform.python_version(),
                  "".join(f"; {k}: {v}" for k, v in info.items()))
         self._install_close_handlers()
         return self

@@ -1415,7 +1415,7 @@ def test_author_in_footer_quietly(client):
     from st_secretary import __version__
 
     home = client.get("/").text
-    assert f'<p class="page-foot">СТ-Секретарь {__version__} · автор Udnikov Denis' in home
+    assert f'<p class="page-foot">СТ-Секретарь {__version__} бета · автор Udnikov Denis' in home
     css = (Path(__file__).parents[1] / "src" / "st_secretary" / "web" / "static" / "style.css").read_text(encoding="utf-8")
     assert "@media print { .page-foot { display: none; } }" in css
     tpl = Path(__file__).parents[1] / "src" / "st_secretary" / "web" / "templates"

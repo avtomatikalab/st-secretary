@@ -12,8 +12,8 @@ from fastapi.responses import JSONResponse, Response
 from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException
 
-from st_secretary import __version__, updates
 from st_secretary import backup as bk
+from st_secretary import updates, version_label
 from st_secretary.web.common import _redirect, log
 
 
@@ -26,7 +26,7 @@ def register(app, cx) -> None:
         return bool(rel and rel.installable and app.state.installer and app.state.shutdown is not None)
 
     def ctx() -> dict:
-        return {"rel": app.state.update, "current": __version__, "can_install": can_install(),
+        return {"rel": app.state.update, "current": version_label(), "can_install": can_install(),
                 "installer": app.state.installer, "portable": app.state.installer is not None}
 
     @app.get("/update/banner")

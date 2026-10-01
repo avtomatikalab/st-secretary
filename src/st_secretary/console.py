@@ -19,7 +19,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from st_secretary import __version__, updates
+from st_secretary import STAGE, __version__, updates
 
 log = logging.getLogger("st_secretary")
 CHECK_EVERY = 4 * 3600  # раз в 4 часа, пока программа работает
@@ -38,11 +38,12 @@ def commits_word(n: int) -> str:
 
 def version_line(portable: bool, head: updates.Commit | None = None, source: bool = False,
                  platform: str = sys.platform) -> str:
-    if portable:
-        return f"Версия {__version__} (переносная, {system_name(platform)})"
+    if portable:  # «Версия 0.4.0 (бета, переносная, Windows)» (Правки, п. 42)
+        return f"Версия {__version__} ({STAGE + ', ' if STAGE else ''}переносная, {system_name(platform)})"
+    v = f"{__version__} ({STAGE})" if STAGE else __version__
     if head:
-        return f"Версия {__version__} из исходников — коммит {head.hash} от {head.when}: «{head.subject}»"
-    return f"Версия {__version__}" + (" из исходников" if source else "")
+        return f"Версия {v} из исходников — коммит {head.hash} от {head.when}: «{head.subject}»"
+    return f"Версия {v}" + (" из исходников" if source else "")
 
 
 def release_line(rel: updates.Release | None, current: str = __version__) -> str:

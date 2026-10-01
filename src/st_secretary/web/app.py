@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException
 
-from st_secretary import __version__, system, updates
+from st_secretary import __version__, system, updates, version_label
 from st_secretary.competition import LEVEL_LABELS, RESULT_KINDS, UNIT_KINDS
 from st_secretary.importers.card_xlsx import CardError
 from st_secretary.importers.preapp_xlsx import row_place
@@ -83,7 +83,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     templates.env.filters["row_place"] = row_place  # «строка 12» или «лист 2, строка 12»
     # Метка для адресов стилей и скриптов: меняется вместе с файлами, чтобы браузер не держал старую версию.
     static_version = f"{__version__}-{max(int(p.stat().st_mtime) for p in (HERE / 'static').iterdir())}"
-    templates.env.globals.update(steps=STEPS, step_url=_step_url, version=static_version, app_version=__version__,
+    templates.env.globals.update(steps=STEPS, step_url=_step_url, version=static_version, app_version=version_label(),
                                  labels=SEVERITY_LABEL,
                                  level_labels=LEVEL_LABELS, empty_zachet=empty_zachet(),
                                  ERROR=ERROR, WARNING=WARNING, CHECKED=CHECKED, FIXED=FIXED, INFO=INFO,

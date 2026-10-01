@@ -9,11 +9,11 @@ from st_secretary.updates import Commit, GitNews, Release
 
 
 def test_version_line_portable_and_source():
-    assert version_line(True, platform="darwin") == f"Версия {__version__} (переносная, macOS)"
+    assert version_line(True, platform="darwin") == f"Версия {__version__} (бета, переносная, macOS)"
     head = Commit("9d547bf", "30.09.2026 23:56", "Убытие раньше прибытия")
-    assert version_line(False, head, True) == (f"Версия {__version__} из исходников — коммит 9d547bf от "
+    assert version_line(False, head, True) == (f"Версия {__version__} (бета) из исходников — коммит 9d547bf от "
                                                "30.09.2026 23:56: «Убытие раньше прибытия»")
-    assert version_line(False, None, True) == f"Версия {__version__} из исходников"
+    assert version_line(False, None, True) == f"Версия {__version__} (бета) из исходников"
 
 
 def test_update_result_lines():
@@ -92,3 +92,28 @@ def test_console_first_check_says_latest_once(monkeypatch):
     assert out[-1].startswith("Проверить обновления не удалось — нет интернета")
     off = Console(app_stub(), lambda: None, enabled=False, source=None, portable=True, out=out.append)
     assert off.head_lines()[1] == "Проверка обновлений выключена."
+
+
+def test_stage_mark_beside_version_not_in_it():
+    """Правки, п. 42: пометка «бета» — отдельно от номера: номер понимает проверка обновлений (pre-release с «-beta»
+    обновление не увидит), пометку видит человек — в окне программы, подвале страниц, журнале."""
+    from st_secretary import STAGE, version_label
+    from st_secretary.updates import parse_version
+
+    assert parse_version(__version__) is not None and "бета" not in __version__
+    assert STAGE == "бета" and version_label() == f"{__version__} бета"
+    assert version_line(True, platform="win32") == f"Версия {__version__} (бета, переносная, Windows)"
+
+
+def test_stage_mark_in_page_footer(tmp_path):
+    import pytest
+
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from st_secretary.web.app import create_app
+
+    client = TestClient(create_app(tmp_path / "данные", opener=lambda p: None, docs_dir=tmp_path / "документы",
+                                   board_host="127.0.0.1"))
+    assert f"СТ-Секретарь {__version__} бета · автор" in client.get("/").text
+    assert client.get("/health").json()["version"] == __version__  # для программ — номер без пометки

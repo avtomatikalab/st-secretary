@@ -35,9 +35,9 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 from fastapi.testclient import TestClient
 
-from st_secretary import __version__, training
 from st_secretary import commission as cm
 from st_secretary import judge_sync as js
+from st_secretary import training, version_label
 from st_secretary.web.app import create_app
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -425,7 +425,7 @@ def write(shots: dict[str, Path], info: dict, path: Path) -> Path:
     t = d.add_paragraph()
     t.alignment = WD_ALIGN_PARAGRAPH.CENTER
     t.paragraph_format.space_before = Pt(160)
-    r = t.add_run(f"Версия программы {__version__} · автор Udnikov Denis\n"
+    r = t.add_run(f"Версия программы {version_label()} · автор Udnikov Denis\n"
                   "Снимки экрана — на учебном соревновании с выдуманными данными.\n"
                   "Исходный код и новые версии: github.com/avtomatikalab/st-secretary")
     r.font.size, r.font.color.rgb = Pt(11), GRAY
