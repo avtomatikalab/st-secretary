@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 
 from st_secretary import commission as cm
+from st_secretary.preapp import pair_label
 from st_secretary.psr_run import Member, TeamInput
 from st_secretary.rank import CREW, GROUP, INDIVIDUAL, PAIR
 
@@ -32,15 +33,6 @@ def _member(e) -> Member:
     b, year = getattr(e, "birth", None), getattr(e, "birth_year", None)
     birth = b.isoformat() if b else str(year or "")
     return Member(e.name.full, e.qual, e.qual.label if e.qual is not None else "", e.chip, birth)
-
-
-def _pair_label(e) -> str:
-    """«см», «см 2», «м» — как пишут в заявке; номер связки из отдельной колонки добавляется."""
-    code = " ".join(str(e.pair).lower().split())
-    num = str(e.pair_num or "").strip()
-    if num and not code.endswith(num):
-        code = f"{code} {num}".strip()
-    return code or "1"
 
 
 def zachet_units(teams: list, z, rank_format: str | None) -> list[TeamInput]:
@@ -73,7 +65,7 @@ def zachet_units(teams: list, z, rank_format: str | None) -> list[TeamInput]:
             groups: dict[str, list] = {}
             for p in people:
                 if p.entry.pair:
-                    groups.setdefault(_pair_label(p.entry), []).append(p)
+                    groups.setdefault(pair_label(p.entry), []).append(p)
             for label, ps in groups.items():
                 title = t.team.team if len(groups) == 1 else f"{t.team.team} ({label})"
                 out.append(TeamInput(f"{t.file}#связка:{label}", title, number=number,

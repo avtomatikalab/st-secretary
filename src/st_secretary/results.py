@@ -14,6 +14,7 @@ from datetime import date
 from st_secretary.competition import Competition
 from st_secretary.preapp import PreappResult
 from st_secretary.qualification import parse_members_with_quals
+from st_secretary.rank import CREW, GROUP, INDIVIDUAL, PAIR
 
 ROMAN = {1: "I", 2: "II", 3: "III"}
 MANUAL = "вручную"
@@ -168,15 +169,29 @@ def date_text(d: date) -> str:
     return f"{d.day} {MONTHS_GEN[d.month - 1]} {d.year} г."
 
 
-GROUP_WORDS = {"М/Ж": "смешанные группы", "МУЖЧИНЫ": "мужчины", "ЖЕНЩИНЫ": "женщины"}
+GROUP_WORDS = {"МУЖЧИНЫ": "мужчины", "ЖЕНЩИНЫ": "женщины"}
+# «М/Ж» по составу (Правки, п. 31; протоколы ЧК и ПК края 2021): связки — «СМЕШАННЫЕ СВЯЗКИ», группы — «СМЕШАННЫЕ
+# ГРУППЫ», в личной — без «смешанных»
+MIXED_WORDS = {PAIR: "смешанные связки", GROUP: "смешанные группы", CREW: "смешанные экипажи"}
 
 
-def group_label(z: ZachetResults, zachet_group: str) -> str:
-    """Как назвать группу в дипломе: из шапки протокола («СМЕШАННЫЕ ГРУППЫ»), иначе по зачёту."""
+def group_words(group: str, rank_format: str | None = None, long: bool = False) -> str:
+    """Как назвать группу зачёта: «М/Ж» связок — «смешанные связки», групп — «смешанные группы», личной —
+    «мужчины/женщины»; long — как в шапке протокола: «мужчины/женщины, смешанные связки»."""
+    if group.upper() != "М/Ж":
+        return GROUP_WORDS.get(group.upper(), group)
+    if rank_format == INDIVIDUAL:
+        return "мужчины/женщины"
+    mixed = MIXED_WORDS.get(rank_format or GROUP, MIXED_WORDS[GROUP])
+    return f"мужчины/женщины, {mixed}" if long else mixed
+
+
+def group_label(z: ZachetResults, zachet_group: str, rank_format: str | None = None) -> str:
+    """Как назвать группу в дипломе: из шапки протокола («СМЕШАННЫЕ ГРУППЫ»), иначе по зачёту и составу."""
     if z.group_text:
         tail = z.group_text.split(".")[-1].strip()
         return (tail or z.group_text).lower()
-    return GROUP_WORDS.get(zachet_group.upper(), zachet_group)
+    return group_words(zachet_group, rank_format)
 
 
 def rotations(names: list[str]) -> list[list[str]]:

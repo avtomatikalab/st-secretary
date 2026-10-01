@@ -17,6 +17,7 @@ from openpyxl.utils import get_column_letter
 
 from st_secretary.competition import Competition
 from st_secretary.psr_run import ZachetRun, points_text, result_text
+from st_secretary.results import group_words
 from st_secretary.time_run import clock_text
 
 THIN = Side(style="thin", color="7F7F7F")
@@ -24,7 +25,6 @@ BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 WRAP = Alignment(vertical="center", wrap_text=True)
 HEAD = PatternFill("solid", fgColor="DCE6F1")
-GROUP_WORDS = {"М/Ж": "мужчины/женщины, смешанные группы", "МУЖЧИНЫ": "мужчины", "ЖЕНЩИНЫ": "женщины"}
 
 PRELIMINARY, OFFICIAL = "preliminary", "official"
 
@@ -68,7 +68,7 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     line(r + 3, z.header_text)
     rank = run.rank.formatted() if run.rank else "не определялся"
     zname = f"Зачёт «{z.name}». " if z.name else ""
-    line(r + 4, f"{zname}Группа: {GROUP_WORDS.get(z.group.upper(), z.group)}"
+    line(r + 4, f"{zname}Группа: {group_words(z.group, z.rank_format, long=True)}"
          + ("" if comp.unofficial else f". Квалификационный ранг: {rank}"))
     r += 6
     for c, h in enumerate(head, start=1):

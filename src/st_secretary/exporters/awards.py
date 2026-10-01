@@ -51,7 +51,8 @@ def _zachet(comp: Competition, key: str):
 
 def discipline_line(comp: Competition, z: ZachetResults) -> str:
     zz = _zachet(comp, z.key)
-    return f"в спортивной дисциплине «{zz.discipline_name}» {zz.distance_class} класса, {group_label(z, zz.group)}"
+    return (f"в спортивной дисциплине «{zz.discipline_name}» {zz.distance_class} класса, "
+            f"{group_label(z, zz.group, zz.rank_format)}")
 
 
 def write_diplomas(results: list[ZachetResults], comp: Competition, path: str | Path, top_cm: float = 9.0) -> Path:
@@ -115,7 +116,7 @@ def write_awardees(results: list[ZachetResults], comp: Competition, path: str | 
     _para(doc, f"{comp.dates_text}, {comp.place}", 12, space_after=14)
     for z in results:
         zz = _zachet(comp, z.key)
-        _para(doc, f"«{zz.discipline_name}» {zz.distance_class} класса, {group_label(z, zz.group)}", 13, True,
+        _para(doc, f"«{zz.discipline_name}» {zz.distance_class} класса, {group_label(z, zz.group, zz.rank_format)}", 13, True,
               WD_ALIGN_PARAGRAPH.LEFT)
         for p in sorted(z.medalists, key=lambda p: -p.place):
             names = ", ".join(m.first_last for m in p.members)

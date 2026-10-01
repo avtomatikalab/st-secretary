@@ -16,7 +16,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from st_secretary.competition import Competition
-from st_secretary.exporters.results_protocol import GROUP_WORDS
+from st_secretary.results import group_words
 from st_secretary.start_list import METHODS, StartList, hm_text, rank_word
 
 THIN = Side(style="thin", color="7F7F7F")
@@ -76,7 +76,7 @@ def write_start_protocol(comp: Competition, sl: StartList, path: str | Path, at:
     line(r + 3, z.header_text)
     day = f"; старт {sl.start_day:%d.%m.%Y}" if sl.start_day else ""
     zname = f"Зачёт «{z.name}». " if z.name else ""
-    line(r + 4, f"{zname}Группа: {GROUP_WORDS.get(z.group.upper(), z.group)}{day}")
+    line(r + 4, f"{zname}Группа: {group_words(z.group, z.rank_format, long=True)}{day}")
     r += 6
     head_row = r
     for c, h in enumerate(head, start=1):

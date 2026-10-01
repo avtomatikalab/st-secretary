@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
@@ -16,7 +17,7 @@ from st_secretary.competition import Competition, Zachet
 from st_secretary.importers.preapp_xlsx import RawApplication
 from st_secretary.issues import ERROR, FIXED, INFO, WARNING, Issue
 from st_secretary.qualification import Qual, parse_qual
-from st_secretary.rank import GROUP
+from st_secretary.rank import GROUP, PAIR
 from st_secretary.textclean import (
     PersonName,
     clean_spaces,
@@ -332,6 +333,7 @@ def _entry(row: int, num: int, v: dict, t: TeamApplication, comp: Competition, a
 
     # участие в дистанциях (колонки L–O)
     personal, pair, pair_num, team_dist = (clean_spaces(v[k]) for k in ("personal", "pair", "pair_num", "team_dist"))
+    pair = pair_code(pair)
     if all_group and not team_dist:
         team_dist = "1"
         add(FIXED, "участие в дистанции-группе не отмечено — проставлено «1» (соревнования только командные)",
@@ -385,6 +387,46 @@ def _admission(e: Entry, comp: Competition, add) -> None:
                 why=i.why, todo=i.todo)
 
 
+_MIXED_PAIR = re.compile(r"(?:смеш\w*|см|м\s*[/+]\s*ж|ж\s*[/+]\s*м|мж)\.?(?=[\s\d]|$)\s*(.*)$", re.IGNORECASE)
+
+
+def pair_code(value: str) -> str:
+    """Отметка участия в связках: «см», «смеш», «смешанная», «м/ж» — смешанная связка «см» (Правки, п. 31); номер
+    связки сохраняется («СМ2» → «см 2»). Остальное — как в заявке («м», «ж», «1», «+»)."""
+    s = clean_spaces(value)
+    m = _MIXED_PAIR.fullmatch(s)
+    return f"см {m.group(1).strip()}".strip() if m else s
+
+
+def pair_label(e) -> str:
+    """Какая это связка в команде: «см», «см 2», «м» — как в заявке; номер связки из отдельной колонки добавляется."""
+    code = " ".join(str(e.pair).lower().split())
+    num = str(e.pair_num or "").strip()
+    if num and not code.endswith(num):
+        code = f"{code} {num}".strip()
+    return code or "1"
+
+
+def _pair_checks(members: list[Entry], z, add) -> None:
+    """Состав связок (Правки, п. 31): в смешанной связке («см») — мужчин и женщин не меньше, чем в Положении
+    (карточка: «мужчин не менее», «женщин не менее»); без требования — любые."""
+    marked = [e for e in members if e.pair]
+    pairs: dict[str, list[Entry]] = {}
+    for e in marked or members:
+        pairs.setdefault(pair_label(e) if marked else "1", []).append(e)
+    for label, ps in pairs.items():
+        if not label.startswith("см") or not (z.min_men or z.min_women):
+            continue
+        men = sum(1 for e in ps if e.sex == "м")
+        women = sum(1 for e in ps if e.sex == "ж")
+        if men < z.min_men or women < z.min_women:
+            add(ERROR, f"смешанная связка «{label}»: мужчин {men}, женщин {women} — по Положению нужно не менее "
+                       f"{z.min_men} м и {z.min_women} ж", "Состав связки",
+                "Требование к составу связки — из Положения (карточка соревнования, зачёт "
+                f"{z.key}). «см» в колонке «Участие в дистанции связок» — смешанная связка.",
+                "Проверьте пол участников и отметки связок в заявке; если всё верно — состав нужно менять.")
+
+
 def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> None:
     by_zachet: dict[str, list[Entry]] = {}
     for e in t.entries:
@@ -396,6 +438,8 @@ def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> 
 
     for members in by_zachet.values():
         z = members[0].zachet
+        if z.rank_format == PAIR:
+            _pair_checks(members, z, add)
         if z.rank_format != GROUP:
             continue
         n = len(members)

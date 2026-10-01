@@ -56,3 +56,16 @@ def test_group_whole_team_or_several_groups_and_rejected_left_out():
     assert zachet_units([no], z, "group")[0].admitted is False
     other = team("Ель.xlsx", "Ель", 4, [entry("Ж", 1, z=Zachet("Ж", 3, "0840161811Я"))])
     assert zachet_units([other], z, "group") == []  # участник другого зачёта
+
+
+def test_mixed_group_words_by_format():
+    """Правки, п. 31: «М/Ж» у связок — «СМЕШАННЫЕ СВЯЗКИ», у групп — «СМЕШАННЫЕ ГРУППЫ», в личной — без «смешанных»
+    (как в протоколах ЧК и ПК края 2021); то же в шапке протокола и в дипломах."""
+    from st_secretary.results import ZachetResults, group_label, group_words
+
+    assert group_words("М/Ж", "pair") == "смешанные связки" and group_words("М/Ж", "group") == "смешанные группы"
+    assert group_words("М/Ж", "individual") == "мужчины/женщины"
+    assert group_words("М/Ж", "pair", long=True) == "мужчины/женщины, смешанные связки"
+    assert group_words("ЖЕНЩИНЫ", "pair") == "женщины" and group_words("Юниоры", "pair") == "Юниоры"
+    z = ZachetResults("М/Ж_2", "", "", "", [])
+    assert group_label(z, "М/Ж", Zachet("М/Ж", 2, "0840261811Я").rank_format) == "смешанные связки"

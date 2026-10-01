@@ -220,3 +220,30 @@ def test_sheet_without_table_is_reported_not_skipped_silently(tmp_path, psr_card
     assert len(app.rows) == 2 and app.notes and "лист «Ещё участники» не прочитан" in app.notes[0][0]
     result = process([app], psr_card)
     assert any(i.severity == WARNING and "Ещё участники" in i.text for i in result.issues)
+
+
+def test_mixed_pairs_marks_and_composition(tmp_path, psr_card):
+    """Правки, п. 31: «см», «смеш», «м/ж» в колонке связок — смешанная связка «см»; её состав — по Положению
+    (мужчин и женщин не менее, чем в карточке), без требования — любой."""
+    from dataclasses import replace
+
+    from st_secretary.competition import Zachet
+    from st_secretary.preapp import pair_code
+
+    assert [pair_code(x) for x in ("см", "СМ2", "смеш", "Смешанная", "м/ж", "М + Ж", "м", "ж", "1", "+")] == [
+        "см", "см 2", "см", "см", "см", "см", "м", "ж", "1", "+"]
+    pairs = Zachet("М/Ж", 2, "0840261811Я", min_men=1, min_women=1)
+    comp = replace(psr_card, zachety=[pairs])
+    row = ["Сталактит", "Красноярск", "Пещерин Олег Петрович"]
+    app = make_application(tmp_path / "Сталактит.xlsx", "Сталактит", "Красноярск", "Пещерин Олег Петрович", "", 4, [
+        [*row, "Пещерин Олег Петрович", "01.02.1990", "I", "м", "М/Ж", 2, "", "", "смеш", ""],
+        [*row, "Натёкова Лиза Андреевна", "03.04.1995", "I", "ж", "М/Ж", 2, "", "", "м/ж", ""],
+        [*row, "Сводов Артём Игоревич", "05.06.1992", "II", "м", "М/Ж", 2, "", "", "см", "2"],
+        [*row, "Колодцев Иван Петрович", "07.08.1993", "II", "м", "М/Ж", 2, "", "", "см", "2"],
+    ])
+    result = process([read_preapplication(app)], comp)
+    assert [e.pair for e in result.teams[0].entries] == ["см", "см", "см", "см"]
+    errs = [i.text for i in result.issues if i.severity == ERROR]
+    assert errs == ["смешанная связка «см 2»: мужчин 2, женщин 0 — по Положению нужно не менее 1 м и 1 ж"]
+    result = process([read_preapplication(app)], replace(comp, zachety=[replace(pairs, min_men=0, min_women=0)]))
+    assert not [i for i in result.issues if i.severity == ERROR]  # без требования Положения — любой состав

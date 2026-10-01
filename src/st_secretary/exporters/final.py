@@ -52,7 +52,7 @@ def write_extracts(results: list[ZachetResults], comp: Competition, path: str | 
             (f"Спортивная дисциплина: «{zz.discipline_name}», код ВРВС {zz.discipline_code}; "
              f"{zz.distance_class} класс", False, 11),
             (f"Дата и место проведения: {comp.dates_text}, {comp.place}", False, 11),
-            (f"Пол и возрастная группа: {group_label(z, zz.group)}"
+            (f"Пол и возрастная группа: {group_label(z, zz.group, zz.rank_format)}"
              + (f"; квалификационный ранг соревнований: {z.rank}" if z.rank else ""), False, 11),
         ]
         for r, (text, bold, size) in enumerate(lines, start=1):
@@ -138,7 +138,7 @@ def write_report(comp: Competition, results: list[ZachetResults], people: list, 
     _para(doc, "РЕЗУЛЬТАТЫ СОРЕВНОВАНИЙ", 13, True, left)
     for z in results:
         zz = next(x for x in comp.zachety if x.key == z.key)
-        _para(doc, f"«{zz.discipline_name}» — {zz.distance_class} класс, {group_label(z, zz.group)}"
+        _para(doc, f"«{zz.discipline_name}» — {zz.distance_class} класс, {group_label(z, zz.group, zz.rank_format)}"
                    + (f"; ранг {z.rank}" if z.rank else ""), 12, True, left, space_after=2)
         for p in z.medalists:
             names = ", ".join(m.fio.rsplit(" ", 1)[0] if len(m.fio.split()) > 2 else m.fio for m in p.members)
