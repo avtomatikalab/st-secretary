@@ -22,6 +22,13 @@
 </div>
 {% endif %}
 <div data-update-banner="/update/banner"></div>
+{% if fb_unsent %}
+<div class="panel panel-warn fb-unsent">
+  <h2>{{ icon("alert") }} Есть неотправленные сообщения: {{ fb_unsent }}</h2>
+  <p>Ошибки и предложения, отмеченные кнопкой «Сообщить», ждут отправки разработчику.</p>
+  <div class="upd-actions"><a class="btn btn-primary" href="/feedback">Отправить разработчику</a></div>
+</div>
+{% endif %}
 
 {% if import_errors %}
 <div class="panel panel-err">
@@ -105,7 +112,8 @@
 </div>
 
 <p class="home-extra"><a class="btn btn-ghost" href="/help" target="_blank" rel="noopener">{{ icon("file", 18) }}Инструкция секретаря</a>
-{% if items %}<a class="btn btn-ghost" href="/practice">{{ icon("table", 18) }}Судейская практика — по всем соревнованиям</a>{% endif %}</p>
+{% if items %}<a class="btn btn-ghost" href="/practice">{{ icon("table", 18) }}Судейская практика — по всем соревнованиям</a>{% endif %}
+<a class="btn btn-ghost" href="/feedback">{{ icon("alert", 18) }}Мои сообщения разработчику</a></p>
 
 <div class="data-dir">
   <span>Данные хранятся в папке: <code>{{ data_dir }}</code></span>

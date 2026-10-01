@@ -7,8 +7,10 @@
   <h1>{{ title }}</h1>
   <p>{{ text }}</p>
   {% if crash %}
-  <p class="muted">Ваши данные не пострадали. Если ошибка повторяется, пришлите разработчикам текст выше и опишите,
-    что делали перед этим{% if journal_on %}, — или просто журнал программы: там всё записано{% endif %}.</p>
+  <p class="muted">Ваши данные не пострадали. Нажмите «Сообщить об ошибке» и в двух словах напишите, что делали перед
+    этим, — текст ошибки и место в программе запишутся сами.</p>
+  <p><button type="button" class="btn btn-primary btn-big" data-feedback data-feedback-kind="Ошибка">{{ icon("alert") }}Сообщить об ошибке</button></p>
+  <script type="application/json" id="fb-error">{{ {"error": trace|default("")}|tojson }}</script>
   {% if journal_on %}<p><a class="btn" href="/journal.zip">{{ icon("download") }}Скачать журнал программы</a></p>{% endif %}
   {% endif %}
   <a class="btn btn-primary" href="/">На главную</a>

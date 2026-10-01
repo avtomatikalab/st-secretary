@@ -52,7 +52,7 @@ def register(app, cx) -> None:
         journal = app.state.journal
         return page(request, "home.html", status_code=status_code, items=items, data_dir=store.root,
                     import_errors=import_errors, crashed_before=bool(journal and journal.crashed_before),
-                    crashed_at=journal.previous if journal else "", festivals=groups,
+                    crashed_at=journal.previous if journal else "", festivals=groups, fb_unsent=cx.feedback_unsent(),
                     loose=[it for it in items if it["folder"].id not in in_fest])
 
     @app.get("/")

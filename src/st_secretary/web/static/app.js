@@ -776,4 +776,326 @@
     window.addEventListener("beforeunload", function (e) { if (changed) { e.preventDefault(); e.returnValue = ""; } });
     draw();
   }
+  // --- «Сообщить» (Правки, п. 43; решение 044): ошибка, неудобство или предложение — прямо с этой страницы, файлом
+  // для разработчика. Путь до сообщения (страницы и нажатые кнопки — без введённых значений) и ошибки JS копятся в
+  // этой вкладке; снимок — по желанию: снять вкладку, вставить Ctrl+V или перетащить картинку; пометки — красным,
+  // «Скрыть» — чёрным. Сохраняется только снимок с пометками.
+  (function feedback() {
+    var PATH = "st-fb-path", ERRS = "st-fb-errors";
+    function load(key) { try { return JSON.parse(sessionStorage.getItem(key) || "[]"); } catch (e) { return []; } }
+    function keep(key, item, n) {
+      try {
+        var a = load(key);
+        a.push(item);
+        sessionStorage.setItem(key, JSON.stringify(a.slice(-n)));
+      } catch (e) { /* без sessionStorage — без пути до сообщения */ }
+    }
+    function clock() { var d = new Date(); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); }
+    function short(s) { return String(s || "").replace(/\s+/g, " ").trim().slice(0, 80); }
+    var h1 = document.querySelector("h1");
+    var title = short(h1 ? h1.textContent : document.title);
+    var here = location.pathname + location.search;
+    try { here = decodeURIComponent(here); } catch (e) { /* адрес с «%» — как есть */ }
+    keep(PATH, clock() + " открыта «" + title + "» " + here, 10);
+    document.addEventListener("click", function (e) {
+      var b = e.target && e.target.closest ? e.target.closest("button, a.btn, input[type=submit]") : null;
+      if (!b || b.closest(".fb-panel")) return;
+      keep(PATH, clock() + " нажата «" + short(b.textContent || b.value || b.getAttribute("aria-label")) + "»", 10);
+    }, true);
+    window.addEventListener("error", function (e) {
+      keep(ERRS, clock() + " " + short(e.message) + (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : ""), 10);
+    });
+
+    // письмо разработчику после «Отправить» и кнопки «Скопировать» (страница «Мои сообщения»)
+    document.querySelectorAll("[data-copy]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        if (!navigator.clipboard) return;
+        navigator.clipboard.writeText(b.dataset.copy).then(function () { b.textContent = "Скопировано"; });
+      });
+    });
+    var auto = document.querySelector("a[data-auto-open]");
+    if (auto) {
+      if (window.history && history.replaceState) history.replaceState(null, "", location.pathname);
+      location.href = auto.href;
+    }
+
+    var buttons = document.querySelectorAll("[data-feedback]");
+    if (!buttons.length) return;
+    var panel = null, canvas = null, base = null, ops = [], cur = null, tool = "pen", place = "", shotInfo = null;
+
+    function el(sel) { return panel.querySelector(sel); }
+    function say(text) { el(".fb-msg").textContent = text; }
+
+    function build() {
+      panel = document.createElement("div");
+      panel.className = "fb-panel";
+      panel.hidden = true;
+      panel.innerHTML =
+        '<div class="fb-box" role="dialog" aria-modal="true" aria-labelledby="fb-title">' +
+        '<div class="fb-head"><h2 id="fb-title">Сообщить разработчику</h2>' +
+        '<button type="button" class="fb-close" aria-label="Закрыть">×</button></div>' +
+        '<div class="fb-kinds" role="radiogroup" aria-label="Что это">' +
+        '<label><input type="radio" name="fb-kind" value="Ошибка" checked> Ошибка</label>' +
+        '<label><input type="radio" name="fb-kind" value="Неудобно"> Неудобно</label>' +
+        '<label><input type="radio" name="fb-kind" value="Предложение"> Предложение</label></div>' +
+        '<label for="fb-text">Что делали и что пошло не так (или как было бы удобно)</label>' +
+        '<textarea id="fb-text" rows="4"></textarea>' +
+        '<label for="fb-who">Кто сообщает <small class="muted">(необязательно)</small></label>' +
+        '<input id="fb-who" type="text" autocomplete="name">' +
+        '<div class="fb-place"><button type="button" class="btn btn-ghost btn-small" data-fb="place">Показать место на странице</button>' +
+        ' <span class="fb-place-text muted"></span></div>' +
+        '<div class="fb-shot">' +
+        '<div class="fb-shot-actions"><button type="button" class="btn btn-small" data-fb="capture">Сделать снимок этой страницы</button>' +
+        ' <span class="muted">или вставьте снимок (Ctrl+V, на Mac — Cmd+V) или перетащите картинку сюда</span></div>' +
+        '<div class="fb-tools" hidden>' +
+        '<button type="button" class="btn btn-small is-on" data-tool="pen">Карандаш</button>' +
+        '<button type="button" class="btn btn-small" data-tool="arrow">Стрелка</button>' +
+        '<button type="button" class="btn btn-small" data-tool="rect">Рамка</button>' +
+        '<button type="button" class="btn btn-small" data-tool="hide">Скрыть</button>' +
+        '<button type="button" class="btn btn-ghost btn-small" data-fb="undo">Отменить</button>' +
+        '<button type="button" class="btn btn-ghost btn-small" data-fb="drop">Убрать снимок</button></div>' +
+        '<canvas class="fb-canvas" hidden></canvas>' +
+        '<p class="hint fb-pd" hidden>Видны ФИО или даты рождения? Закройте их: «Скрыть» — и обведите мышкой.</p></div>' +
+        '<p class="fb-msg" role="status"></p>' +
+        '<div class="fb-foot"><button type="button" class="btn btn-primary" data-fb="save">Сохранить</button>' +
+        ' <a class="btn btn-ghost" href="/feedback">Мои сообщения</a></div></div>';
+      document.body.appendChild(panel);
+      canvas = el(".fb-canvas");
+      try { el("#fb-who").value = localStorage.getItem("st-fb-who") || ""; } catch (e) { /* без localStorage */ }
+      el(".fb-close").addEventListener("click", close);
+      panel.addEventListener("click", function (e) { if (e.target === panel) close(); });
+      panel.querySelectorAll("[data-tool]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          tool = b.dataset.tool;
+          panel.querySelectorAll("[data-tool]").forEach(function (x) { x.classList.toggle("is-on", x === b); });
+        });
+      });
+      el('[data-fb="undo"]').addEventListener("click", function () { ops.pop(); redraw(); });
+      el('[data-fb="drop"]').addEventListener("click", function () { setShot(null); });
+      el('[data-fb="capture"]').addEventListener("click", capture);
+      el('[data-fb="place"]').addEventListener("click", pickPlace);
+      el('[data-fb="save"]').addEventListener("click", save);
+      panel.addEventListener("dragover", function (e) { e.preventDefault(); });
+      panel.addEventListener("drop", function (e) {
+        e.preventDefault();
+        var f = e.dataTransfer && e.dataTransfer.files[0];
+        if (f && /^image\//.test(f.type)) fromBlob(f);
+      });
+      canvas.addEventListener("pointerdown", function (e) {
+        if (!base) return;
+        canvas.setPointerCapture(e.pointerId);
+        var p = at(e);
+        cur = { t: tool, a: p, b: p, pts: [p] };
+      });
+      canvas.addEventListener("pointermove", function (e) {
+        if (!cur) return;
+        var p = at(e);
+        cur.b = p;
+        if (cur.t === "pen") cur.pts.push(p);
+        redraw();
+      });
+      canvas.addEventListener("pointerup", function () {
+        if (cur) { ops.push(cur); cur = null; redraw(); }
+      });
+    }
+
+    function at(e) {
+      var r = canvas.getBoundingClientRect();
+      return [(e.clientX - r.left) * canvas.width / r.width, (e.clientY - r.top) * canvas.height / r.height];
+    }
+
+    function drawOp(ctx, o) {
+      var w = Math.max(3, canvas.width / 300);
+      ctx.lineWidth = w;
+      ctx.strokeStyle = "#e01b24";
+      ctx.lineCap = ctx.lineJoin = "round";
+      if (o.t === "hide") {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(Math.min(o.a[0], o.b[0]), Math.min(o.a[1], o.b[1]), Math.abs(o.b[0] - o.a[0]), Math.abs(o.b[1] - o.a[1]));
+      } else if (o.t === "rect") {
+        ctx.strokeRect(Math.min(o.a[0], o.b[0]), Math.min(o.a[1], o.b[1]), Math.abs(o.b[0] - o.a[0]), Math.abs(o.b[1] - o.a[1]));
+      } else if (o.t === "arrow") {
+        var ang = Math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]), head = w * 5;
+        ctx.beginPath();
+        ctx.moveTo(o.a[0], o.a[1]);
+        ctx.lineTo(o.b[0], o.b[1]);
+        ctx.lineTo(o.b[0] - head * Math.cos(ang - 0.45), o.b[1] - head * Math.sin(ang - 0.45));
+        ctx.moveTo(o.b[0], o.b[1]);
+        ctx.lineTo(o.b[0] - head * Math.cos(ang + 0.45), o.b[1] - head * Math.sin(ang + 0.45));
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        o.pts.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
+        ctx.stroke();
+      }
+    }
+
+    function redraw() {
+      if (!base) return;
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(base, 0, 0, canvas.width, canvas.height);
+      ops.concat(cur ? [cur] : []).forEach(function (o) { drawOp(ctx, o); });
+    }
+
+    function setShot(img, info) {
+      base = img;
+      ops = [];
+      shotInfo = img ? (info || null) : null;
+      var on = !!img;
+      canvas.hidden = el(".fb-tools").hidden = el(".fb-pd").hidden = !on;
+      if (!on) return;
+      var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, k = Math.min(1, 1600 / w);
+      canvas.width = Math.round(w * k);
+      canvas.height = Math.round(h * k);
+      if (shotInfo) shotInfo.scale = canvas.width / shotInfo.vw;
+      redraw();
+    }
+
+    function fromBlob(blob) {
+      var img = new Image();
+      img.onload = function () { setShot(img); URL.revokeObjectURL(img.src); };
+      img.src = URL.createObjectURL(blob);
+    }
+
+    function capture() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        say("Этот браузер не умеет снимать страницу. Сделайте снимок системой (Windows: Win+Shift+S, Mac: Cmd+Shift+4) и вставьте его сюда: Ctrl+V (Cmd+V).");
+        return;
+      }
+      var sy = window.scrollY, vw = window.innerWidth;
+      panel.hidden = true;
+      navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: "browser" }, audio: false, preferCurrentTab: true })
+        .then(function (stream) {
+          var track = stream.getVideoTracks()[0];
+          var tab = (track.getSettings ? track.getSettings().displaySurface : "") === "browser";
+          var video = document.createElement("video");
+          video.muted = true;
+          video.srcObject = stream;
+          return video.play().then(function () {
+            return new Promise(function (ok) { setTimeout(ok, 400); });  // окно выбора закрылось — снимаем без него
+          }).then(function () {
+            var c = document.createElement("canvas");
+            c.width = video.videoWidth;
+            c.height = video.videoHeight;
+            c.getContext("2d").drawImage(video, 0, 0);
+            stream.getTracks().forEach(function (t) { t.stop(); });
+            setShot(c, tab ? { scrollY: sy, vw: vw } : null);
+            say("");
+          });
+        })
+        .catch(function () {
+          say("Снимок не сделан. Можно сделать снимок системой (Windows: Win+Shift+S, Mac: Cmd+Shift+4) и вставить сюда: Ctrl+V (Cmd+V).");
+        })
+        .then(function () { panel.hidden = false; });
+    }
+
+    function meaningful(t) {  // щёлкнули по тексту внутри — взять плитку, поле, ячейку
+      if (/^(INPUT|SELECT|TEXTAREA|BUTTON|A)$/.test(t.tagName)) return t;
+      return t.closest("label, button, a, .tile, .field, td, th, li, p, h1, h2, h3") || t;
+    }
+
+    function describe(t) {
+      var lab = (t.labels && t.labels[0] && t.labels[0].textContent) || t.getAttribute("aria-label") || t.placeholder ||
+        t.title || t.textContent || t.value;
+      var what = /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName) ? "поле" : (t.tagName === "BUTTON" || t.classList.contains("btn")) ? "кнопка" : "место";
+      var id = t.name ? "name=" + t.name : t.id ? "id=" + t.id : "";
+      var sec = t.closest("section[id], details[id], [id].panel");
+      var head = sec ? sec.querySelector("h2, summary") : null;
+      return what + " «" + short(lab) + "»" + (id ? " (" + id + ")" : "") +
+        (sec ? ", раздел «" + short(head ? head.textContent : "") + "» #" + sec.id : "");
+    }
+
+    function pickPlace() {
+      panel.hidden = true;
+      var hint = document.createElement("div");
+      hint.className = "fb-pickhint";
+      hint.textContent = "Щёлкните по полю или кнопке, о которой речь (Esc — отмена)";
+      document.body.appendChild(hint);
+      document.body.classList.add("fb-picking");
+      function finish(t) {
+        document.removeEventListener("click", onClick, true);
+        document.removeEventListener("keydown", onKey, true);
+        hint.remove();
+        document.body.classList.remove("fb-picking");
+        panel.hidden = false;
+        if (!t) return;
+        t = meaningful(t);
+        place = describe(t);
+        el(".fb-place-text").textContent = place;
+        if (base && shotInfo) {  // снимок этой вкладки — обвести место рамкой
+          var r = t.getBoundingClientRect(), dy = window.scrollY - shotInfo.scrollY, k = shotInfo.scale;
+          ops.push({ t: "rect", a: [r.left * k - 4, (r.top + dy) * k - 4], b: [r.right * k + 4, (r.bottom + dy) * k + 4] });
+          redraw();
+        }
+      }
+      function onClick(e) { e.preventDefault(); e.stopPropagation(); finish(e.target); }
+      function onKey(e) { if (e.key === "Escape") { e.preventDefault(); finish(null); } }
+      document.addEventListener("click", onClick, true);
+      document.addEventListener("keydown", onKey, true);
+    }
+
+    function onPaste(e) {
+      if (!panel || panel.hidden) return;
+      var items = (e.clipboardData && e.clipboardData.items) || [];
+      for (var i = 0; i < items.length; i++) {
+        if (/^image\//.test(items[i].type)) { e.preventDefault(); fromBlob(items[i].getAsFile()); return; }
+      }
+    }
+
+    function onEsc(e) { if (e.key === "Escape" && panel && !panel.hidden) close(); }
+
+    function open(kind) {
+      if (!panel) build();
+      if (kind) panel.querySelectorAll('[name="fb-kind"]').forEach(function (r) { r.checked = r.value === kind; });
+      panel.hidden = false;
+      say("");
+      document.addEventListener("paste", onPaste);
+      document.addEventListener("keydown", onEsc);
+      el("#fb-text").focus();
+    }
+
+    function close() {
+      panel.hidden = true;
+      document.removeEventListener("paste", onPaste);
+      document.removeEventListener("keydown", onEsc);
+    }
+
+    function save() {
+      var text = el("#fb-text").value.trim();
+      if (!text) { say("Напишите, что произошло — хотя бы одну строку."); el("#fb-text").focus(); return; }
+      var who = el("#fb-who").value.trim();
+      try { localStorage.setItem("st-fb-who", who); } catch (e) { /* без localStorage */ }
+      var kindEl = panel.querySelector('[name="fb-kind"]:checked');
+      var errorEl = document.getElementById("fb-error"), pageError = "";
+      if (errorEl) { try { pageError = JSON.parse(errorEl.textContent).error || ""; } catch (e) { pageError = ""; } }
+      var body = {
+        kind: kindEl ? kindEl.value : "Ошибка", text: text, who: who, place: place,
+        image: base ? canvas.toDataURL("image/png") : "", path: load(PATH), js_errors: load(ERRS),
+        page: { url: location.pathname + location.search + location.hash, title: title,
+                template: document.body.dataset.template || "", module: document.body.dataset.module || "",
+                section: location.hash, window: window.innerWidth + "×" + window.innerHeight, error: pageError }
+      };
+      var btn = el('[data-fb="save"]');
+      btn.disabled = true;
+      say("сохраняю…");
+      fetch("/feedback", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          btn.disabled = false;
+          if (!j.ok) { say(j.error || "Не сохранилось — попробуйте ещё раз."); return; }
+          say("Сохранено. Все сообщения — в папке «Правки и ошибки» рядом с папкой «данные»: " + j.folder +
+            ". Отправить разработчику — на странице «Мои сообщения» (неотправленных: " + j.unsent + ")." +
+            (j.image ? " Если на снимке остались видны ФИО или даты рождения — откройте «Мои сообщения» и уберите сообщение." : ""));
+          el("#fb-text").value = "";
+          place = "";
+          el(".fb-place-text").textContent = "";
+          setShot(null);
+        })
+        .catch(function () { btn.disabled = false; say("Не сохранилось — программа не отвечает. Попробуйте ещё раз."); });
+    }
+
+    buttons.forEach(function (b) {
+      b.addEventListener("click", function () { open(b.dataset.feedbackKind || ""); });
+    });
+  })();
 })();

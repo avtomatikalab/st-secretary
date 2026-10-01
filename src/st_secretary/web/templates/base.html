@@ -7,12 +7,13 @@
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css?v={{ version }}">
 </head>
-<body>
+<body data-template="{{ page_template|default('') }}" data-module="{{ page_module|default('') }}">
 <header class="topbar">
   <a class="brand" href="/">{{ icon("logo", 26) }}<span>СТ-Секретарь</span></a>
   {% if folder is defined and folder %}
   <div class="topbar-title" title="{{ comp.title if comp else folder.id }}">{{ comp.title if comp else folder.id }}</div>
   {% else %}<div class="topbar-title"></div>{% endif %}
+  <button type="button" class="btn btn-ghost btn-small topbar-fb" data-feedback title="Ошибка, неудобство или предложение — прямо с этой страницы, файлом для разработчика">{{ icon("alert", 18) }}<span>Сообщить</span></button>
   <div class="pill-local" title="Программа работает на этом ноутбуке. Интернет не нужен. Данные никуда не отправляются.">
     {{ icon("laptop", 18) }}<span>Работает без интернета</span>
   </div>

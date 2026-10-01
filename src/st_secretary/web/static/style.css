@@ -793,3 +793,25 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 
 .res-adds { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
 .res-add { display: flex; gap: 8px; margin: 6px 0; } .res-add input[type=text] { flex: 1; max-width: 26em; }
+
+/* «Сообщить» (Правки, п. 43): панель поверх страницы, снимок с пометками */
+.fb-panel { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 23, 42, .45); display: flex; align-items: flex-start; justify-content: center; padding: 4vh 16px; overflow: auto; }
+.fb-panel[hidden] { display: none; }
+.fb-box { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); width: 100%; max-width: 780px; padding: 18px 22px; display: flex; flex-direction: column; gap: 8px; }
+.fb-head { display: flex; align-items: center; justify-content: space-between; }
+.fb-head h2 { margin: 0; }
+.fb-close { border: 0; background: none; font-size: 1.8rem; line-height: 1; cursor: pointer; color: var(--muted); }
+.fb-kinds { display: flex; gap: 18px; flex-wrap: wrap; }
+.fb-box textarea, .fb-box input[type=text] { width: 100%; }
+.fb-shot { border: 1px dashed var(--line); border-radius: 8px; padding: 10px; }
+.fb-shot-actions, .fb-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.fb-tools .is-on { outline: 2px solid var(--primary); }
+.fb-canvas { max-width: 100%; height: auto; border: 1px solid var(--line); cursor: crosshair; touch-action: none; display: block; }
+.fb-canvas[hidden] { display: none; }
+.fb-msg { min-height: 1.2em; margin: 4px 0; }
+.fb-foot { display: flex; gap: 10px; align-items: center; }
+.fb-pickhint { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1001; background: #e01b24; color: #fff; padding: 8px 14px; border-radius: 8px; font-weight: 700; }
+body.fb-picking, body.fb-picking * { cursor: crosshair !important; }
+.fb-thumb { max-width: 220px; max-height: 120px; border: 1px solid var(--line); margin-top: 6px; }
+.fb-last { margin: 10px 0; }
+@media (max-width: 700px) { .topbar-fb span { display: none; } }

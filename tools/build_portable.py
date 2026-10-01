@@ -44,6 +44,7 @@ import io
 import os
 import platform
 import py_compile
+import re
 import shutil
 import subprocess
 import sys
@@ -154,6 +155,8 @@ README = """СТ-Секретарь {version} — программа для се
   «Скачать копию» на странице соревнования — копия на флешку.
 - Журнал программы — папка «Журнал» рядом: если программа закрылась неожиданно, она предложит скачать его —
   отправьте разработчику. В журнале нет паспортных данных.
+- Ошибки, неудобства, предложения — кнопка «Сообщить» вверху любой страницы. Сообщения копятся в папке «Правки и
+  ошибки» рядом и уходят разработчику одним файлом на {email} («Мои сообщения» на главной → «Отправить»).
 - Сканы документов участников и паспортные данные судей — только на этом компьютере, в вашей папке
   пользователя: «СТ-Секретарь — документы участников». В облако и в папку соревнования они не попадают.
 
@@ -279,6 +282,8 @@ UNIX_README = """СТ-Секретарь {version} — программа для
   «Скачать копию» на странице соревнования — копия на флешку.
 - Журнал программы — папка «Журнал» рядом: если программа закрылась неожиданно, она предложит скачать его —
   отправьте разработчику. В журнале нет паспортных данных.
+- Ошибки, неудобства, предложения — кнопка «Сообщить» вверху любой страницы. Сообщения копятся в папке «Правки и
+  ошибки» рядом и уходят разработчику одним файлом на {email} («Мои сообщения» на главной → «Отправить»).
 - Сканы документов участников и паспортные данные судей — только на этом компьютере, в вашей домашней папке:
   «СТ-Секретарь — документы участников». В облако и в папку соревнования они не попадают.
 
@@ -339,6 +344,12 @@ def version() -> str:
     return ns["__version__"]
 
 
+def support_email() -> str:
+    """Адрес для сообщений пользователей — из feedback.SUPPORT_EMAIL (одна константа, Правки, п. 43)."""
+    text = (ROOT / "src" / "st_secretary" / "feedback.py").read_text(encoding="utf-8")
+    return re.search(r'^SUPPORT_EMAIL = "([^"]+)"', text, re.MULTILINE).group(1)
+
+
 def native() -> str:
     if sys.platform.startswith("win"):
         return "windows"
@@ -373,7 +384,8 @@ def build_windows(uv: str, req: Path, work: Path, ver: str, out_dir: Path) -> Pa
     install_libs(uv, req, py / "Lib" / "site-packages", "x86_64-pc-windows-msvc")
 
     (top / f"{NAME}.bat").write_bytes(LAUNCHER.replace("\n", "\r\n").encode("cp866"))
-    (top / "Прочтите меня.txt").write_text(README.format(version=ver, py=PY_VERSION).replace("\n", "\r\n"),
+    readme = README.format(version=ver, py=PY_VERSION, email=support_email())
+    (top / "Прочтите меня.txt").write_text(readme.replace("\n", "\r\n"),
                                            encoding="utf-8-sig", newline="")
     shutil.copy(ROOT / "LICENSE", top / "LICENSE.txt")
     if MANUAL.is_file():
@@ -398,6 +410,7 @@ def build_unix(target: str, uv: str, req: Path, work: Path, ver: str, out_dir: P
     install_libs(uv, req, site, uv_platform, {"MACOSX_DEPLOYMENT_TARGET": macos_min} if macos_min else None)
     system = "macOS" if target.startswith("macos") else "Linux"
     readme = UNIX_README.format(version=ver, py=PBS_PY, system=f"{system} ({target.split('-')[1]})",
+                                email=support_email(),
                                 run=UNIX_RUN["macos" if system == "macOS" else "linux"].format(install=INSTALL_CMD))
     now = int(time.time())
 

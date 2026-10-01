@@ -31,7 +31,8 @@ def test_launcher_installs_update_and_restarts():
 
 
 def test_readme_explains_start_data_and_update():
-    text = bp.README.format(version="1.0", py=bp.PY_VERSION)
+    text = bp.README.format(version="1.0", py=bp.PY_VERSION, email=bp.support_email())
+    assert "«Сообщить»" in text and "support.st.secretary@gmail.com" in text  # Правки, п. 43
     for must in ("СТ-Секретарь.bat", "«данные»", "Вручную: скачайте архив", "AGPL-3.0",
                  "github.com/avtomatikalab/st-secretary", "документы участников", "program.old",
                  "--no-update-check"):
@@ -66,7 +67,7 @@ def test_unix_launcher_installs_update_and_restarts():
 
 def test_unix_readme_explains_start_and_install():
     for system in ("macos", "linux"):
-        text = bp.UNIX_README.format(version="1.0", py=bp.PBS_PY, system=system,
+        text = bp.UNIX_README.format(version="1.0", py=bp.PBS_PY, system=system, email=bp.support_email(),
                                      run=bp.UNIX_RUN[system].format(install=bp.INSTALL_CMD))
         for must in ("tools/install.sh | sh", "«данные»", "program.old", "--no-update-check", "AGPL-3.0",
                      "документы участников"):

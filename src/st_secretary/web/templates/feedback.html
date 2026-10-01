@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Мои сообщения разработчику — СТ-Секретарь{% endblock %}
+{% block content %}
+<a class="back" href="/">← Все соревнования</a>
+<h1>Мои сообщения разработчику</h1>
+<p class="lead">Ошибки, неудобства и предложения, отмеченные кнопкой «Сообщить» вверху страниц. Они копятся на этом
+  компьютере, в папке <code title="{{ fb_dir }}">{{ fb_dir }}</code>; разработчику уходят одним файлом по почте.</p>
+
+<section class="panel" id="send">
+  <h2>Отправить разработчику{% if unsent %}: {{ unsent }} новых{% endif %}</h2>
+  {% if unsent %}
+  <p>Программа соберёт новые сообщения в один файл, откроет папку с ним и письмо на <b>{{ email }}</b>. Почтовая
+    программа не умеет прикладывать файл сама — <b>перетащите файл из открывшейся папки в письмо</b> и нажмите
+    «Отправить». Без интернета файл подождёт — отправьте, когда появится связь.</p>
+  <form method="post" action="/feedback/send"><button class="btn btn-primary btn-big" type="submit">{{ icon("upload") }}Отправить разработчику</button></form>
+  {% else %}<p class="muted">Новых сообщений нет — всё отправлено.</p>{% endif %}
+  {% if last %}
+  <div class="fb-last">
+    <p>Последний файл: <b>{{ last.file }}</b> ({{ last.numbers|length }} шт.) — в папке «Отправка».
+      {% if mail_link %}<a class="btn btn-small" href="{{ mail_link }}" id="fb-mailto"{% if auto_mail %} data-auto-open{% endif %}>Открыть письмо ещё раз</a>{% endif %}</p>
+    <p class="hint">Почта в браузере (Яндекс, Gmail, Mail.ru)? Напишите письмо сами: адрес
+      <code>{{ email }}</code> <button type="button" class="btn btn-ghost btn-small" data-copy="{{ email }}">Скопировать адрес</button>,
+      тема <code>{{ subject }}</code> <button type="button" class="btn btn-ghost btn-small" data-copy="{{ subject }}">Скопировать тему</button>,
+      и приложите файл.</p>
+    <form method="post" action="/feedback/again" class="res-inline"><button class="btn btn-ghost btn-small" type="submit">Письмо не ушло — собрать заново</button></form>
+  </div>
+  {% endif %}
+  <div class="upd-actions">
+    <form method="post" action="/feedback/open"><button class="btn btn-ghost" type="submit">{{ icon("folder") }}Открыть папку</button></form>
+    {% if items %}<a class="btn btn-ghost" href="/feedback/all.zip">{{ icon("download") }}Скачать все одним файлом</a>{% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Сообщения: {{ items|length }}</h2>
+  {% if items %}
+  <div class="table-wrap"><table class="tbl fb-list">
+    <thead><tr><th>Когда, что</th><th>Где</th><th>Что произошло</th><th>Статус</th><th></th></tr></thead>
+    <tbody>{% for m in items %}<tr>
+      <td><b>{{ m.kind }}</b><span class="adm-sub">{{ m.when }}</span>
+        {% if m.head.get("Кто") %}<span class="adm-sub">{{ m.head["Кто"] }}</span>{% endif %}
+        {% if m.head.get("Получено с") %}<span class="adm-sub">с компьютера {{ m.head["Получено с"] }}</span>{% endif %}</td>
+      <td class="muted">{{ m.title.split(" · ")[1] if " · " in m.title else "" }}{% if m.head.get("Соревнование") %}<span class="adm-sub">{{ m.head["Соревнование"] }}</span>{% endif %}</td>
+      <td>{{ m.text|truncate(240) }}{% if m.png %}<br><a href="/feedback/img?name={{ m.png.name|urlencode }}" target="_blank" rel="noopener"><img class="fb-thumb" src="/feedback/img?name={{ m.png.name|urlencode }}" alt="Снимок к сообщению"></a>{% endif %}</td>
+      <td>{{ m.status }}</td>
+      <td class="actions"><form method="post" action="/feedback/remove" data-confirm="Убрать сообщение из списка? Файл перенесётся в «Убранные», не удалится.">
+        <input type="hidden" name="name" value="{{ m.path.name }}"><button class="btn btn-ghost btn-small" type="submit">Убрать</button></form></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">Пока нет. Нашли ошибку или неудобство — нажмите «Сообщить» вверху любой страницы.</p>{% endif %}
+</section>
+
+<details class="panel howto">
+  <summary>Загрузить файл сообщений с другого компьютера</summary>
+  <p class="muted">Для разработчика: присланный секретарём файл (.zip) — в свой список. Повторы не добавляются, у
+    сообщения отмечается, с какого компьютера оно пришло.</p>
+  <form method="post" action="/feedback/import" enctype="multipart/form-data" class="fest-add">
+    <input type="file" name="file" accept=".zip" required aria-label="Файл сообщений (.zip)">
+    <button class="btn" type="submit">{{ icon("upload", 18) }}Загрузить</button>
+  </form>
+</details>
+{% endblock %}

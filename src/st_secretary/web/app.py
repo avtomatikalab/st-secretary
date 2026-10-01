@@ -44,6 +44,7 @@ from st_secretary.web.pages import (
     board,
     competition,
     contracts,
+    feedback,
     forms,
     home,
     preapps,
@@ -92,8 +93,11 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
                                  result_kinds=RESULT_KINDS, unit_kinds=UNIT_KINDS)
 
     def page(request: Request, name: str, status_code: int = 200, background=None, **ctx):
+        endpoint = request.scope.get("endpoint")
         ctx = {"flash": _flash(request), "can_stop": app.state.shutdown is not None,
-               "journal_on": app.state.journal is not None, **ctx}
+               "journal_on": app.state.journal is not None,
+               # для «Сообщить» (п. 43): какой шаблон и модуль показали эту страницу — найти место в коде
+               "page_template": name, "page_module": getattr(endpoint, "__module__", ""), **ctx}
         return templates.TemplateResponse(request, name, ctx, status_code=status_code, background=background)
 
     def folder(cid: str) -> CompFolder:
@@ -124,7 +128,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
               board_host=board_host)
     # страницы по шагам работы (pages/); общие помощники страниц — в cx, их берут и другие страницы
     for module in (home, competition, preapps, forms, admission, awards, contracts, results, start, board, verify,
-                   update_pages):
+                   update_pages, feedback):
         module.register(app, cx)
 
     # ------------------------------------------------------------ ошибки
@@ -163,7 +167,10 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     @app.exception_handler(Exception)
     async def crash(request: Request, exc: Exception):
         log.exception("Ошибка при обработке %s", request.url.path)
+        import traceback
+
+        trace = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-6000:]
         return page(request, "error.html", status_code=500, title="Что-то пошло не так",
-                    text=f"{type(exc).__name__}: {exc}", crash=True)
+                    text=f"{type(exc).__name__}: {exc}", crash=True, trace=f"{request.url.path}\n{trace}")
 
     return app
