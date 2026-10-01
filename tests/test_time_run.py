@@ -192,3 +192,36 @@ def test_extra_result_part_topography_like_speleo_championship(speleo):
     assert rows["Ель"].place is None and "add-a1" in rows["Ель"].bad
     assert "«Ель»: Топосъёмка «десять» — не время (мм:сс или ч:мм:сс)" in [i.text for i in run.issues]
     assert [r.inp.team for r in run.rows[:2]] == ["Сосна", "Кедр"]
+
+
+def test_speleo_protocol_like_sekretar_st(speleo, tmp_path):
+    """Правки, п. 33: протокол спелео — как у СЕКРЕТАРЬ_ST: № п/п, состав с разрядами, «п. N» — баллы по пунктам таблицы
+    штрафов (только встречавшиеся, от судей), время прохождения, сумма баллов и штрафное время, результат, место,
+    %, норматив; ранг — над таблицей; меньше 6 участников — «Разряды не присваиваются…» под таблицей."""
+    from datetime import datetime
+
+    from openpyxl import load_workbook
+
+    from st_secretary.exporters.results_protocol import FEW, write_protocol
+
+    z = speleo.zachety[0]
+    zdata = {"stages": STAGES, "expected": "25", "teams": {
+        "Кедр.xlsx": {"start": "10:00:00", "finish": "10:18:00", "points": {"s1": "0,3", "s2": "1"}},
+        "Сосна.xlsx": {"start": "10:05:00", "finish": "10:25:00"}},
+        "judge": {"s1": {"Кедр.xlsx": {"pens": [{"code": "7", "v": 0.3, "n": 1}]}},
+                  "s2": {"Кедр.xlsx": {"pens": [{"code": "1", "v": 0.5, "n": 2}]}}}}
+    run = tr.compute(speleo, z, zdata, [team("Кедр", 1), team("Сосна", 2)])
+    assert run.rows[0].by_item == {"7": Fraction(3, 10), "1": Fraction(1)}
+    path = write_protocol(speleo, run, "official", datetime(2025, 9, 20, 15, 0), tmp_path / "п.xlsx")
+    rows = [[c for c in row if c not in (None, "")] for row in load_workbook(path)["Протокол"].iter_rows(values_only=True)]
+    flat = [c for row in rows for c in row]
+    assert "МУЖЧИНЫ/ЖЕНЩИНЫ. СМЕШАННЫЕ ГРУППЫ" in flat and "Квалификационный ранг дистанции:" in flat
+    i = next(i for i, row in enumerate(rows) if "№ п/п" in row)  # две строки шапки: над пунктами и над итогом
+    assert rows[i] == ["№ п/п", "Группа", "Состав группы", "Территория", "Прохождение дистанции", "Результат"]
+    assert rows[i + 1] == ["п. 1", "п. 7", "Время прохождения дистанции", "Сумма штрафных баллов на этапах",
+                        "Штрафное время на этапах", "Результат", "Место", "% от результата победителя",
+                        "Выполненный норматив"]
+    kedr = next(row for row in rows if row and row[0] == 1)
+    assert kedr[1:3] == ["Кедр", "Кедр 0(II), Кедр 1(II), Кедр 2(II), Кедр 3(II)"]
+    assert kedr[4:] == ["1", "0,3", "0:18:00", "1,3", "0:00:19,5", "0:18:19,5", 1, "100,00%", "-"]
+    assert FEW in flat  # двое — меньше 6

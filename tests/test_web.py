@@ -1173,7 +1173,8 @@ def test_speleo_zachet_times_protocol_and_board(client, tmp_path, psr_card):
     client.post(url + "/publish" + q)
     ws = load_workbook(next(f.protocols_dir.glob("Предварительный*.xlsx")))["Протокол"]
     cells = [c for row in ws.iter_rows(values_only=True) for c in row if c not in (None, "")]
-    assert "Время на дистанции" in cells and "18:34,5" in cells and "Снятий" in cells
+    # протокол спелео — как у СЕКРЕТАРЬ_ST (Правки, п. 33): время с часами, «Снятий с этапов» — если были
+    assert "Время прохождения дистанции" in cells and "0:18:34,5" in cells and "Снятий с этапов" in cells
     client.post(base(f) + "/board/toggle", data={"on": "1"})
     assert "18:34,5" in TestClient(client.app.state.board.app).get("/").text
 
@@ -1371,7 +1372,7 @@ def test_extra_result_part_column_protocol_and_judge_phone(client, tmp_path, psr
     assert r.status_code == 303
     proto = next((f.path / "Протоколы").glob("Предварительный протокол*.xlsx"))
     cells = [str(c.value) for row in load_workbook(proto)["Протокол"].iter_rows() for c in row if c.value is not None]
-    assert "Топосъёмка" in cells and "10:39" in cells and "28:44" in cells
+    assert "Топосъёмка" in cells and "0:10:39" in cells and "0:28:44" in cells  # как у СЕКРЕТАРЬ_ST (п. 33)
 
 
 def js_token(f) -> str:

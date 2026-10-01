@@ -155,6 +155,7 @@ class TeamResult:
     removals: int = 0  # снятий с этапов
     marks: dict = field(default_factory=dict)  # ПСР: этап → «снята» / «сверх КВ» (в клетке МШ, stage_time.marks)
     codes: dict = field(default_factory=dict)  # этап → «п. 1×2, 3» — пункты таблицы штрафов от судьи (для протокола)
+    by_item: dict = field(default_factory=dict)  # пункт таблицы штрафов → баллы за дистанцию (протокол спелео, п. 33)
     chip: str = ""
     auto_status: bool = False  # статус поставлен программой (превышено КВ)
     planned_start: bool = False  # старт не вписан — взят из стартового протокола
@@ -184,6 +185,7 @@ class ZachetRun:
     profile: str = "psr"  # psr, speleo, pedestrian, nordic, mountain
     system: str = "penalty"  # штрафная или бесштрафовая система оценки нарушений
     adds: list[dict] = field(default_factory=list)  # дополнительные составляющие результата (time_run.adds_of)
+    norms_why: str = ""  # почему разряды не присваиваются (условие ЕВСК о числе участников)
 
     @property
     def tours(self) -> list[str]:

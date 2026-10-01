@@ -303,6 +303,17 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
             r.status, r.auto_status = Status.REMOVED, True
         rows.append(r)
 
+    # штрафные баллы по пунктам таблицы штрафов, которые отметили судьи (п. 16), — колонки «п. N» в протоколе спелео
+    from st_secretary import judge_sync as js
+
+    for r in rows:
+        for s in stages:
+            for p in js.pens_of(zdata, s.id, r.inp.file):
+                if p.get("code") and p.get("v") is not None:
+                    code = str(p["code"])
+                    r.by_item[code] = r.by_item.get(code, Fraction(0)) + \
+                        Fraction(p["v"]).limit_denominator(1000) * int(p.get("n") or 1)
+
     # результат: секунды (спелео, пешеходные, СХ) или баллы (горные); места
     runs, by_entry = [], {}
     for r in rows:
@@ -389,6 +400,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     ok, why = evsk_participation_ok(comp.level, len(started), None, judged_points=penalty_system)
     subjects_unknown = not ok and "не указано число субъектов" in (why or "")
     run.norms_ok = (ok or subjects_unknown) and not comp.unofficial
+    run.norms_why = "" if ok or subjects_unknown else (why or "")
     if comp.unofficial:
         return run
     if why:
