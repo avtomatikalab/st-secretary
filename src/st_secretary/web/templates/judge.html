@@ -406,9 +406,11 @@
       '<div class="how" hidden></div><div class="moved" hidden></div>' +
       (info.stage.cutoffs ? '<div class="cut"><button type="button" class="btn" data-act="cut"></button>' +
         '<button type="button" class="cutsum" data-act="cutsum"></button></div>' : '') +
-      '<div class="row"><div><label>' + (info.stage.auto ? "Техн. штраф" : "Баллы этапа") + '</label>' +
+      // составляющая результата (Правки, п. 32): время — только «Прибыла» и «Убыла», баллы — без снятия с этапа
+      '<div class="row"' + (info.stage.add === "time" ? " hidden" : "") + '><div><label>' +
+      (info.stage.add ? "Баллы" : info.stage.auto ? "Техн. штраф" : "Баллы этапа") + '</label>' +
       '<input type="text" class="pts" inputmode="decimal" autocomplete="off"></div>' +
-      '<label class="check"><input type="checkbox" class="rm"> Снята с этапа</label></div>' +
+      (info.stage.add ? '<input type="checkbox" class="rm" hidden>' : '<label class="check"><input type="checkbox" class="rm"> Снята с этапа</label>') + '</div>' +
       (PEN ? '<div class="pens"></div><button type="button" class="btn addpen" data-act="pen">+ Штраф по таблице</button>' : '') +
       '<div class="why" hidden><label>Причина снятия</label><input type="text" class="reason"></div>' +
       '<label>Заметка</label><input type="text" class="memo" placeholder="например: взяли подсказку">' +

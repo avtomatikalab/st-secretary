@@ -791,3 +791,5 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .form-head input { width: 6rem; }
 .form-values td:last-child input { width: 10rem; }
 
+.res-adds { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.res-add { display: flex; gap: 8px; margin: 6px 0; } .res-add input[type=text] { flex: 1; max-width: 26em; }

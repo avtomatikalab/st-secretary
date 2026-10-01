@@ -69,7 +69,9 @@ def register(app, cx) -> None:
     def results_parts(f: CompFolder, z, zdata: dict, run) -> dict:
         stage_by = {s.id: s for s in run.stages}
         return {"base": _base(f), "z": z, "zdata": zdata, "run": run, "pt": pr.points_text, "ck": tr.clock_text,
-                "tod": tr.time_of_day_text, "extra_fields": EXTRA_FIELDS.get(run.profile, ()),
+                "tod": tr.time_of_day_text,
+                "extra_fields": EXTRA_FIELDS.get(run.profile, ()) + tuple((f"add-{a['id']}", a["name"]) for a in run.adds),
+                "add_points": {f"add-{a['id']}" for a in run.adds if a["kind"] == "points"}, "add_kinds": tr.ADD_KINDS,
                 "res": lambda r: pr.result_text(run, r), "is_time": run.kind == "time",
                 "from_phone": lambda sid, file: js.from_phone(zdata, sid, file, stage_by.get(sid)),
                 "stage_score": lambda s, file: js.stage_score_text(zdata, s, file),
@@ -148,6 +150,23 @@ def register(app, cx) -> None:
                 zdata["removal"] = "okv" if form.get("removal") == "okv" else "dsq"
             if "removed_order" in form:
                 zdata["removed_order"] = "count" if form.get("removed_order") == "count" else "after"
+            if any(re.fullmatch(r"add-\d+-name", k) for k in form):  # составляющие результата (Правки, п. 32)
+                taken = {str(a.get("id")) for a in zdata.get("adds", [])}
+                adds = []
+                for i in sorted({int(m.group(1)) for k in form if (m := re.fullmatch(r"add-(\d+)-name", k))}):
+                    name = " ".join(str(form.get(f"add-{i}-name", "")).split())
+                    if not name:
+                        continue
+                    aid = str(form.get(f"add-{i}-id", "")).strip()
+                    if not aid:
+                        n = 1
+                        while f"a{n}" in taken:
+                            n += 1
+                        aid = f"a{n}"
+                        taken.add(aid)
+                    adds.append({"id": aid, "name": name,
+                                 "kind": "points" if form.get(f"add-{i}-kind") == "points" else "time"})
+                zdata["adds"] = adds
 
         _save_zachet(f, zz.key, update)
         return _redirect(f"{_base(f)}/results?{urlencode({'z': zz.key, 'done': 'run_stages'})}#stages")
@@ -236,7 +255,8 @@ def register(app, cx) -> None:
                         pts.pop(sid, None)
                 st = str(form.get(f"p-{i}-status", Status.FINISHED.value))
                 t["status"] = st if st in {s.value for s in Status} else Status.FINISHED.value
-                for fld in ("start", "finish", "cutoffs", "chip", "pen_time", "red", "declared", "no_tactics"):
+                for fld in ("start", "finish", "cutoffs", "chip", "pen_time", "red", "declared", "no_tactics",
+                            *(f"add-{a['id']}" for a in tr.adds_of(zdata))):
                     if f"p-{i}-{fld}" in form:
                         t[fld] = " ".join(str(form.get(f"p-{i}-{fld}", "")).split())
 

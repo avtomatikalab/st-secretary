@@ -24,7 +24,17 @@ from st_secretary.disciplines import Status
 from st_secretary.disciplines.speleo import SpeleoRun, standings
 from st_secretary.issues import ERROR, INFO, WARNING, Issue
 from st_secretary.norms import PercentMethod, achieved_norm, percent_of_winner
-from st_secretary.psr_run import TeamInput, TeamResult, ZachetRun, _status, parse_points, stages_of, tours_of, unit_kind
+from st_secretary.psr_run import (
+    Stage,
+    TeamInput,
+    TeamResult,
+    ZachetRun,
+    _status,
+    parse_points,
+    stages_of,
+    tours_of,
+    unit_kind,
+)
 from st_secretary.qualification import Qual
 from st_secretary.rank import RankEntry, evsk_participation_ok, qualification_rank
 from st_secretary.reference import norm_edition
@@ -157,6 +167,28 @@ def settings(z: Zachet, zdata: dict) -> dict:
             "rate": MOUNTAIN.get(z.discipline_code)}
 
 
+ADD_KINDS = {"time": "время", "points": "баллы"}
+
+
+def adds_of(zdata: dict) -> list[dict]:
+    """Дополнительные составляющие результата (Правки, п. 32): [{"id", "name", "kind": time | points}] — например,
+    «Топосъёмка» у группы спелео (ЧК края 2021: 0:18:05 + 0:10:39 = 0:28:44). Прибавляются к результату: время —
+    как есть, баллы — × эквивалент балла (у горных: время — × баллы за минуту, баллы — как есть). Значение у команды —
+    поле «add-<id>» (вписывает секретарь или приходит с телефона судьи)."""
+    out = []
+    for a in zdata.get("adds", []):
+        name = " ".join(str(a.get("name", "")).split()) if isinstance(a, dict) else ""
+        if name and str(a.get("id", "")).strip():
+            out.append({"id": str(a["id"]), "name": name, "kind": "points" if a.get("kind") == "points" else "time"})
+    return out
+
+
+def add_stages(zdata: dict) -> list[Stage]:
+    """Составляющие — как этапы для телефона судьи: время — «Прибыла» и «Убыла» (как время на этапе), баллы — судья
+    вписывает. Код этапа — «add-<id>», как поле у команды."""
+    return [Stage(f"add-{a['id']}", "", a["name"]) for a in adds_of(zdata)]
+
+
 RED = ("к", "кк", "да", "1", "+", "x", "х", "есть")  # красная карточка — как отмечают в колонке
 NO_TACTICS = ("нет", "не сдана", "да", "1", "+", "x", "х")  # заявка по тактике не сдана
 
@@ -186,6 +218,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     else:
         spp = int(spp_set) if spp_set in ("15", "30") else (15 if expected.isdigit() and int(expected) <= 30 else 30)
     unit = unit_kind(z.rank_format)
+    adds = adds_of(zdata)
 
     planned = start_list.planned_starts(zdata, teams)  # «Время старта — время, указанное в стартовом протоколе»
     rows: list[TeamResult] = []
@@ -230,6 +263,17 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 setattr(r, field, val if val is not None else (Fraction(0) if field == "cutoffs" else None))
             else:
                 r.extra[field] = val or Fraction(0)
+        for a in adds:  # дополнительные составляющие результата (Правки, п. 32)
+            fld = f"add-{a['id']}"
+            try:
+                val = parse_duration(d.get(fld, "")) if a["kind"] == "time" else parse_points(d.get(fld, ""))
+            except ValueError:
+                what = "время (мм:сс или ч:мм:сс)" if a["kind"] == "time" else "число"
+                issues.append(Issue(ERROR, f"«{t.team}»: {a['name']} «{d.get(fld)}» — не {what}", source=z.key,
+                                    team=t.team, target=f"cell:{t.file}:{fld}"))
+                bad.append(fld)
+                continue
+            r.extra[fld] = val or Fraction(0)
         r.red = kind == "nordic" and _flag(d.get("red"), RED)
         r.no_tactics = kind == "mountain" and _flag(d.get("no_tactics"), NO_TACTICS)
         if r.start is None and "start" not in r.bad and t.file in planned:
@@ -263,8 +307,12 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     runs, by_entry = [], {}
     for r in rows:
         ok = r.status is Status.FINISHED and r.distance_time is not None and \
-            not any(b in ("start", "finish", "cutoffs", "pen_time", "declared", "points") for b in r.bad)
+            not any(b in ("start", "finish", "cutoffs", "pen_time", "declared", "points") or b.startswith("add-")
+                    for b in r.bad)
         score, group = None, 0
+        add_time = sum((r.extra.get(f"add-{a['id']}", Fraction(0)) for a in adds if a["kind"] == "time"), Fraction(0))
+        add_points = sum((r.extra.get(f"add-{a['id']}", Fraction(0)) for a in adds if a["kind"] == "points"),
+                         Fraction(0))
         if ok:
             points = r.total if penalty_system else Fraction(0)
             if kind == "mountain":
@@ -276,10 +324,11 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 if declared:
                     tactics += Fraction(2, 10) * math.floor(abs(r.distance_time - declared) / declared * 100)
                 r.extra["tactics"] = tactics
-                score = _hundredths(r.distance_time / 60 * rate + points + tactics)
+                score = _hundredths((r.distance_time + add_time) / 60 * rate + points + tactics + add_points)
                 group = r.removals
             else:
-                score = r.distance_time + points * spp + r.extra.get("pen_time", Fraction(0))
+                score = r.distance_time + (points + add_points) * spp + r.extra.get("pen_time", Fraction(0)) \
+                    + add_time
                 if kind == "pedestrian" and st["removal"] == "okv" and okv is not None:
                     score += r.removals * okv  # ОКВ за каждое снятие с этапа (п. 6.2.8 б)
                 if kind == "nordic" and r.red and okv is not None:
@@ -334,7 +383,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                                    for r in started], fmt, norms)
     scoring = "points" if kind == "mountain" else "time"
     run = ZachetRun(z, stages, ordered, rank, issues, kind="time", seconds_per_point=spp, scoring=scoring,
-                    unit=unit, profile=kind, system=st["system"])
+                    unit=unit, profile=kind, system=st["system"], adds=adds)
     placed = [r for r in ordered if r.place is not None]
     # ЕВСК п. 25.4: баллы, начисляемые судьями (штрафная система, горные), — не менее 6 участников, иначе 3
     ok, why = evsk_participation_ok(comp.level, len(started), None, judged_points=penalty_system)

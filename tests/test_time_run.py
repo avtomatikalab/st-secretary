@@ -173,3 +173,22 @@ def test_mountain_points_for_time_technique_tactics(psr_card):
     pair = replace(comp, zachety=[Zachet("М/Ж", 3, "0840101811Я")])
     rows = {r.inp.team: r for r in tr.compute(pair, pair.zachety[0], zdata, teams).rows}
     assert rows["А"].total == 60 * 4 + 13  # связка: 4 балла/мин
+
+
+def test_extra_result_part_topography_like_speleo_championship(speleo):
+    """Правки, п. 32 (ЧК края 2021, группа спелео, 3 класс): к результату прибавляется «Топосъёмка» — 0:18:05 +
+    0:10:39 = 0:28:44. Составляющая баллами — × эквивалент балла; не время — ошибка, место не присуждается."""
+    z = speleo.zachety[0]
+    zdata = {"stages": STAGES, "expected": "25", "adds": [{"id": "a1", "name": "Топосъёмка", "kind": "time"},
+                                                          {"id": "a2", "name": "Описание", "kind": "points"}],
+             "teams": {"Кедр.xlsx": {"start": "10:00:00", "finish": "10:18:05", "add-a1": "10:39"},
+                       "Сосна.xlsx": {"start": "10:05:00", "finish": "10:20:00", "add-a1": "0:05:00", "add-a2": "2"},
+                       "Ель.xlsx": {"start": "10:10:00", "finish": "10:20:00", "add-a1": "десять"}}}
+    run = tr.compute(speleo, z, zdata, [team("Кедр", 1), team("Сосна", 2), team("Ель", 3)])
+    rows = {r.inp.team: r for r in run.rows}
+    assert [a["name"] for a in run.adds] == ["Топосъёмка", "Описание"]
+    assert tr.clock_text(rows["Кедр"].total) == "28:44" and rows["Кедр"].extra["add-a1"] == 639
+    assert rows["Сосна"].total == 15 * 60 + 5 * 60 + 2 * 15  # 15:00 + 5:00 + 2 балла × 15 с
+    assert rows["Ель"].place is None and "add-a1" in rows["Ель"].bad
+    assert "«Ель»: Топосъёмка «десять» — не время (мм:сс или ч:мм:сс)" in [i.text for i in run.issues]
+    assert [r.inp.team for r in run.rows[:2]] == ["Сосна", "Кедр"]

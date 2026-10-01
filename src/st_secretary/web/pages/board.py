@@ -121,7 +121,8 @@ def register(app, cx) -> None:
             if z is None:
                 return None
             zdata = f.run_data().get("zachety", {}).get(z.key, {})
-            stage = next((s for s in pr.stages_of(zdata) if s.id == link.get("stage")), None)
+            # этап или составляющая результата («Топосъёмка», Правки, п. 32) — у неё тоже ссылка судьи
+            stage = next((s for s in pr.stages_of(zdata) + tr.add_stages(zdata) if s.id == link.get("stage")), None)
             return (f, comp, z, stage) if stage else None
         return None
 
@@ -157,12 +158,13 @@ def register(app, cx) -> None:
         f, comp, z, stage = found
         _, zdata, run = run_ctx(f, comp, z)
         log = zdata.get("judge", {}).get(stage.id, {})
+        add = add_kind(zdata, stage.id)
         auto = None  # ПСР, этап с НВ и ВШ: телефон показывает, из чего сложится итог (stage_time.py)
         if stage.auto:
             auto = {"nv": float(stage.nv_minutes * 60), "vsh": float(stage.time_max), "n": float(stage.vsh_points),
                     "m": stage.vsh_step, "full": stt.full_intervals(zdata),
                     "max": float(stage.max_penalty) if stage.max_penalty is not None else None}
-        penalty = pen.table_for(z, zdata)  # таблица штрафов — на телефон целиком (работает без связи)
+        penalty = None if add else pen.table_for(z, zdata)  # таблица штрафов — на телефон целиком (без связи)
         teams = [{"file": r.inp.file, "team": r.inp.team, "number": r.inp.number}
                  for r in sorted(run.rows, key=lambda r: r.start_order)]
         return {"title": comp.title, "zachet": z.key,
@@ -172,9 +174,13 @@ def register(app, cx) -> None:
                 "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams, "zachet": z.key,
                             "judges": judge_people(f, comp), "contacts": contacts(f, comp), "stage_id": stage.id,
                             "penalties": {**penalty.payload(), "jargon": pen.jargon(zdata)} if penalty else None,
-                            "stage": {"kv": stage.kv_minutes, "cutoffs": True, "auto": auto,
-                                      "wait_cut": stt.subtract_wait(zdata)},
+                            "stage": {"kv": stage.kv_minutes, "cutoffs": not add, "auto": auto,
+                                      "wait_cut": stt.subtract_wait(zdata), "add": add},
                             "records": {file: {**rec, "file": file} for file, rec in log.items()}}}
+
+    def add_kind(zdata: dict, sid: str) -> str:
+        """Ссылка судьи на составляющую результата (не этап): её вид — «time» или «points»; иначе пусто."""
+        return next((a["kind"] for a in tr.adds_of(zdata) if f"add-{a['id']}" == sid), "")
 
     def judge_receive(token: str, payload: dict) -> dict | None:
         found = judge_link(token)
@@ -189,7 +195,7 @@ def register(app, cx) -> None:
         mark = "с" if tr.is_time_discipline(z) else ""  # спелео: снятие с этапа — «с» в клетке этапа
         _save_zachet(f, z.key, lambda zdata: out.update(js.merge(
             zdata, stage.id, records, files, device, now.isoformat(timespec="seconds"), mark, stage=stage,
-            distance_cutoffs=tr.is_time_discipline(z), judge=payload.get("judge"))))
+            distance_cutoffs=tr.is_time_discipline(z), judge=payload.get("judge"), add_kind=add_kind(zdata, stage.id))))
         return {"saved": out.get("saved", []), "time": f"{now:%H:%M:%S}", "contacts": contacts(f, comp)}
 
     app.state.board = BoardServer(create_board_app(board_list, board_data, judge_page, judge_receive), host=board_host)
@@ -208,7 +214,7 @@ def register(app, cx) -> None:
         staff_keys = {p.key for p in sf.people(comp, f.contracts())}
         personal = store.personal()
         names = {r.inp.file: r.inp.team for r in run.rows}
-        for s in run.stages:
+        for s in run.stages + (tr.add_stages(zdata) if run.kind == "time" else []):  # и составляющие результата
             t = js.stage_token(data, zz.key, s.id)
             link = f"{urls[0]}j/{t}" if t and urls else ""
             judges = []
@@ -242,9 +248,10 @@ def register(app, cx) -> None:
         with run_lock:
             data = f.run_data()
             if sid == "*":  # ссылки всем этапам, у которых их ещё нет
-                for s in data.get("zachety", {}).get(zz.key, {}).get("stages", []):
-                    if not js.stage_token(data, zz.key, str(s["id"])):
-                        js.issue_token(data, zz.key, str(s["id"]), app.state.clock().isoformat(timespec="minutes"))
+                zd = data.get("zachety", {}).get(zz.key, {})
+                for sid_ in [str(s["id"]) for s in zd.get("stages", [])] + [s.id for s in tr.add_stages(zd)]:
+                    if not js.stage_token(data, zz.key, sid_):
+                        js.issue_token(data, zz.key, sid_, app.state.clock().isoformat(timespec="minutes"))
             elif do == "revoke":
                 js.revoke_token(data, zz.key, sid)
             else:

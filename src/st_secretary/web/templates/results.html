@@ -115,6 +115,16 @@
       {% endif %}
       <div class="field span-6"><label for="f-cut">Станции отсечек SPORTident (начало-конец)</label>
         <input id="f-cut" name="cutoff_pairs" type="text" value="{{ zdata.get('cutoff_pairs', '') }}" placeholder="31-32; 41-42"></div>
+      <fieldset class="span-12 res-adds"><legend>Дополнительные составляющие результата</legend>
+        <p class="hint">Например, «Топосъёмка» у группы спелео: её время прибавляется к результату. Баллы — × эквивалент
+          балла. Своя колонка в таблице и в протоколе; вносить можно и с телефона судьи (ссылка — на странице «Телефоны
+          судей этапов»: судья отмечает «Прибыла» и «Убыла»). Убрать — сотрите название.</p>
+        {% for a in run.adds + [{"id": "", "name": "", "kind": "time"}] %}{% set i = loop.index0 %}
+        <div class="res-add"><input type="hidden" name="add-{{ i }}-id" value="{{ a.id }}">
+          <input type="text" name="add-{{ i }}-name" value="{{ a.name }}" placeholder="{{ 'название, например Топосъёмка' if not a.id else '' }}" aria-label="Название составляющей">
+          <select name="add-{{ i }}-kind" aria-label="Вид">{% for k, v in add_kinds.items() %}<option value="{{ k }}"{% if a.kind == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        {% endfor %}
+      </fieldset>
       <div class="field span-6"><label for="f-wc">Ожидание очереди на этапе (телефон судьи)</label>
         <select id="f-wc" name="wait_cut"><option value="yes">вычитать из времени (как отсечку)</option>
           <option value="no"{% if zdata.get("wait_cut") == "no" %} selected{% endif %}>не вычитать (очередь — только порядок прохождения)</option></select></div>
@@ -197,7 +207,7 @@
       <td class="pts-cell"><input type="text" inputmode="numeric" autocomplete="off" name="p-{{ i }}-chip" value="{{ r.chip }}" class="pts-chip" aria-label="{{ r.inp.team }}: чип"></td>
       {% for fld, lbl in (("start", "старт"), ("finish", "финиш"), ("cutoffs", "отсечки")) + extra_fields %}{% set flag = fld in ("red", "no_tactics") %}
       <td class="pts-cell"><input type="text" inputmode="{{ 'text' if flag else 'numeric' }}" autocomplete="off" name="p-{{ i }}-{{ fld }}" id="c-{{ r.inp.file|team_anchor }}-{{ fld }}" value="{{ d.get(fld, '') }}" data-stage="{{ fld }}" class="{{ 'pts-flag' if flag else 'pts-time' }}{% if fld in r.bad %} is-invalid{% endif %}{% if fld == 'cutoffs' and from_phone('cutoffs', r.inp.file) %} pts-phone{% endif %}" aria-label="{{ r.inp.team }}: {{ lbl }}{% if fld == 'start' and r.planned_start %} (по стартовому протоколу {{ tod(r.start) }}){% endif %}"
-        placeholder="{{ tod(r.start) if fld == 'start' and r.planned_start else ('чч:мм:сс' if fld in ('start', 'finish') else ('' if flag else 'мм:сс')) }}"{% if fld == 'start' and r.planned_start %} title="Время старта по стартовому протоколу — впишите, если команда стартовала в другое время"{% endif %}></td>
+        placeholder="{{ tod(r.start) if fld == 'start' and r.planned_start else ('чч:мм:сс' if fld in ('start', 'finish') else ('' if flag or fld in add_points else 'мм:сс')) }}"{% if fld == 'start' and r.planned_start %} title="Время старта по стартовому протоколу — впишите, если команда стартовала в другое время"{% endif %}></td>
       {% endfor %}{% endif %}
       {% for s in run.stages %}{% set ph = from_phone(s.id, r.inp.file) %}{% set how = stage_score(s, r.inp.file) %}{% set mk = r.marks.get(s.id) %}{% set rm = removal(s, r.inp.file) if not is_time else none %}{% set jw = judge_who(s.id, r.inp.file) if ph else "" %}{% set pt_ = pen_text(s.id, r.inp.file) %}<td class="pts-cell"><input type="text" inputmode="decimal" autocomplete="off" name="p-{{ i }}-{{ s.id }}" id="c-{{ r.inp.file|team_anchor }}-{{ s.id }}" value="{{ r.raw.get(s.id, '') }}" data-stage="{{ s.id }}" class="{% if s.id in r.bad %}is-invalid{% endif %}{% if ph %} pts-phone{% endif %}{% if mk %} pts-removed{% endif %}" aria-label="{{ r.inp.team }}: {{ s.title }}{% if mk %} ({{ mk }}){% endif %}{% if ph %} (с телефона судьи){% endif %}{% if how %}: {{ how }}{% endif %}"{% if how %} title="С телефона судьи: {{ how }}{% if pt_ %} · {{ pt_ }}{% endif %}{% if jw %} · поставил {{ jw }}{% endif %}"{% elif ph %} title="С телефона судьи этапа{% if pt_ %}: {{ pt_ }}{% if jw %} · поставил {{ jw }}{% endif %}{% elif jw %}: {{ jw }}{% endif %}"{% endif %}>
         {%- if rm and (mk or rm.cancelled) %}{% set what = "снята с этапа" if rm.kind == "снята" else "превышено КВ" %}<button type="submit" class="pts-mark{% if rm.cancelled %} pts-mark-off{% endif %}" formaction="{{ base }}/results/unmark?{{ zq }}&amp;file={{ r.inp.file|urlencode }}&amp;sid={{ s.id }}" formnovalidate

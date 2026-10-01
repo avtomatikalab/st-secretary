@@ -1337,6 +1337,43 @@ def test_rename_stage_keeps_points_judge_log_and_link(client, tmp_path, psr_card
     assert "res-stages res-stages-psr" in page and 'class="c-name"' in page
 
 
+def test_extra_result_part_column_protocol_and_judge_phone(client, tmp_path, psr_card):
+    """Правки, п. 32: составляющая результата задаётся у зачёта по времени, вносится в таблице (своя колонка) или с
+    телефона судьи («Прибыла» — «Убыла», как время этапа) и прибавляется к результату; в протоколе — своя колонка."""
+    import json
+
+    from openpyxl import load_workbook
+
+    speleo = replace(psr_card, zachety=[replace(psr_card.zachety[0], discipline_code="0840271811Я", team_size=3)])
+    f = client.app.state.store.create(speleo)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    q = "?" + urlencode({"z": "М/Ж_3"})
+    client.post(base(f) + "/results/stages" + q, data={"st-0-name": "Колодец", "add-0-id": "", "add-0-name": "Топосъёмка",
+                                                        "add-0-kind": "time", "add-1-id": "", "add-1-name": ""})
+    assert f.run_data()["zachety"]["М/Ж_3"]["adds"] == [{"id": "a1", "name": "Топосъёмка", "kind": "time"}]
+    page = client.get(base(f) + "/results" + q).text
+    assert '<th rowspan="2">Топосъёмка</th>' in page and 'name="p-0-add-a1"' in page
+
+    # с телефона судьи: ссылка на «Топосъёмку», время между «Прибыла» и «Убыла»
+    client.post(base(f) + "/judges/link" + q, data={"stage": "add-a1"})
+    token = js_token(f)
+    phone = TestClient(client.app.state.board.app)
+    p = phone.get(f"/j/{token}").text
+    data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', p, re.DOTALL).group(1))
+    assert "Топосъёмка" in p and data["stage"]["add"] == "time" and data["penalties"] is None
+    phone.post(f"/j/{token}/sync", json={"device": "т-1", "records": [
+        {"file": "Кедр.xlsx", "arrive": "11:00:00", "leave": "11:10:39", "points": "0", "updated": 1}]})
+    team_ = f.run_data()["zachety"]["М/Ж_3"]["teams"]["Кедр.xlsx"]
+    assert team_["add-a1"] == "10:39" and "s1" not in team_.get("points", {})
+    client.post(base(f) + "/results/points" + q, data={"p-0-file": "Кедр.xlsx", "p-0-start": "10:00:00",
+                                                        "p-0-finish": "10:18:05", "p-0-add-a1": "10:39"})
+    r = client.post(base(f) + "/results/publish" + q, follow_redirects=False)
+    assert r.status_code == 303
+    proto = next((f.path / "Протоколы").glob("Предварительный протокол*.xlsx"))
+    cells = [str(c.value) for row in load_workbook(proto)["Протокол"].iter_rows() for c in row if c.value is not None]
+    assert "Топосъёмка" in cells and "10:39" in cells and "28:44" in cells
+
+
 def js_token(f) -> str:
     return next(iter(f.run_data()["judge_links"]))
 

@@ -183,6 +183,7 @@ class ZachetRun:
     show_codes: bool = False  # в протоколе «По этапам» — номера пунктов таблицы штрафов (настройка зачёта)
     profile: str = "psr"  # psr, speleo, pedestrian, nordic, mountain
     system: str = "penalty"  # штрафная или бесштрафовая система оценки нарушений
+    adds: list[dict] = field(default_factory=list)  # дополнительные составляющие результата (time_run.adds_of)
 
     @property
     def tours(self) -> list[str]:

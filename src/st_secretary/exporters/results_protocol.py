@@ -41,7 +41,7 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
     ws.title = "Протокол"
     timed = run.kind == "time"  # спелео, пешеходные: время на дистанции, штраф, снятия
     tours = [] if timed else run.tours
-    middle = ["Время на дистанции", "Штраф, баллы", "Снятий"] if timed else tours
+    middle = (["Время на дистанции", "Штраф, баллы", "Снятий"] + [a["name"] for a in run.adds]) if timed else tours
     show_class = any(r.actual_class for r in run.rows)
     show_marks = not timed and any(r.marks for r in run.rows)  # ПСР: сняты с этапов (МШ) — отметка в протоколе
     person = run.unit == "person"  # личная дисциплина: место у спортсмена
@@ -80,8 +80,11 @@ def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, p
         who_values = ([t.inp.team, t.inp.club, t.inp.territory, ", ".join(m.qual_label or "б/р" for m in t.inp.members)]
                       if person else [t.inp.team, t.inp.territory, members])
         result = result_text(run, t) or ("время не внесено" if timed else "баллы не внесены")
-        mid = ([clock_text(t.distance_time), points_text(sum(t.points.values())) if t.points else "", t.removals or ""]
-               if timed else [points_text(t.tours.get(x)) for x in tours])
+        adds = [(clock_text(t.extra.get(f"add-{a['id']}")) if a["kind"] == "time"
+                 else points_text(t.extra.get(f"add-{a['id']}"))) if f"add-{a['id']}" in t.extra else ""
+                for a in run.adds]  # дополнительные составляющие результата (Правки, п. 32)
+        mid = ([clock_text(t.distance_time), points_text(sum(t.points.values())) if t.points else "", t.removals or "",
+                *adds] if timed else [points_text(t.tours.get(x)) for x in tours])
         values = ([t.place or "—", t.inp.number or ""] + who_values + mid
                   + ([mark_text(run, t)] if show_marks else [])
                   + [result] + ([_pct(t.percent), t.norm or ""] if norms else [])

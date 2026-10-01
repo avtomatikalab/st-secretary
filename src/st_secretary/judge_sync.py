@@ -39,7 +39,7 @@ from fractions import Fraction
 from st_secretary import stage_time as stt
 from st_secretary.issues import INFO, WARNING, Issue
 from st_secretary.psr_run import Stage, parse_points, points_text
-from st_secretary.time_run import duration_text, parse_duration
+from st_secretary.time_run import duration_text, parse_clock, parse_duration
 
 _ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # без похожих друг на друга символов (l/1, o/0)
 
@@ -198,12 +198,13 @@ def phone_same(a: str, b: str) -> bool:
 
 def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], device: str, received: str,
           removal_mark: str = "", stage: Stage | None = None, distance_cutoffs: bool = True,
-          judge: dict | None = None) -> dict:
+          judge: dict | None = None, add_kind: str = "") -> dict:
     """Присланное с телефона → журнал этапа и таблица баллов. Возвращает {"saved": [файлы], "conflicts": n}.
     removal_mark — чем в таблице отмечается снятие с этапа («с» у спелео); пусто — снятие в таблицу не идёт (ПСР).
     stage с НВ и ВШ — в таблицу идёт итог техштраф + ВШ (stage_time); distance_cutoffs — отсечки этапов
     складываются в колонку «Отсечки» дистанции (спелео, пешеходные; в ПСР — нет; и нет, если ожидание очереди
-    в зачёте не вычитается); judge — кто судит этап (ФИО и телефон с телефона судьи)."""
+    в зачёте не вычитается); judge — кто судит этап (ФИО и телефон с телефона судьи); add_kind — это не этап, а
+    составляющая результата (time_run.adds_of): «time» — время между «Прибыла» и «Убыла», «points» — баллы."""
     judge = judge_of(judge)
     log = zdata.setdefault("judge", {}).setdefault(sid, {})
     if judge and records:  # кто и когда был на связи с этого этапа
@@ -230,6 +231,10 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
                          "judge": judge.get("fio", ""), "judge_phone": judge.get("phone", ""),
                          "pens": [dict(p) for p in rec.pens], "pmanual": rec.pmanual}
         saved.append(rec.file)
+        if add_kind:  # составляющая результата — в своё поле команды, если там пусто или прежнее с телефона
+            if not merge_add(teams.setdefault(rec.file, {}), sid, rec, add_kind):
+                conflicts += 1
+            continue
         if distance_cutoffs and stt.subtract_wait(zdata) and not merge_cutoffs(zdata, rec.file):
             conflicts += 1
         if stage is not None and stage.auto:  # ПСР: итог этапа по НВ/КВ считает программа
@@ -251,6 +256,34 @@ def merge(zdata: dict, sid: str, records: list[Record], known_files: set[str], d
             elif not _same(cell, rec.points):
                 conflicts += 1
     return {"saved": saved, "conflicts": conflicts}
+
+
+def add_value(rec: Record, kind: str) -> str:
+    """Значение составляющей с телефона: время — «Убыла» − «Прибыла» − отсечки (как время на этапе), баллы — как вписал
+    судья. Пусто — ещё не известно."""
+    if kind == "points":
+        return str(rec.points or "").strip()
+    try:
+        a, b = parse_clock(rec.arrive), parse_clock(rec.leave)
+        cut = parse_duration(rec.cutoff)
+    except ValueError:
+        return ""
+    if a is None or b is None:
+        return ""
+    spent = (b if b >= a else b + 86400) - a - cut
+    return duration_text(spent) if spent > 0 else ""
+
+
+def merge_add(team: dict, fld: str, rec: Record, kind: str) -> bool:
+    """Составляющая результата с телефона → поле команды; вписанное секретарём не трогаем (False — расходится)."""
+    value = add_value(rec, kind)
+    if not value:
+        return True
+    cell = str(team.get(fld, "")).strip()
+    if cell in ("", str(team.get(f"{fld}~phone", "")).strip()):
+        team[fld], team[f"{fld}~phone"] = value, value
+        return True
+    return _same(cell, value) if kind == "points" else cell == value
 
 
 def phone_cutoffs(zdata: dict, file: str) -> Fraction | None:
