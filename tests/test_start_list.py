@@ -3,6 +3,7 @@
 from dataclasses import replace
 from datetime import date
 from fractions import Fraction
+from itertools import pairwise
 
 import pytest
 from openpyxl import load_workbook
@@ -229,7 +230,7 @@ def test_spread_delegation_teams_inside_lot_groups():
     deleg = {f: ("А" if f.startswith("А") else f) for f in order}
     out = sl.spread(order, deleg, dict.fromkeys(order, 0))
     pos = [out.index(f) for f in ("А1.xlsx", "А2.xlsx", "А3.xlsx")]
-    assert pos == [0, 4, 7] and min(b - a for a, b in zip(pos, pos[1:])) >= 3  # как можно дальше: 8 мест, 3 команды
+    assert pos == [0, 4, 7] and min(b - a for a, b in pairwise(pos)) >= 3  # как можно дальше: 8 мест, 3 команды
     assert [f for f in out if not f.startswith("А")] == ["Б1.xlsx", "В1.xlsx", "Г1.xlsx", "Д1.xlsx", "Е1.xlsx"]
     # две группы жребия: команды не переходят из группы в группу
     blocks = {f: (1 if i < 4 else 2) for i, f in enumerate(order)}
