@@ -19,7 +19,7 @@ from st_secretary.importers.preapp_xlsx import _grids
 from st_secretary.preapp import process
 from st_secretary.textclean import clean_spaces
 from st_secretary.web.common import _base, _redirect
-from st_secretary.web.store import CompFolder
+from st_secretary.web.store import NAMED_TEMPLATE, CompFolder
 
 SAMPLE_TYPES = (".xlsx", ".xls")
 PREVIEW_ROWS, PREVIEW_COLS = 14, 24
@@ -51,7 +51,8 @@ def register(app, cx) -> None:
         f = folder(cid)
         clean_samples()
         return page(request, "forms.html", active="preapps", forms=store.forms(), labels=fm.FIELD_LABEL,
-                    forms_path=store.forms_path, **comp_ctx(f))
+                    forms_path=store.forms_path, named=(f.path / NAMED_TEMPLATE).is_file(),
+                    **comp_ctx(f))
 
     @app.post("/c/{cid}/forms/sample")
     async def forms_sample(request: Request, cid: str):

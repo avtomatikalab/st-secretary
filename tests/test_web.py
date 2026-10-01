@@ -1375,6 +1375,51 @@ def test_extra_result_part_column_protocol_and_judge_phone(client, tmp_path, psr
     assert "Топосъёмка" in cells and "0:10:39" in cells and "0:28:44" in cells  # как у СЕКРЕТАРЬ_ST (п. 33)
 
 
+def test_named_application_word_from_preapp(client, tmp_path, psr_card):
+    """Правки, п. 36: «Именная заявка (Word)» у команды — шапка из карточки, участники из предзаявки (ФИО полностью,
+    дата рождения, разряд), пустые поля для врача и подписей; свой бланк соревнования — с метками {…}."""
+    from docx import Document
+
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    page = client.get(base(f) + "/preapps/team?file=Кедр.xlsx").text
+    assert "/preapps/named.docx?file=" in page and "Именная заявка (Word)" in page
+    r = client.get(base(f) + "/preapps/named.docx?file=Кедр.xlsx")
+    assert r.status_code == 200 and r.content[:2] == b"PK"
+    doc = Document(io.BytesIO(r.content))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert f"В Главную судейскую коллегию {psr_card.title}" in text and "ЗАЯВКА" in text
+    assert "команду «Кедр» (Красноярск)" in text and "Лебедев Антон Игоревич" in text  # представитель
+    assert "«С правилами техники безопасности ознакомлен»" in text and "Приложения: 1. Документы о возрасте" in text
+    rows = [[c.text for c in row.cells] for row in doc.tables[0].rows]
+    assert rows[0][1] == "Фамилия, имя, отчество участника" and len(rows) == 4
+    assert rows[1][:4] == ["1", "Лебедев Антон Игоревич", "02.02.1990", "I"] and rows[1][4:6] == ["", ""]
+    assert rows[1][6] == "М/Ж_3"
+
+    # свой бланк соревнования: метки в тексте и строка участника с {ФИО}
+    tpl = Document()
+    tpl.add_paragraph("Заявка команды {команда} на {соревнование}")
+    t = tpl.add_table(rows=2, cols=3)
+    for c, v in zip(t.rows[0].cells, ["№", "ФИО", "Год"], strict=True):
+        c.text = v
+    for c, v in zip(t.rows[1].cells, ["{№}", "{ФИО}", "{дата рождения}"], strict=True):
+        c.text = v
+    buf = io.BytesIO()
+    tpl.save(buf)
+    r = client.post(base(f) + "/preapps/named-template", files={"template": ("бланк.docx", buf.getvalue())},
+                    follow_redirects=False)
+    assert "named_saved" in r.headers["location"]
+    assert "Сейчас — <b>свой бланк</b>" in client.get(base(f) + "/forms").text
+    doc = Document(io.BytesIO(client.get(base(f) + "/preapps/named.docx?file=Кедр.xlsx").content))
+    assert doc.paragraphs[0].text == f"Заявка команды Кедр на {psr_card.title}"
+    assert [[c.text for c in row.cells] for row in doc.tables[0].rows][1:] == [
+        ["1", "Лебедев Антон Игоревич", "02.02.1990"], ["2", "Зуева Мария Олеговна", "05.06.1996"],
+        ["3", "Носов Глеб Андреевич", "09.09.1993"]]
+    client.post(base(f) + "/preapps/named-template", data={"do": "delete"})
+    assert "ЗАЯВКА" in "\n".join(p.text for p in Document(io.BytesIO(
+        client.get(base(f) + "/preapps/named.docx?file=Кедр.xlsx").content)).paragraphs)
+
+
 def js_token(f) -> str:
     return next(iter(f.run_data()["judge_links"]))
 

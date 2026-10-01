@@ -21,9 +21,9 @@ from st_secretary.importers.preapp_xlsx import read_preapplication
 from st_secretary.issues import CHECKED, ERROR, SEVERITY_ORDER, WARNING, Issue
 from st_secretary.qualification import Qual
 from st_secretary.web import preapp_form as pf
-from st_secretary.web.common import XLSX, _base, _parse_dt, _preapp_view, _redirect, _with_done, team_anchor
+from st_secretary.web.common import DOCX, XLSX, _base, _parse_dt, _preapp_view, _redirect, _with_done, team_anchor
 from st_secretary.web.review import DONE, SAVE, STATUS_LABEL, is_clean, issue_key
-from st_secretary.web.store import SUMMARY, CompFolder, safe_name
+from st_secretary.web.store import NAMED_TEMPLATE, SUMMARY, CompFolder, safe_name
 
 
 def register(app, cx) -> None:
@@ -295,5 +295,50 @@ def register(app, cx) -> None:
         f.write_summary(result, comp, tmp, statuses)
         return FileResponse(tmp, filename=SUMMARY, media_type=XLSX,
                             background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
+
+    # ------------------------------------------------------------ именная заявка (Word) по предзаявке (п. 36)
+
+    def named_template(f: CompFolder) -> Path:
+        """Свой бланк именной заявки — в папке соревнования (уходит с ним в резервную копию)."""
+        return f.path / NAMED_TEMPLATE
+
+    @app.get("/c/{cid}/preapps/named.docx")
+    def preapp_named(cid: str, file: str = ""):
+        """Именная заявка команды для врача и комиссии: шапка из карточки, участники из предзаявки, остальное —
+        пустые поля для подписей и печатей. Свой шаблон соревнования, если загружен, иначе бланк по Правилам."""
+        from st_secretary.exporters import named_application as na
+
+        f = folder(cid)
+        comp = need_comp(f)
+        path = need_file(f, file)
+        result, _ = store.review(f, comp)
+        team = next((t for t in result.teams if t.source == path.name), None)
+        if team is None:
+            raise HTTPException(409, "Заявку не удалось прочитать — исправьте её, потом скачивайте именную заявку.")
+        name = f"Именная заявка — {safe_name(team.team) or path.stem}.docx"
+        tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / name
+        if named_template(f).is_file():
+            na.write_from_template(named_template(f), comp, team, tmp)
+        else:
+            pdocs, tdocs = cm.required_docs(f.admission())
+            basic = {"id", "med", "book", "app", "doctor"}  # возраст, квалификация, мед. допуск, сама заявка
+            na.write_standard(comp, team, tmp, na.APPENDIX + [d.title for d in (*pdocs, *tdocs) if d.key not in basic])
+        return FileResponse(tmp, filename=name, media_type=DOCX,
+                            background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
+
+    @app.post("/c/{cid}/preapps/named-template")
+    async def preapp_named_template(request: Request, cid: str):
+        """Свой бланк именной заявки (Word) соревнования: загрузить или убрать (тогда — бланк по Правилам)."""
+        f = folder(cid)
+        form = await request.form()
+        if form.get("do") == "delete":
+            named_template(f).unlink(missing_ok=True)
+            return _redirect(f"{_base(f)}/forms?done=named_deleted#named")
+        up = form.get("template")
+        name = getattr(up, "filename", "") or ""
+        if not name.lower().endswith(".docx"):
+            return _redirect(f"{_base(f)}/forms?done=named_bad#named")
+        named_template(f).write_bytes(await up.read())
+        return _redirect(f"{_base(f)}/forms?done=named_saved#named")
 
     cx.update(back_to=back_to, need_comp=need_comp, need_file=need_file, team_url=team_url)

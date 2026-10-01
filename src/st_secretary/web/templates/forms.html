@@ -29,6 +29,24 @@
     неё — программа подскажет.{% endif %}</p>
 </section>
 
+<section class="panel" id="named">
+  <h2>Именная заявка (Word) — бланк этого соревнования</h2>
+  <p class="muted">На странице заявки команды — «Именная заявка (Word)»: шапка из карточки, участники из предзаявки (ФИО
+    полностью, дата рождения, разряд), остальное — пустые поля для врача, подписей и печатей. Команда печатает её, идёт к
+    врачу и приносит на комиссию — данные совпадают с предзаявкой. {% if named %}Сейчас — <b>свой бланк</b> соревнования.{% else %}Сейчас —
+    бланк по Правилам (как именные заявки ЧК и Кубка г. Красноярска).{% endif %}</p>
+  <form method="post" action="{{ base }}/preapps/named-template" enctype="multipart/form-data" class="fest-add">
+    <label for="f-named">Свой бланк из Положения (Word, .docx)</label>
+    <input id="f-named" type="file" name="template" accept=".docx" required>
+    <button class="btn" type="submit">{{ icon("upload", 18) }}Загрузить</button>
+  </form>
+  {% if named %}<form method="post" action="{{ base }}/preapps/named-template"><input type="hidden" name="do" value="delete">
+    <button class="btn btn-ghost btn-small" type="submit">Убрать свой бланк — по Правилам</button></form>{% endif %}
+  <p class="hint">В своём бланке впишите метки — программа подставит значения: {соревнование}, {даты}, {место}, {команда},
+    {территория}, {представитель}, {телефон}, {всего}. Строку таблицы участников, где стоит {ФИО}, программа повторит на
+    каждого участника; в ней же — {№}, {дата рождения}, {разряд}, {зачёт}.</p>
+</section>
+
 <section class="panel">
   <h2>Сохранённые формы: {{ forms|length }}</h2>
   {% if forms %}
