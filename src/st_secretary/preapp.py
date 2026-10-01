@@ -16,6 +16,7 @@ from st_secretary.competition import Competition, Zachet
 from st_secretary.importers.preapp_xlsx import RawApplication
 from st_secretary.issues import ERROR, FIXED, INFO, WARNING, Issue
 from st_secretary.qualification import Qual, parse_qual
+from st_secretary.rank import GROUP
 from st_secretary.textclean import (
     PersonName,
     clean_spaces,
@@ -112,7 +113,7 @@ def process(apps: list[RawApplication], comp: Competition) -> PreappResult:
     issues: list[Issue] = []
     teams: list[TeamApplication] = []
     all_group_format = bool(comp.zachety) and all(
-        z.rank_format == "group" for z in comp.zachety)
+        z.rank_format == GROUP for z in comp.zachety)
     known_territories = Counter()
     for a in apps:
         for r in a.rows:
@@ -390,7 +391,7 @@ def _team_checks(t: TeamApplication, comp: Competition, issues: list[Issue]) -> 
 
     for members in by_zachet.values():
         z = members[0].zachet
-        if z.rank_format != "group":
+        if z.rank_format != GROUP:
             continue
         n = len(members)
         men = sum(1 for e in members if e.sex == "м")

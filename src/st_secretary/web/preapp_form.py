@@ -14,6 +14,7 @@ from st_secretary.importers.preapp_xlsx import RawApplication
 from st_secretary.issues import ERROR, FIXED, SEVERITY_ORDER, WARNING, Issue
 from st_secretary.preapp import Entry, TeamApplication
 from st_secretary.qualification import Qual
+from st_secretary.rank import CREW, GROUP, INDIVIDUAL, PAIR
 from st_secretary.textclean import clean_spaces, parse_birth_date
 
 HEAD_FIELDS = ["team", "territory", "representative", "contacts", "declared"]
@@ -47,7 +48,7 @@ def empty_row(comp: Competition | None = None) -> dict:
     if comp is not None and len(comp.zachety) == 1:
         row["zachet"] = comp.zachety[0].key
     if comp is not None and comp.zachety and all(
-            z.rank_format == "group" for z in comp.zachety):
+            z.rank_format == GROUP for z in comp.zachety):
         row["team_dist"] = "1"
     return row
 
@@ -135,9 +136,9 @@ def columns(comp: Competition, rows: list[dict]) -> dict[str, bool]:
     """Какие колонки участия показывать: по дисциплинам соревнования и по тому, что уже заполнено."""
     formats = {z.rank_format for z in comp.zachety}
     filled = {f for r in rows for f in ("personal", "pair", "pair_num", "team_dist") if r.get(f)}
-    return {"personal": "individual" in formats or "personal" in filled,
-            "pair": "pair" in formats or bool(filled & {"pair", "pair_num"}),
-            "team_dist": bool(formats & {"group", "crew"}) or "team_dist" in filled}
+    return {"personal": INDIVIDUAL in formats or "personal" in filled,
+            "pair": PAIR in formats or bool(filled & {"pair", "pair_num"}),
+            "team_dist": bool(formats & {GROUP, CREW}) or "team_dist" in filled}
 
 
 def choices(comp: Competition, form: dict) -> dict:

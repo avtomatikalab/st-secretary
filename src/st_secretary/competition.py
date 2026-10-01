@@ -12,6 +12,7 @@ from datetime import date
 from st_secretary.issues import ERROR, INFO, WARNING, Issue
 from st_secretary.norms import PercentMethod
 from st_secretary.qualification import Qual
+from st_secretary.rank import GROUP, INDIVIDUAL, PAIR
 from st_secretary.reference import Level, discipline_by_code, norm_edition, norm_editions
 
 KINDS = ("Чемпионат", "Первенство", "Кубок", "Другие соревнования", "Физкультурное мероприятие")
@@ -75,7 +76,7 @@ class Official:
 RESULT_KINDS = {"points": "баллы (как ПСР)", "time": "время (как пешеходные, бесштрафовая)",
                 "time_points": "время + штрафные баллы (как пешеходные, штрафная)"}
 UNIT_KINDS = {"person": "личный", "pair": "связка", "team": "команда"}
-_RANK_FORMAT = {"person": "person", "pair": "pair", "team": "group"}
+_RANK_FORMAT = {"person": INDIVIDUAL, "pair": PAIR, "team": GROUP}  # состав своей дисциплины → формат ВРВС
 
 
 @dataclass(frozen=True)
@@ -131,9 +132,10 @@ class Zachet:
 
     @property
     def rank_format(self) -> str | None:
-        """Как считается ранг и состав: person, pair, group (у своей дисциплины — по составу)."""
+        """Как считается ранг и состав: individual, pair, group, crew (rank.RANK_FORMATS; у своей дисциплины — по
+        составу)."""
         if self.is_custom:
-            return _RANK_FORMAT.get(self.unit, "group")
+            return _RANK_FORMAT.get(self.unit, GROUP)
         return discipline_by_code(self.discipline_code).rank_format
 
     @property

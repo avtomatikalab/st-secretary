@@ -23,7 +23,7 @@ from st_secretary.disciplines.psr import PsrTeamCard, class_points, distance_cla
 from st_secretary.issues import ERROR, INFO, WARNING, Issue
 from st_secretary.norms import achieved_norm, percent_of_winner
 from st_secretary.qualification import Qual
-from st_secretary.rank import RankEntry, RankResult, evsk_participation_ok, qualification_rank
+from st_secretary.rank import INDIVIDUAL, PAIR, RankEntry, RankResult, evsk_participation_ok, qualification_rank
 from st_secretary.reference import norm_edition
 
 STATUS_LABEL = {
@@ -36,7 +36,7 @@ STATUS_SHORT = {Status.FINISHED: "", Status.REMOVED: "снята", Status.DNF: "
 
 def unit_kind(rank_format: str | None) -> str:
     """Кто получает место: «person» — личная, «pair» — связка, «team» — команда (группа, экипаж)."""
-    return {"individual": "person", "pair": "pair"}.get(rank_format or "", "team")
+    return {INDIVIDUAL: "person", PAIR: "pair"}.get(rank_format or "", "team")
 
 
 def parse_points(s) -> Fraction | None:

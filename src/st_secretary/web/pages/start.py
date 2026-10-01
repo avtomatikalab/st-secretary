@@ -17,6 +17,7 @@ from st_secretary import commission as cm
 from st_secretary import start_list as sl
 from st_secretary import time_run as tr
 from st_secretary.exporters import start_protocol as sp
+from st_secretary.rank import INDIVIDUAL, PAIR
 from st_secretary.reference import norm_edition
 from st_secretary.web.common import XLSX, _base, _parse_dt, _redirect, _with_done
 from st_secretary.web.store import CompFolder, safe_name
@@ -289,7 +290,7 @@ def register(app, cx) -> None:
             lanes.append({
                 "id": f"{g.id}/{z.key}", "cid": g.id, "comp": c.title, "zkey": z.key, "title": z.title,
                 "day": lst.start_day.isoformat() if lst.start_day else "", "first": first, "interval": iv,
-                "expected": exp or 0, "dur": exp or iv or 300, "block": z.rank_format in ("person", "pair"),
+                "expected": exp or 0, "dur": exp or iv or 300, "block": z.rank_format in (INDIVIDUAL, PAIR),
                 "spread": bool(st.get("spread")), "url": f"{_base(g)}/start?{urlencode({'z': z.key})}",
                 "rows": [{"file": r.inp.file, "name": r.inp.team, "num": str(r.inp.number or ""), "t": r.time,
                           "manual": r.manual_time, "people": [sl.person_key(m) for m in r.inp.members],

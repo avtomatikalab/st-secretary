@@ -266,3 +266,26 @@ def test_draw_keeps_break_by_swapping_neighbours_or_shifting_time():
     assert "старт сдвинут на 60 мин" in notes[0]
     # перерыв 0 и нет общих людей — ничего не меняется
     assert sl.fit_break(order, units, day, 10 * 3600, 600, {}, 30, None, None) == (order, {}, [])
+
+
+def test_schedule_personal_and_pair_zachety_are_blocks(tmp_path, psr_card):
+    """Правки, п. 38: в расписании стартов личный зачёт ВРВС, связки и своя личная дисциплина — блоком
+    (раскрывается), группа — строкой на команду."""
+    import json
+    from urllib.parse import quote
+
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from st_secretary.web.app import create_app
+
+    client = TestClient(create_app(tmp_path / "данные", opener=lambda p: None, docs_dir=tmp_path / "документы",
+                                   board_host="127.0.0.1"))
+    own = Zachet("М/Ж", 0, "", name="Кросс", zid="Кросс", discipline_text="Кросс", result="time", unit="person")
+    comp = replace(psr_card, unofficial=True, zachety=[*psr_card.zachety, Zachet("М", 2, "0840131811Я"),
+                                                       Zachet("Ж", 2, "0840261811Я"), own])
+    f = client.app.state.store.create(comp)
+    page = client.get("/c/" + quote(f.id, safe="") + "/schedule").text
+    lanes = json.loads(page.split('id="schedule-data">')[1].split("</script>")[0])["lanes"]
+    assert [(x["title"], x["block"]) for x in lanes] == [("М/Ж_3", False), ("М_2", True), ("Ж_2", True),
+                                                         ("Кросс", True)]

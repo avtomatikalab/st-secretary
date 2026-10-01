@@ -18,6 +18,11 @@ from fractions import Fraction
 from st_secretary.qualification import Qual
 from st_secretary.reference import Level, NormEdition
 
+# Формат состава вида программы (rank_format у дисциплины ВРВС и у зачёта): от него зависят деление команды на
+# спортсменов и связки, деление баллов ранга, блоки в расписании стартов. Других значений нет.
+INDIVIDUAL, PAIR, GROUP, CREW = "individual", "pair", "group", "crew"
+RANK_FORMATS = (INDIVIDUAL, PAIR, GROUP, CREW)
+
 
 @dataclass(frozen=True)
 class RankEntry:
@@ -43,13 +48,13 @@ class RankResult:
 
 def rank_divisor(rank_format: str, team_size: int) -> int:
     """На сколько делятся личные баллы для связки/группы/экипажа."""
-    if rank_format == "individual":
+    if rank_format == INDIVIDUAL:
         return 1
-    if rank_format == "pair":
+    if rank_format == PAIR:
         return 2
-    if rank_format == "group":
+    if rank_format == GROUP:
         return max(4, team_size)
-    if rank_format == "crew":
+    if rank_format == CREW:
         if team_size == 2:
             return 2
         if team_size > 4:

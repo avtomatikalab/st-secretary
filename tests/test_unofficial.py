@@ -111,3 +111,28 @@ def test_application_names_own_zachet(tmp_path, psr_card):
     assert [e.zachet.key for e in t.entries] == ["Новички"] * 3 and {e.group for e in t.entries} == {"Новички"}
     assert not [i for i in result.issues if i.text.startswith("Правила:")]
     assert comp.zachet_in_file(OBSTACLE) == ("Новички", "") and comp.zachet_in_file(comp.zachety[2]) == ("М/Ж", "3")
+
+
+def test_own_personal_discipline_splits_team_into_athletes(psr_card):
+    """Правки, п. 38: своя дисциплина с составом «личный» — формат ВРВС «individual»: каждый спортсмен — свой номер
+    «3.1» и своё место (раньше «person» не узнавался, и место получала вся команда)."""
+    from types import SimpleNamespace as NS
+
+    from st_secretary import commission as cm
+    from st_secretary.rank import INDIVIDUAL, PAIR
+    from st_secretary.units import zachet_units
+
+    run_z = Zachet("М/Ж", 0, "", name="Кросс", zid="Кросс", discipline_text="Кросс", result="time", unit="person")
+    assert run_z.rank_format == INDIVIDUAL and pr.unit_kind(run_z.rank_format) == "person"
+    assert replace(run_z, unit="pair").rank_format == PAIR and OBSTACLE.rank_format == "group"
+    people = [NS(entry=NS(name=NS(full=fio), qual=Qual.BR, chip="", zachet=run_z, personal="", pair="", pair_num="",
+                          team_dist="", num_in_team=n), status=cm.PENDING)
+              for n, fio in ((1, "Иванов Иван"), (2, "Петрова Анна"))]
+    t = NS(file="Кедр.xlsx", team=NS(team="Кедр", territory="г. N", representative="Пред"), number=3,
+           status=cm.PENDING, persons=people)
+    units = zachet_units([t], run_z, run_z.rank_format)
+    assert [(u.team, u.number, len(u.members)) for u in units] == [("Иванов Иван", "3.1", 1), ("Петрова Анна", "3.2", 1)]
+    zdata = {"stages": [], "teams": {units[0].file: {"start": "10:00:00", "finish": "10:20:00"},
+                                     units[1].file: {"start": "10:01:00", "finish": "10:15:00"}}}
+    run = tr.compute(unofficial(psr_card), run_z, zdata, units)
+    assert [(r.inp.team, r.place) for r in run.rows] == [("Петрова Анна", 1), ("Иванов Иван", 2)]

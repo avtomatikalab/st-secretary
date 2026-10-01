@@ -23,8 +23,9 @@ import re
 
 from st_secretary import commission as cm
 from st_secretary.psr_run import Member, TeamInput
+from st_secretary.rank import CREW, GROUP, INDIVIDUAL, PAIR
 
-UNIT_WORDS = {"group": "команда", "crew": "экипаж", "pair": "связка", "individual": "участник"}
+UNIT_WORDS = {GROUP: "команда", CREW: "экипаж", PAIR: "связка", INDIVIDUAL: "участник"}
 
 
 def _member(e) -> Member:
@@ -44,7 +45,7 @@ def _pair_label(e) -> str:
 
 def zachet_units(teams: list, z, rank_format: str | None) -> list[TeamInput]:
     """teams — команды комиссии по допуску (TeamCheck): файл, заявка, номер, решение, участники с решениями."""
-    fmt = rank_format or "group"
+    fmt = rank_format or GROUP
     rows = []
     for t in teams:
         if not t.team:
@@ -52,7 +53,7 @@ def zachet_units(teams: list, z, rank_format: str | None) -> list[TeamInput]:
         people = [p for p in t.persons if p.entry.zachet and p.entry.zachet.key == z.key and p.status != cm.REJECTED]
         if people:
             rows.append((t, people))
-    flag = {"individual": "personal", "pair": "pair"}.get(fmt, "team_dist")
+    flag = {INDIVIDUAL: "personal", PAIR: "pair"}.get(fmt, "team_dist")
     marked = any(getattr(p.entry, flag) for _, people in rows for p in people)
     out: list[TeamInput] = []
     for t, people in rows:
@@ -60,7 +61,7 @@ def zachet_units(teams: list, z, rank_format: str | None) -> list[TeamInput]:
         number = str(t.number or "")
         base = {"territory": t.team.territory, "admitted": admitted, "representative": t.team.representative,
                 "club": t.team.team}
-        if fmt == "individual":
+        if fmt == INDIVIDUAL:
             chosen = [p for p in people if p.entry.personal] if marked else people
             for p in chosen:
                 e = p.entry
@@ -68,7 +69,7 @@ def zachet_units(teams: list, z, rank_format: str | None) -> list[TeamInput]:
                 out.append(TeamInput(f"{t.file}#{cm.person_key(e.name.full)}", e.name.full, number=num,
                                      members=[_member(e)], **base))
             continue
-        if fmt == "pair" and marked:
+        if fmt == PAIR and marked:
             groups: dict[str, list] = {}
             for p in people:
                 if p.entry.pair:
@@ -80,7 +81,7 @@ def zachet_units(teams: list, z, rank_format: str | None) -> list[TeamInput]:
             continue
         # группа (и связка, если участие в связках не отмечено): вся команда; несколько групп — по номерам
         chosen = [p for p in people if p.entry.team_dist or not (p.entry.personal or p.entry.pair)] \
-            if fmt != "pair" else people
+            if fmt != PAIR else people
         if not chosen:
             continue
         nums = sorted({str(p.entry.team_dist).strip() for p in chosen if str(p.entry.team_dist).strip()},
