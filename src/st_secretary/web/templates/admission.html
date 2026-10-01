@@ -40,7 +40,14 @@
   </div>
   <div class="adm-tool">
     <h2>Номера команд</h2>
+    {% if fest_numbers %}
+    <p class="muted">Общие на фестиваль «{{ fest_numbers.title }}»: у команды (название и территория) один номер во всех его
+      соревнованиях — кнопки нумеруют все соревнования сразу, номер, поправленный в поле «№», ставится команде и в
+      остальных. Свои номера в каждом соревновании — <a href="/festival/{{ fest_numbers.id|urlencode }}#modes">на странице фестиваля</a>.</p>
+    {% if number_notes %}<ul class="adm-problems">{% for n in number_notes %}<li>{{ icon("alert", 16) }} {{ n }}</li>{% endfor %}</ul>{% endif %}
+    {% else %}
     <p class="muted">По порядку списка. Номер можно поправить вручную в поле «№» у команды.</p>
+    {% endif %}
     <div class="actions">
       <form method="post" action="{{ base }}/admission/numbers"><input type="hidden" name="mode" value="missing">
         <button class="btn" type="submit">Присвоить тем, у кого нет</button></form>

@@ -734,4 +734,6 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .fest-modes fieldset { margin: 0 0 12px; } .fest-modes .check { display: flex; }
 .fest-own { margin: 4px 0 0; font-size: .9rem; }
 .fest-fee input[type="text"] { width: 7rem; }
+.fest-fee select { min-width: 8rem; }
+.fest-comps span { display: block; font-size: .85rem; color: var(--muted); line-height: 1.3; }
 

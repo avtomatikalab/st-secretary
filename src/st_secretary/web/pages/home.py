@@ -206,9 +206,45 @@ def register(app, cx) -> None:
             it["own"] = [o for o in (it["comp"].officials if it["comp"] else []) if o.role in own]
             items.append(it)
         others = [comp_ctx(f) for f in store.all() if f.id not in x["members"]]
+        modes = fv.modes(x)
+        groups = fest_groups(x) if "festival" in (modes["fee"], modes["numbers"]) else []
+        fees = fv.fee_rows(x, groups) if modes["fee"] == "festival" else []
         return page(request, "festival.html", fest=x, items=items, others=others,
                     people=festival_people([f for f in folders if f]), gsk_rows=official_rows(fv.officials(x)),
-                    ch=choices(), errors={}, modes=fv.modes(x), mode_labels=fv.MODES, fee_per=fv.FEE_PER)
+                    ch=choices(), errors={}, modes=modes, mode_labels=fv.MODES, fee_per=fv.FEE_PER, fees=fees,
+                    fee_methods=cm.FEE_METHODS, number_notes=fv.number_problems(groups) if groups else [],
+                    fee_total={"due": sum(r["due"] for r in fees), "paid": sum(r["paid"] for r in fees)})
+
+    def fest_groups(x: dict) -> list[tuple]:
+        """[(соревнование, название, команды комиссии)] — для общих номеров и взноса за фестиваль."""
+        return [(g.id, comp.title, teams) for g, comp, _, teams in cx.festival_members(x)]
+
+    @app.post("/festival/{fid}/fees")
+    async def festival_fees(request: Request, fid: str):
+        """Оплата взноса за фестиваль: по командам (название + территория)."""
+        need_festival(fid)
+        form = await request.form()
+        idx = sorted({int(k.split("-")[1]) for k in form if re.fullmatch(r"f-\d+-key", k)})
+        got = {}
+        for i in idx:
+            paid = re.sub(r"\D", "", str(form.get(f"f-{i}-paid", "")).split(",")[0].split(".")[0])
+            method = str(form.get(f"f-{i}-method", ""))
+            got[str(form.get(f"f-{i}-key"))] = {"paid": int(paid) if paid else 0,
+                                                 "method": method if method in cm.FEE_METHODS else ""}
+        store.update_festival(fid, lambda x: x.__setitem__("fees", {**x.get("fees", {}), **got}))
+        return _redirect(f"/festival/{quote(fid, safe='')}?done=festival_fees#fees")
+
+    @app.get("/festival/{fid}/fees.xlsx")
+    def festival_fees_xlsx(fid: str):
+        from st_secretary.exporters.commission_xlsx import write_festival_fees
+
+        x = need_festival(fid)
+        sec = next((o for o in fv.officials(x) if o.role == "Главный секретарь"), None)
+        tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / "Взносы фестиваля.xlsx"
+        write_festival_fees(f"Фестиваль «{x['title']}»", fv.fee_rows(x, fest_groups(x)),
+                            sec.signature if sec else "", tmp)
+        return FileResponse(tmp, filename=tmp.name, media_type=XLSX,
+                            background=BackgroundTask(shutil.rmtree, tmp.parent, ignore_errors=True))
 
     @app.post("/festival/{fid}/gsk")
     async def festival_gsk(request: Request, fid: str):

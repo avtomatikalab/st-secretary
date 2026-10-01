@@ -79,7 +79,39 @@
     </fieldset>
     <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить режимы</button>
   </form>
+  {% if number_notes %}<h3>Стартовые номера — проверьте</h3>
+  <ul class="adm-problems">{% for n in number_notes %}<li>{{ icon("alert", 16) }} {{ n }}</li>{% endfor %}</ul>{% endif %}
 </section>
+
+{% if modes.fee == "festival" %}
+<section class="panel" id="fees">
+  <h2>Взнос за фестиваль</h2>
+  {% if not fest.fee or not fest.fee.amount %}<p class="text-err">{{ icon("alert", 16) }} Сумма взноса не задана — впишите её выше, в «Стартовый взнос».</p>{% endif %}
+  <p class="muted">Одна строка — команда (одинаковые название и территория в заявках всех соревнований). За участника —
+    каждый человек один раз, сколько бы соревнований и зачётов у него ни было; недопущенные не считаются.</p>
+  {% if fees %}
+  <form method="post" action="/festival/{{ fest.id|urlencode }}/fees">
+    <div class="table-wrap"><table class="tbl fest-fee">
+      <thead><tr><th>№</th><th>Команда</th><th>Соревнования</th><th>Участников</th><th>К оплате, ₽</th><th>Оплачено, ₽</th><th>Способ</th><th></th></tr></thead>
+      <tbody>{% for r in fees %}{% set i = loop.index0 %}<tr>
+        <td>{{ r.number }}</td>
+        <td><b>{{ r.team }}</b><span class="adm-sub">{{ r.territory }}{% if r.representative %} · {{ r.representative }}{% endif %}</span><input type="hidden" name="f-{{ i }}-key" value="{{ r.key }}"></td>
+        <td class="fest-comps">{% for c in r.comps %}<span>{{ c }}</span>{% endfor %}</td><td>{{ r.people }}</td><td>{{ r.due }}</td>
+        <td><input type="text" inputmode="numeric" name="f-{{ i }}-paid" value="{{ r.paid or '' }}" placeholder="0" aria-label="Оплачено: {{ r.team }}"></td>
+        <td><select name="f-{{ i }}-method" aria-label="Способ оплаты: {{ r.team }}"><option value="">—</option>
+          {% for m in fee_methods %}<option value="{{ m }}"{% if m == r.method %} selected{% endif %}>{{ m }}</option>{% endfor %}</select></td>
+        <td><span class="badge {{ 'badge-fixed' if r.status in ('оплачено', 'нет взноса') else 'badge-warning' }}">{{ r.status }}</span></td>
+      </tr>{% endfor %}</tbody>
+      <tfoot><tr><th></th><th>Итого</th><th></th><th></th><th>{{ fee_total.due }}</th><th>{{ fee_total.paid }}</th><th></th><th></th></tr></tfoot>
+    </table></div>
+    <div class="actions">
+      <button class="btn btn-primary" type="submit">{{ icon("check") }}Сохранить оплату</button>
+      <a class="btn" href="/festival/{{ fest.id|urlencode }}/fees.xlsx">{{ icon("download", 18) }}Ведомость взносов (Excel)</a>
+    </div>
+  </form>
+  {% else %}<p class="muted">Пока нет заявок в соревнованиях фестиваля.</p>{% endif %}
+</section>
+{% endif %}
 
 <section class="panel" id="people">
   <h2>Кто заявлен в нескольких соревнованиях: {{ people|length }}</h2>

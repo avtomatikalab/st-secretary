@@ -169,3 +169,96 @@ def team_identity(team: str, territory: str) -> str:
         return " ".join("".join(ch for ch in s if ch not in "«»\"'„“”").split())
 
     return f"{norm(team)}|{norm(territory)}"
+
+
+def ident_of(cid: str, t) -> str:
+    """Команда комиссии (TeamCheck) на фестивале; нечитаемая заявка — сама по себе."""
+    return team_identity(t.team.team, t.team.territory) if t.team else f"{cid}|{t.file}"
+
+
+def assign_numbers(groups: list[tuple[str, list]], again: bool = False) -> dict[tuple[str, str], int]:
+    """Общие стартовые номера фестиваля: groups — [(соревнование, команды комиссии)] в порядке фестиваля.
+    Одна команда (название + территория) — один номер во всех соревнованиях; у кого номер уже есть, тот его и
+    даёт остальным; новые — по порядку, не занятые никем. again — перенумеровать всех заново.
+    Возвращает {(соревнование, файл заявки): номер} — что записать."""
+    number: dict[str, int] = {}
+    if not again:
+        for cid, teams in groups:
+            for t in teams:
+                if t.number is not None:
+                    number.setdefault(ident_of(cid, t), t.number)
+    taken, n, out = set(number.values()), 1, {}
+    for cid, teams in groups:
+        for t in teams:
+            k = ident_of(cid, t)
+            if k not in number:
+                while n in taken:
+                    n += 1
+                number[k] = n
+                taken.add(n)
+            if again or t.number is None:
+                out[(cid, t.file)] = number[k]
+    return out
+
+
+def number_problems(groups: list[tuple[str, str, list]]) -> list[str]:
+    """Общие номера: один номер у разных команд, у одной команды — разные номера. groups — [(соревнование, его
+    название, команды комиссии)]."""
+    by_number: dict[int, set] = {}
+    by_team: dict[str, dict[int, list]] = {}
+    names: dict[str, str] = {}
+    for cid, title, teams in groups:
+        for t in teams:
+            if t.number is None:
+                continue
+            k = ident_of(cid, t)
+            names.setdefault(k, t.title)
+            by_number.setdefault(t.number, set()).add(k)
+            by_team.setdefault(k, {}).setdefault(t.number, []).append(title)
+    out = [f"номер {n} — у разных команд: «{'», «'.join(sorted(names[k] for k in ks))}»"
+           for n, ks in sorted(by_number.items()) if len(ks) > 1]
+    out += [f"у команды «{names[k]}» разные номера: " + "; ".join(f"{n} — {', '.join(ts)}" for n, ts in sorted(v.items()))
+            for k, v in by_team.items() if len(v) > 1]
+    return out
+
+
+# ------------------------------------------------------------------ один взнос за фестиваль
+
+
+def fee_rows(fest: dict, groups: list[tuple[str, str, list]]) -> list[dict]:
+    """Ведомость взноса за фестиваль: по командам (название + территория) всех соревнований. За участника —
+    каждый человек (ФИО + дата рождения) один раз, сколько бы соревнований и зачётов у него ни было; недопущенные
+    не считаются. groups — [(соревнование, его название, команды комиссии)]."""
+    from st_secretary import commission as cm
+
+    fee = fest.get("fee") or {}
+    amount = int(fee.get("amount") or 0)
+    per_person = fee.get("per", FEE_PER[0]) == "участника"
+    paid = fest.get("fees", {})
+    rows: dict[str, dict] = {}
+    for cid, title, teams in groups:
+        for t in teams:
+            if not t.team:
+                continue
+            k = ident_of(cid, t)
+            r = rows.setdefault(k, {"key": k, "team": t.team.team, "territory": t.team.territory,
+                                    "representative": t.team.representative, "comps": [], "people": set(),
+                                    "numbers": set()})
+            r["comps"].append(title)
+            if t.number is not None:
+                r["numbers"].add(t.number)
+            r["people"] |= {cm.person_id(p.entry) for p in t.persons if p.status != cm.REJECTED}
+    out = []
+    for r in rows.values():
+        n = len(r["people"])
+        r["people"] = n
+        r["number"] = ", ".join(str(x) for x in sorted(r.pop("numbers")))
+        r["due"] = amount * n if per_person else (amount if n else 0)
+        p = paid.get(r["key"], {})
+        r["paid"] = int(p.get("paid") or 0)
+        r["method"] = str(p.get("method", ""))
+        r["status"] = "нет взноса" if not r["due"] else "оплачено" if r["paid"] >= r["due"] else \
+            "частично" if r["paid"] else "не оплачено"
+        out.append(r)
+    return sorted(out, key=lambda r: (r["number"] == "", int(r["number"].split(",")[0]) if r["number"] else 0,
+                                      r["team"].lower()))

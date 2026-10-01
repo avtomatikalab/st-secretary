@@ -10,7 +10,7 @@ import pytest
 
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
-from test_web import FormFields, base, kedr, team_form  # noqa: F401 — заготовки страниц и заявок
+from test_web import FormFields, base, kedr, sosna, team_form  # заготовки страниц и заявок
 
 from st_secretary.competition import Official
 from st_secretary.web.app import create_app
@@ -143,3 +143,75 @@ def test_festival_brigade_shared_and_one_contract_for_whole_festival(client, tmp
     client.post(fest_url(fid) + "/edit", data={"do": "split"})
     assert any(x["fio"] == "Комендантов Семён Ильич" for x in b.contracts().get("extra", []))
     assert any(x["fio"] == "Комендантов Семён Ильич" for x in a.contracts().get("extra", []))
+
+
+def numbers(folder) -> dict[str, int | None]:
+    return {k: v.get("number") for k, v in folder.admission().get("teams", {}).items()}
+
+
+def test_festival_start_numbers_common_or_own_in_each_competition(client, tmp_path, psr_card):
+    store = client.app.state.store
+    a = store.create(psr_card)
+    b = store.create(replace(psr_card, title="Кубок города N по спортивному туризму"))
+    a.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    a.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    b.add_preapp("Кедр команда.xlsx", kedr(tmp_path))  # та же команда (название и территория), другой файл
+    fid = make_festival(client, a, b)
+
+    # общие (по умолчанию): нумерация сразу во всех соревнованиях, у «Кедра» — один номер
+    r = client.post(base(b) + "/admission/numbers", data={"mode": "missing"}, follow_redirects=False)
+    assert "adm_numbers_fest" in r.headers["location"]
+    assert numbers(a) == {"Кедр.xlsx": 1, "Сосна.xlsx": 2} and numbers(b) == {"Кедр команда.xlsx": 1}
+    assert "Общие на фестиваль" in client.get(base(a) + "/admission").text
+
+    # номер поправили в одном соревновании — он и в другом; совпал с чужим — предупреждение по фестивалю
+    page = client.get(base(b) + "/admission").text
+    form = team_form(page, "Кедр команда.xlsx") | {"number": "7"}
+    r = client.post(base(b) + "/admission/team", data=form, headers={"x-autosave": "1"})
+    assert numbers(a)["Кедр.xlsx"] == 7
+    form = team_form(client.get(base(a) + "/admission").text, "Сосна.xlsx") | {"number": "7"}
+    r = client.post(base(a) + "/admission/team", data=form, headers={"x-autosave": "1"})
+    assert "уже у команды «Кедр»" in r.json()["team"]
+    assert "номер 7 — у разных команд" in client.get(base(a) + "/admission").text
+
+    # свои номера в каждом соревновании: правка в одном другое не трогает
+    client.post(fest_url(fid) + "/modes", data={"contracts": "each", "fee": "each", "numbers": "each"})
+    form = team_form(client.get(base(b) + "/admission").text, "Кедр команда.xlsx") | {"number": "3"}
+    client.post(base(b) + "/admission/team", data=form, headers={"x-autosave": "1"})
+    assert numbers(a)["Кедр.xlsx"] == 7 and numbers(b)["Кедр команда.xlsx"] == 3
+    client.post(base(b) + "/admission/numbers", data={"mode": "all"})
+    assert numbers(b) == {"Кедр команда.xlsx": 1} and numbers(a) == {"Кедр.xlsx": 7, "Сосна.xlsx": 7}
+
+
+def test_festival_one_fee_for_whole_festival_or_by_competition(client, tmp_path, psr_card):
+    from openpyxl import load_workbook
+
+    store = client.app.state.store
+    a = store.create(psr_card)
+    b = store.create(replace(psr_card, title="Кубок города N по спортивному туризму"))
+    a.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    a.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    b.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    fid = make_festival(client, a, b)
+
+    # по каждому соревнованию (по умолчанию) — как в карточке: 3000 ₽ за команду в каждом
+    assert "взносов собрано из 6 000 ₽" in client.get(base(a) + "/admission").text
+    assert "взносов собрано из 3 000 ₽" in client.get(base(b) + "/admission").text
+
+    # один взнос за фестиваль: 1500 ₽ за участника, человек считается один раз на весь фестиваль
+    client.post(fest_url(fid) + "/modes", data={"contracts": "each", "fee": "festival", "numbers": "festival",
+                                                "fee_amount": "1500", "fee_per": "участника"})
+    page = client.get(fest_url(fid)).text
+    assert "Взнос за фестиваль" in page and "Кубок города N" in page
+    form = FormFields(page.replace('action="/festival/' + quote(fid, safe="") + '/fees"', 'id="fees"'), "fees").fields
+    kedr_i = next(k.split("-")[1] for k, v in form.items() if k.endswith("-key") and v.startswith("кедр"))
+    assert ">3</td><td>4500</td>" in page.replace("\n", "")  # Кедр: 3 человека × 1500, хоть и в двух соревнованиях
+    form |= {f"f-{kedr_i}-paid": "4500", f"f-{kedr_i}-method": "перевод"}
+    r = client.post(fest_url(fid) + "/fees", data=form, follow_redirects=False)
+    assert "festival_fees" in r.headers["location"] and "оплачено" in client.get(fest_url(fid)).text
+    adm = client.get(base(a) + "/admission").text
+    assert "Взнос — один за фестиваль" in adm and 'name="fee_paid"' not in adm
+    ws = load_workbook(io.BytesIO(client.get(fest_url(fid) + "/fees.xlsx").content)).active
+    assert ws["A2"].value == "Ведомость стартовых взносов" and any(c.value == 4500 for c in ws["I"])
+    sheet = load_workbook(io.BytesIO(client.get(base(a) + "/admission/report.xlsx").content))["Ведомость взносов"]
+    assert any("один за фестиваль" in str(c.value) for row in sheet.iter_rows() for c in row)

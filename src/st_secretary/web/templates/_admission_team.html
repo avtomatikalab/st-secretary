@@ -72,6 +72,9 @@
     {% endif %}
 
     <div class="adm-foot">
+      {% if fest_fee %}
+      <div class="adm-fee muted">Взнос — один за фестиваль: <a href="/festival/{{ fest_fee.id|urlencode }}#fees">ведомость фестиваля «{{ fest_fee.title }}»</a></div>
+      {% else %}
       <div class="adm-fee">
         <span class="muted">Взнос:</span> <b>{{ t.fee_due }} ₽</b>
         <label>оплачено <input type="text" inputmode="numeric" name="fee_paid" value="{{ t.fee_paid or '' }}" placeholder="0" aria-label="Оплачено, рублей"> ₽</label>
@@ -81,6 +84,7 @@
         </select>
         <span class="badge {{ 'badge-fixed' if t.fee_status in ('оплачено', 'нет взноса') else 'badge-warning' }}">{{ t.fee_status }}</span>
       </div>
+      {% endif %}
       <div class="adm-team-decision">
         <span class="muted">Решение по команде:</span>
         <select name="decision" aria-label="Решение по команде"{% if t.unreviewed or t.missing_team_docs %} data-confirm-admit="{% if t.unreviewed %}Заявку секретарь не проверил{% if t.missing_team_docs %}, документы команды не отмечены{% endif %}{% else %}Документы команды не отмечены{% endif %}. Допустить решением комиссии? Основание впишите в поле замечания — оно попадёт в протокол."{% endif %}>

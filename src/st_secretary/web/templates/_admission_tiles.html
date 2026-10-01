@@ -5,7 +5,8 @@
   <div class="tile"><b>{{ totals.people_ok }} из {{ totals.people }}</b><span>участников допущено</span></div>
   <div class="tile tile-warning"><b>{{ totals.people_wait }}</b><span>участников ждут — документы или решение</span></div>
   <div class="tile tile-error"><b>{{ totals.people_no }}</b><span>не допущено</span></div>
-  <div class="tile"><b>{{ "{:,}".format(totals.fee_paid).replace(",", " ") }} ₽</b><span>взносов собрано из {{ "{:,}".format(totals.fee_due).replace(",", " ") }} ₽</span></div>
+  {% if fest_fee %}<a class="tile" href="/festival/{{ fest_fee.id|urlencode }}#fees"><b>₽</b><span>взнос — один за фестиваль, ведомость там</span></a>
+  {% else %}<div class="tile"><b>{{ "{:,}".format(totals.fee_paid).replace(",", " ") }} ₽</b><span>взносов собрано из {{ "{:,}".format(totals.fee_due).replace(",", " ") }} ₽</span></div>{% endif %}
 </div>
 {% if totals.no_check %}
 <details class="panel panel-warn adm-nocheck">

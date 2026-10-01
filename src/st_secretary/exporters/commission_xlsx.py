@@ -131,10 +131,13 @@ def _protocol(ws, teams: list[TeamCheck], comp: Competition) -> None:
     ws.print_title_rows = f"{h1}:{h3}"
 
 
-def _fees(ws, teams: list[TeamCheck], comp: Competition) -> None:
+def _fees(ws, teams: list[TeamCheck], comp: Competition, note: str = "") -> None:
     head = ["№ п/п", "Номер", "Команда", "Территория", "Представитель", "Участников", "Взнос к оплате, ₽",
             "Оплачено, ₽", "Способ оплаты", "Отметка", "Подпись представителя"]
     r = _title_block(ws, comp, "Ведомость заявочных взносов", len(head))
+    if note:  # взнос — один за фестиваль: ведомость у фестиваля
+        ws.cell(r, 1, note).font = Font(bold=True)
+        return
     for c, text in enumerate(head, start=1):
         ws.cell(r, c, text).font = Font(bold=True, size=9)
         ws.cell(r, c).fill = HEAD
@@ -224,12 +227,50 @@ def _gear(ws, gear: list, gear_data: dict, comp: Competition) -> None:
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
 
+def write_festival_fees(title: str, rows: list[dict], secretary: str, path: str | Path) -> Path:
+    """Ведомость взноса за фестиваль (один взнос за все его соревнования): по командам, festival.fee_rows."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Взносы фестиваля"
+    head = ["№ п/п", "Номер", "Команда", "Территория", "Представитель", "Соревнования", "Участников",
+            "Взнос к оплате, ₽", "Оплачено, ₽", "Способ оплаты", "Отметка", "Подпись представителя"]
+    ws.cell(1, 1, title).font = Font(bold=True, size=12)
+    ws.cell(2, 1, "Ведомость стартовых взносов").font = Font(bold=True, size=14)
+    r = 4
+    for c, text in enumerate(head, start=1):
+        ws.cell(r, c, text).font = Font(bold=True, size=9)
+        ws.cell(r, c).fill = HEAD
+    _box(ws, r, 1, len(head))
+    r += 1
+    for n, x in enumerate(rows, start=1):
+        values = [n, x["number"], x["team"], x["territory"], x["representative"], "; ".join(x["comps"]),
+                  x["people"], x["due"] or None, x["paid"] or None, x["method"], x["status"], ""]
+        for c, v in enumerate(values, start=1):
+            ws.cell(r, c, v)
+        _box(ws, r, 1, len(head), WRAP)
+        r += 1
+    ws.cell(r, 3, "Итого:").font = Font(bold=True)
+    ws.cell(r, 8, sum(x["due"] for x in rows)).font = Font(bold=True)
+    ws.cell(r, 9, sum(x["paid"] for x in rows)).font = Font(bold=True)
+    _box(ws, r, 1, len(head))
+    ws.cell(r + 3, 1, f"Главный секретарь ________________ / {secretary or ' ' * 30} /")
+    for c, w in enumerate([5, 7, 22, 16, 26, 30, 10, 11, 11, 12, 12, 18], start=1):
+        ws.column_dimensions[get_column_letter(c)].width = w
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    path = Path(path)
+    wb.save(path)
+    return path
+
+
 def write_commission_report(teams: list[TeamCheck], comp: Competition, data: dict, path: str | Path,
-                            gear: list | None = None, gear_data: dict | None = None) -> Path:
-    """gear — итоги проверки снаряжения (если перечень задан): добавляется лист «Проверка снаряжения»."""
+                            gear: list | None = None, gear_data: dict | None = None, fee_note: str = "") -> Path:
+    """gear — итоги проверки снаряжения (если перечень задан): добавляется лист «Проверка снаряжения».
+    fee_note — взнос не по соревнованию (один за фестиваль): в ведомости только эта строка."""
     wb = Workbook()
     _protocol(wb.active, teams, comp)
-    _fees(wb.create_sheet("Ведомость взносов"), teams, comp)
+    _fees(wb.create_sheet("Ведомость взносов"), teams, comp, fee_note)
     if gear:
         _gear(wb.create_sheet("Проверка снаряжения"), gear, gear_data or {}, comp)
     _people(wb.create_sheet("Документы участников"), teams, data)
