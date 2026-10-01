@@ -395,6 +395,8 @@ def fix_url(base: str, i) -> str:
         return at("/admission", f"{team_anchor(file)}/{fld}", team_anchor(file))
     if kind == "reentry":
         return at("/preapps/edit", file=rest, reentry="1")
+    if kind == "form":  # заявка похожа на свою форму, но не совпала — изменить форму по этому файлу (п. 41)
+        return at("/forms/from-preapp", file=rest)
     if kind == "equipment":
         return at("/equipment", anchor=team_anchor(rest))
     return ""

@@ -8,6 +8,23 @@
 <p class="lead">{% if file %}Образец: «{{ file }}». {% endif %}Программа угадала, где что, — проверьте и поправьте, если
   нужно. Внизу — как она прочитает файл. Сохраните форму, и заявки с такой же шапкой будут читаться по ней сами.</p>
 
+{% if known %}{% set kname, exact = known %}
+<div class="panel panel-warn form-known">
+  {% set open_url = base ~ "/forms/edit?" ~ {"sample": token, "file": file, "name": kname.name}|urlencode %}
+  {% if exact %}
+  <h2>{{ icon("alert") }} Такая форма уже есть: «{{ kname.name }}»</h2>
+  <p>Шапка образца совпадает с ней — файлы с такой шапкой программа уже читает по этой форме.</p>
+  <p><a class="btn btn-primary" href="{{ open_url }}">{{ icon("edit", 18) }}Открыть её</a>
+    <span class="muted">образец откроется в её настройке; сохранение заменит её. Или настройте ниже как новую.</span></p>
+  {% else %}
+  <h2>{{ icon("alert") }} Похожа на форму «{{ kname.name }}»</h2>
+  <p>Большая часть колонок такая же, но шапка не совпадает (колонку добавили, убрали или переименовали).</p>
+  <p><a class="btn btn-primary" href="{{ open_url }}">{{ icon("edit", 18) }}Изменить «{{ kname.name }}» по этому образцу</a>
+    <span class="muted">или сохраните ниже как новую форму — тогда останутся обе.</span></p>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if errors %}<div class="flash flash-err" role="alert">{{ icon("alert") }}<div>Форма не сохранена: {{ errors|join("; ") }}.</div></div>{% endif %}
 
 <form method="post" action="{{ base }}/forms/edit" class="form-edit">

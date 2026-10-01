@@ -226,19 +226,51 @@ def _sheet_rows(grids, form) -> list[tuple[str, list[list], int]]:
     return out
 
 
+def _likeness(form: dict, row) -> float:
+    """Насколько строка похожа на шапку формы: доля общих заголовков (0 — ничего общего, 1 — те же)."""
+    sig = {x for x in form.get("signature", []) if x}
+    got = {x for x in signature(row) if x}
+    return len(sig & got) / len(sig | got) if sig and got else 0.0
+
+
+SIMILAR = 0.6  # шапка «похожа» на форму: общих заголовков не меньше 60 %
+
+
 def match(forms: list[dict], grids) -> tuple[dict, bool] | None:
     """Какая форма у файла: (форма, True) — шапка совпала; (форма, False) — похожа, но не совпадает."""
     similar = None
     for form in forms:
         if _sheet_rows(grids, form):
             return form, True
-        sig = set(x for x in form.get("signature", []) if x)
-        for _, grid in grids:
-            for row in grid[:30]:
-                got = set(x for x in signature(row) if x)
-                if sig and got and len(sig & got) / len(sig | got) >= 0.6:
-                    similar = similar or (form, False)
+        if similar is None and any(_likeness(form, row) >= SIMILAR for _, grid in grids for row in grid[:30]):
+            similar = form, False
     return similar
+
+
+def similar_header(grids, form: dict) -> tuple[int, int] | None:
+    """(лист, строка) шапки, больше всего похожей на шапку формы, — открыть форму по похожему файлу (п. 41)."""
+    best, at = SIMILAR - 1e-9, None
+    for i, (_, grid) in enumerate(grids):
+        for r, row in enumerate(grid[:30]):
+            if (x := _likeness(form, row)) > best:
+                best, at = x, (i, r)
+    return at
+
+
+def adapt_columns(form: dict, headers: list) -> list[str]:
+    """Колонки сохранённой формы — к шапке похожего файла (п. 41): колонка с тем же заголовком — как в форме (второй
+    одинаковый заголовок — как второй в форме), новая — угадать по названию."""
+    def keyed(sig: list[str]) -> list[tuple[str, int]]:
+        seen: dict[str, int] = {}
+        out = []
+        for h in sig:
+            out.append((h, seen.get(h, 0)))
+            seen[h] = seen.get(h, 0) + 1
+        return out
+
+    known = dict(zip(keyed(form.get("signature", [])), form.get("columns", []), strict=False))
+    guessed = guess_columns(headers)
+    return [known.get(k, guessed[i] if i < len(guessed) else SKIP) for i, k in enumerate(keyed(signature(headers)))]
 
 
 _CLASS_IN_NAME = re.compile(r"(\d)\s*[- ]?\s*(?:кл|класс)", re.IGNORECASE)

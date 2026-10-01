@@ -123,6 +123,11 @@ def process(apps: list[RawApplication], comp: Competition) -> PreappResult:
         src = app.path.name
         if app.problems:
             for text, why in app.problems:
+                if getattr(app, "similar_form", ""):  # похожа на свою форму — поправить форму по этому файлу (п. 41)
+                    issues.append(Issue(ERROR, text, source=src, why=why, target=f"form:{src}",
+                                        todo=f"«Исправить» откроет форму «{app.similar_form}» по этому файлу: поправьте "
+                                             "колонки и сохраните — или сохраните как новую форму."))
+                    continue
                 issues.append(Issue(ERROR, text, source=src, why=why,
                                     todo="Попросите команду прислать заявку по бланку или заполните её в программе "
                                          "(кнопка «Исправить заявку» откроет пустую форму для этого файла)."))

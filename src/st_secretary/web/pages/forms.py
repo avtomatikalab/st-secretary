@@ -65,7 +65,7 @@ def register(app, cx) -> None:
         store.samples_dir.mkdir(parents=True, exist_ok=True)
         (store.samples_dir / f"{token}{Path(name).suffix.lower()}").write_bytes(await up.read())
         q = {"sample": token, "file": Path(name).name}
-        if form.get("name"):
+        if saved_form(str(form.get("name", ""))):  # «Изменить сохранённую» — образец открывается в её настройке
             q["name"] = str(form.get("name"))
         return _redirect(f"{_base(f)}/forms/edit?{urlencode(q)}")
 
@@ -83,19 +83,19 @@ def register(app, cx) -> None:
         state = {"sheet": 0, "row": 0, "columns": [], "team_in": "head", "head": {}, "sheets": [], "values": {},
                  "name": saved.get("name", "") if saved else ""}
         if grids:
-            if saved:
-                for i, (_, grid) in enumerate(grids):
-                    at = next((r for r, row in enumerate(grid[:30]) if fm.signature(row) == saved["signature"]), None)
-                    if at is not None:
-                        state.update(sheet=i, row=at)
-                        break
-            else:
-                found = [(i, r) for i, (_, grid) in enumerate(grids) if (r := fm.find_header(grid)) is not None]
-                if found:
-                    state["sheet"], state["row"] = found[0]
+            exact = next(((i, r) for i, (_, grid) in enumerate(grids) for r, row in enumerate(grid[:30])
+                          if fm.signature(row) == saved["signature"]), None) if saved else None
+            # шапка образца похожа на форму, но не та же (п. 41) — строка, больше всего похожая на шапку формы
+            similar = fm.similar_header(grids, saved) if saved and not exact else None
+            found = [(i, r) for i, (_, grid) in enumerate(grids) if (r := fm.find_header(grid)) is not None]
+            if at := exact or similar or (found[0] if found else None):
+                state["sheet"], state["row"] = at
             grid = grids[state["sheet"]][1]
             headers = list(grid[state["row"]]) if state["row"] < len(grid) else []
-            state["columns"] = list(saved["columns"]) if saved else fm.guess_columns(headers)
+            if saved:  # колонки формы — к шапке образца (у похожей шапки новые колонки угадываются)
+                state["columns"] = list(saved["columns"]) if exact else fm.adapt_columns(saved, headers)
+            else:
+                state["columns"] = fm.guess_columns(headers)
             state["head"] = dict(saved.get("head", {})) if saved else fm.guess_head(grid, state["row"])
         elif saved:
             state["columns"] = list(saved["columns"])
@@ -177,8 +177,11 @@ def register(app, cx) -> None:
         same = [n for n, _, _ in fm._sheet_rows(grids, {"signature": form["signature"]})] if grids else []
         sheets = [{"name": n, "rows": [[clean_spaces(v) for v in row[:PREVIEW_COLS]] for row in g[:PREVIEW_ROWS]],
                    "same": n in same} for n, g in (grids or [])]
+        # образец новой формы, а такая (или похожая) уже сохранена — предложить открыть её (п. 41)
+        known = fm.match(store.forms(), grids) if grids and saved is None else None
         return page(request, "form_edit.html", status_code=status_code, active="preapps", token=token, file=file,
                     state=state, form=form, saved=saved, sheets=sheets, fields=fm.FIELDS, labels=fm.FIELD_LABEL,
+                    known=known,
                     own=fm.OWN, skip=fm.SKIP, head_fields=fm.HEAD_FIELDS, values_rows=values_rows,
                     missing=fm.check(form), preview=preview, issues=issues, parts=parts, errors=errors or [],
                     cell_ref=fm.cell_ref, **comp_ctx(f))
@@ -222,6 +225,22 @@ def register(app, cx) -> None:
         if (p := sample_path(token)) is not None:
             p.unlink(missing_ok=True)  # образец больше не нужен
         return _redirect(f"{_base(f)}/forms?{urlencode({'done': 'form_saved', 'name': form['name']})}")
+
+    @app.get("/c/{cid}/forms/from-preapp")
+    def forms_from_preapp(cid: str, file: str = ""):
+        """«Исправить» у заявки, похожей на свою форму (п. 41): заявка — образцом, открыть похожую форму по ней."""
+        f = folder(cid)
+        path = f.preapp_path(file)
+        if path is None or path.suffix.lower() not in SAMPLE_TYPES:
+            raise HTTPException(404)
+        token = secrets.token_hex(8)
+        store.samples_dir.mkdir(parents=True, exist_ok=True)
+        (store.samples_dir / f"{token}{path.suffix.lower()}").write_bytes(path.read_bytes())
+        q = {"sample": token, "file": path.name}
+        grids = read_grids(token)
+        if grids and (m := fm.match(store.forms(), grids)):
+            q["name"] = m[0]["name"]
+        return _redirect(f"{_base(f)}/forms/edit?{urlencode(q)}")
 
     @app.post("/c/{cid}/forms/delete")
     async def forms_delete(request: Request, cid: str):

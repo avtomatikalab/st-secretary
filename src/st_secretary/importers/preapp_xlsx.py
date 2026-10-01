@@ -61,6 +61,7 @@ class RawApplication:
     sheets: list[str] = field(default_factory=list)  # листы с таблицей участников, по порядку
     form: str = ""  # прочитан по своей форме (Правки, п. 37) — её название; пусто — стандартный бланк
     team_in_row: bool = False  # по форме команда — в каждой строке (заявка делегации)
+    similar_form: str = ""  # не прочитан, но шапка похожа на эту свою форму — «Изменить форму по этому файлу» (п. 41)
 
 
 SHEET_ROWS = 1000  # строка участника на втором листе — 1000 + номер строки, на третьем — 2000 + … (Правки, п. 29)
@@ -123,6 +124,7 @@ def read_preapplication(path: str | Path, forms: list[dict] | None = None) -> Ra
     tables = [(name, grid, head) for name, grid in grids if (head := _table_head(grid)) is not None]
     if not tables:
         if found:  # похоже на свою форму, но шапка изменилась
+            app.similar_form = found[0].get("name", "")
             app.problems.append((f"шапка таблицы похожа на форму «{found[0].get('name', '')}», но не совпадает с ней",
                                  "В файле переименовали, добавили или убрали колонки. Откройте «Свои формы заявок» "
                                  "и добавьте форму по этому файлу (или поправьте файл)."))

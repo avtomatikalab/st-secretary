@@ -169,3 +169,61 @@ def test_form_file_export_import_and_delete(client, tmp_path, psr_card):
     # редактирование сохранённой формы без образца
     page = client.get(base(f) + "/forms/edit?name=Форма А").text
     assert "Что в каждой колонке" in page and "Размер футболки" in page
+
+
+def test_offer_saved_forms_on_sample_upload(client, tmp_path, psr_card):
+    """Правки, п. 41: при загрузке образца — выбрать сохранённую форму для изменения; образец совпал с сохранённой —
+    «Такая форма уже есть», похож — «Похожа на …»: изменить её или сохранить как новую; заявка, похожая на форму, —
+    «Исправить» открывает форму по этому файлу."""
+    from openpyxl import load_workbook
+
+    store = client.app.state.store
+    f = store.create(psr_card)
+    store.save_form({"name": "Форма А", "headers": OWN_HEAD, "signature": fm.signature(OWN_HEAD),
+                     "columns": fm.guess_columns(OWN_HEAD), "team_in": "head", "head": {"team": "B2"}, "sheets": [],
+                     "values": {"sex": {"муж": "м", "жен": "ж"}}})
+    page = client.get(base(f) + "/forms").text
+    assert "Изменить сохранённую" in page and '<option value="Форма А">' in page
+
+    # та же шапка, загружен как новая — «Такая форма уже есть», «Открыть её» — образец в её настройке
+    same = own_form_file(tmp_path / "образец.xlsx", "Сталактит", PEOPLE).read_bytes()
+    r = client.post(base(f) + "/forms/sample", files={"sample": ("образец.xlsx", same)}, follow_redirects=False)
+    page = client.get(r.headers["location"]).text
+    assert "Такая форма уже есть: «Форма А»" in page and "Открыть её" in page
+    link = page.split("Открыть её")[0].rsplit('href="', 1)[1].split('"')[0].replace("&amp;", "&")
+    assert parse_qs(urlsplit(link).query)["name"] == ["Форма А"]
+    page = client.get(link).text
+    assert "Форма «Форма А»" in page and "Такая форма уже есть" not in page
+
+    # выбрали сохранённую при загрузке — сразу её настройка
+    r = client.post(base(f) + "/forms/sample", data={"name": "Форма А"},
+                    files={"sample": ("образец.xlsx", same)}, follow_redirects=False)
+    assert parse_qs(urlsplit(r.headers["location"]).query)["name"] == ["Форма А"]
+
+    # шапку поменяли (своя колонка «Питание» вместо «Размер футболки») — «Похожа на …», два пути
+    changed = own_form_file(tmp_path / "Свод.xlsx", "Свод", PEOPLE[:2])
+    wb = load_workbook(changed)
+    wb.active["I5"] = "Питание"
+    wb.save(changed)
+    r = client.post(base(f) + "/forms/sample", files={"sample": ("Свод.xlsx", changed.read_bytes())},
+                    follow_redirects=False)
+    page = client.get(r.headers["location"]).text
+    assert "Похожа на форму «Форма А»" in page and "сохраните ниже как новую форму" in page
+
+    # на странице заявок: заявка не прочиталась, но похожа на форму — «Исправить» открывает форму по этому файлу
+    client.post(base(f) + "/preapps/upload", files={"files": ("Свод.xlsx", changed.read_bytes())})
+    result, _ = store.review(f, f.load())
+    issue = next(i for i in result.issues if "похожа на форму «Форма А»" in i.text)
+    assert issue.target == "form:Свод.xlsx" and "откроет форму «Форма А»" in issue.todo
+    r = client.get(base(f) + "/forms/from-preapp?file=Свод.xlsx", follow_redirects=False)
+    q = parse_qs(urlsplit(r.headers["location"]).query)
+    assert q["name"] == ["Форма А"] and q["file"] == ["Свод.xlsx"]
+    page = client.get(r.headers["location"]).text
+    assert "Форма «Форма А»" in page and "Питание" in page
+    save_form_from_page(client, f, page)  # колонки формы — к новой шапке: «Питание» — своя колонка
+    forms = store.forms()
+    assert [x["name"] for x in forms] == ["Форма А"] and forms[0]["columns"][-1] == "own"
+    assert forms[0]["signature"][-1] == "питание" and forms[0]["values"]["sex"]["жен"] == "ж"
+    result, _ = store.review(f, f.load())
+    assert [e.name.full for t in result.teams for e in t.entries] == ["Сводов Артём Игоревич",
+                                                                    "Гротова Вера Олеговна"]

@@ -16,10 +16,17 @@
   <form method="post" action="{{ base }}/forms/sample" enctype="multipart/form-data" class="fest-add">
     <label for="f-sample">Образец заявки (Excel — заполненный или пустой бланк)</label>
     <input id="f-sample" type="file" name="sample" accept=".xlsx,.xls" required>
+    {% if forms %}<label for="f-which">для</label>
+    <select id="f-which" name="name">
+      <option value="">новой формы</option>
+      <optgroup label="Изменить сохранённую">{% for x in forms %}<option value="{{ x.name }}">{{ x.name }}</option>{% endfor %}</optgroup>
+    </select>{% endif %}
     <button class="btn btn-primary" type="submit">{{ icon("upload", 18) }}Показать программе</button>
   </form>
   <p class="hint">Образец нужен только чтобы настроить форму: после сохранения он удаляется (через сутки — сам, если форму
-    не сохранили).</p>
+    не сохранили).{% if forms %} Форма поменялась (добавили колонку, переименовали) — выберите её в списке: образец
+    откроется в её настройке, сохранение заменит её. Если образец совпадёт с сохранённой формой или будет похож на
+    неё — программа подскажет.{% endif %}</p>
 </section>
 
 <section class="panel">
