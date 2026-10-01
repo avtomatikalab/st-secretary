@@ -205,48 +205,70 @@ def status_of(v) -> Status:
         return Status.FINISHED
 
 
-def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -> ZachetRun:
-    stages = stages_of(zdata)
-    known = {s.id for s in stages}
-    stored = zdata.get("teams", {})
+def parse_cells(d: dict, known: set[str], removal: tuple[str, ...] = ()) -> tuple[dict, dict, list, int]:
+    """Клетки этапов команды → (как вписано, баллы, этапы с не-числом, снятий). removal — как пишут снятие с этапа
+    («с» у дисциплин по времени); у ПСР снятие — МШ в клетке, слова нет. Общее для ПСР и дисциплин по времени."""
+    raw = {k: str(v) for k, v in d.get("points", {}).items() if k in known and str(v).strip() != ""}
+    pts, bad, removals = {}, [], 0
+    for sid, v in raw.items():
+        if v.strip().lower() in removal:
+            removals += 1
+            continue
+        try:
+            x = parse_points(v)
+        except ValueError:
+            bad.append(sid)
+            continue
+        if x is not None:
+            pts[sid] = x
+    return raw, pts, bad, removals
+
+
+def norms_for(comp: Competition, z: Zachet, issues: list[Issue]):
+    """Редакция разрядных норм соревнования; у неофициальных — нет (ни ранга, ни нормативов, решение 038)."""
+    norms = None
+    try:
+        norms = norm_edition(comp.norms_edition)
+    except KeyError:
+        issues.append(Issue(ERROR, f"нет редакции норм «{comp.norms_edition}» — нормативы не считаются", source=z.key,
+                            target="card"))
+    if comp.unofficial:
+        norms = None
+        issues.append(Issue(INFO, "неофициальные соревнования — квалификационный ранг, % от победителя и разряды "
+                                  "не считаются", source=z.key))
+    return norms
+
+
+def _psr_row(i: int, t: TeamInput, d: dict, stages, zdata: dict, z: Zachet, issues: list[Issue]) -> TeamResult:
+    """Строка команды ПСР: баллы этапов, снятия (МШ), пункты таблицы штрафов от судей, сумма и туры; замечания —
+    не число в клетке, больше 2 × МШ."""
     from st_secretary import judge_sync as js  # оба берут Stage отсюда
     from st_secretary import stage_time as stt
 
-    issues: list[Issue] = []
-    rows: list[TeamResult] = []
+    raw, pts, bad, _ = parse_cells(d, {s.id for s in stages})
+    status = status_of(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
+    r = TeamResult(t, i, pts, raw, bad, status, str(d.get("note", "")))
+    r.marks = stt.marks(zdata, stages, t.file, raw)
+    r.codes = {s.id: c for s in stages if (c := js.pen_codes(js.pens_of(zdata, s.id, t.file)))}
+    r.total = sum(pts.values(), Fraction(0))
+    r.tours = {tour: sum((pts.get(s.id, Fraction(0)) for s in stages if s.tour == tour), Fraction(0))
+               for tour in tours_of(stages)}
+    for sid in bad:
+        st = next(s for s in stages if s.id == sid)
+        issues.append(Issue(ERROR, f"«{t.team}», {st.title}: «{raw[sid]}» — не число", source=z.key, team=t.team,
+                            target=f"cell:{t.file}:{sid}"))
+    for s in stages:
+        x = pts.get(s.id)
+        if x is not None and s.max_penalty is not None and x > 2 * s.max_penalty:
+            issues.append(Issue(WARNING, f"«{t.team}», {s.title}: {points_text(x)} — больше 2 × МШ "
+                                         f"({points_text(2 * s.max_penalty)})", source=z.key, team=t.team,
+                                target=f"cell:{t.file}:{s.id}"))
+    return r
 
-    for i, t in enumerate(start_list.ordered(teams, zdata), start=1):  # порядок старта — по жеребьёвке
-        d = stored.get(t.file, {})
-        raw = {k: str(v) for k, v in d.get("points", {}).items() if k in known and str(v).strip() != ""}
-        pts, bad = {}, []
-        for sid, v in raw.items():
-            try:
-                x = parse_points(v)
-            except ValueError:
-                bad.append(sid)
-                continue
-            if x is not None:
-                pts[sid] = x
-        status = status_of(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
-        r = TeamResult(t, i, pts, raw, bad, status, str(d.get("note", "")))
-        r.marks = stt.marks(zdata, stages, t.file, raw)
-        r.codes = {s.id: c for s in stages if (c := js.pen_codes(js.pens_of(zdata, s.id, t.file)))}
-        r.total = sum(pts.values(), Fraction(0))
-        r.tours = {tour: sum((pts.get(s.id, Fraction(0)) for s in stages if s.tour == tour), Fraction(0))
-                   for tour in tours_of(stages)}
-        rows.append(r)
-        for sid in bad:
-            st = next(s for s in stages if s.id == sid)
-            issues.append(Issue(ERROR, f"«{t.team}», {st.title}: «{raw[sid]}» — не число", source=z.key, team=t.team,
-                                target=f"cell:{t.file}:{sid}"))
-        for s in stages:
-            x = pts.get(s.id)
-            if x is not None and s.max_penalty is not None and x > 2 * s.max_penalty:
-                issues.append(Issue(WARNING, f"«{t.team}», {s.title}: {points_text(x)} — больше 2 × МШ "
-                                             f"({points_text(2 * s.max_penalty)})", source=z.key, team=t.team,
-                                    target=f"cell:{t.file}:{s.id}"))
 
-    # команда без единого внесённого балла места не получает: её баллы ещё не внесены, а не «0 — лучший результат»
+def _psr_places(rows: list[TeamResult], stages, zdata: dict, z: Zachet, issues: list[Issue]) -> list[TeamResult]:
+    """Места по сумме баллов. Команда без единого внесённого балла места не получает: её баллы ещё не внесены, а не
+    «0 — лучший результат»."""
     cards = [PsrTeamCard(r.inp.file, r.start_order, r.points, r.status if r.points else Status.DNS) for r in rows]
     empty = [r.inp.team for r in rows if r.status is Status.FINISHED and not r.points and not r.bad]
     if stages and empty and len(empty) < len(rows):
@@ -257,21 +279,42 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
         r = by_file[p.item.team]
         r.place = p.place
         ordered.append(r)
+    return ordered
+
+
+def _actual_class(run: ZachetRun, zdata: dict, z: Zachet, issues: list[Issue]) -> None:
+    """Фактически пройденный класс (п. 6.1.3): без этапов, где получен МШ."""
+    stages = run.stages
+    dist = zdata.get("distance", {})
+    try:
+        km, modes, kv = (parse_points(dist.get(k)) for k in ("km", "modes", "kv_hours"))
+    except ValueError:
+        km = modes = kv = None
+    if stages and kv is not None and z.distance_class and all(s.max_penalty is not None for s in stages):
+        for r in run.rows:
+            if r.status is not Status.FINISHED:
+                continue
+            passed = [s.max_penalty for s in stages if r.points.get(s.id, Fraction(0)) < s.max_penalty]
+            r.actual_class = distance_class(class_points(passed, km or 0, int(modes or 0)), kv)
+            if r.actual_class is not None and r.actual_class < z.distance_class:
+                issues.append(Issue(INFO, f"«{r.inp.team}»: фактически пройден {r.actual_class} класс "
+                                          f"(заявлен {z.distance_class})", source=z.key, team=r.inp.team))
+
+
+def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -> ZachetRun:
+    """Расчёт зачёта ПСР: строки команд → места → ранг → процент и разряды → фактический класс."""
+    stages = stages_of(zdata)
+    stored = zdata.get("teams", {})
+    issues: list[Issue] = []
+    rows = [_psr_row(i, t, stored.get(t.file, {}), stages, zdata, z, issues)  # порядок старта — по жеребьёвке
+            for i, t in enumerate(start_list.ordered(teams, zdata), start=1)]
+    ordered = _psr_places(rows, stages, zdata, z, issues)
 
     # квалификационный ранг: все команды, что стартовали (места 1–6 дают баллы)
     started = [r for r in ordered if r.status not in (Status.DNS, Status.OUT_OF_COMPETITION)]
     rank = None
     fmt = z.rank_format
-    norms = None
-    try:
-        norms = norm_edition(comp.norms_edition)
-    except KeyError:
-        issues.append(Issue(ERROR, f"нет редакции норм «{comp.norms_edition}» — нормативы не считаются", source=z.key,
-                            target="card"))
-    if comp.unofficial:  # неофициальные: ни ранга, ни нормативов (решение 038)
-        norms = None
-        issues.append(Issue(INFO, "неофициальные соревнования — квалификационный ранг, % от победителя и разряды "
-                                  "не считаются", source=z.key))
+    norms = norms_for(comp, z, issues)
     if norms and fmt:
         if any(m.qual is None for r in started for m in r.inp.members):
             issues.append(Issue(WARNING, "у части участников не распознан разряд — в ранге они считаются без разряда",
@@ -309,22 +352,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 r.norm = d.qual.label if d.qual else ""
         if rank and rank.value is None and rank.reason:
             issues.append(Issue(INFO, f"ранг не определяется: {rank.reason}", source=z.key))
-
-    # фактически пройденный класс (п. 6.1.3): без этапов, где получен МШ
-    dist = zdata.get("distance", {})
-    try:
-        km, modes, kv = (parse_points(dist.get(k)) for k in ("km", "modes", "kv_hours"))
-    except ValueError:
-        km = modes = kv = None
-    if stages and kv is not None and z.distance_class and all(s.max_penalty is not None for s in stages):
-        for r in ordered:
-            if r.status is not Status.FINISHED:
-                continue
-            passed = [s.max_penalty for s in stages if r.points.get(s.id, Fraction(0)) < s.max_penalty]
-            r.actual_class = distance_class(class_points(passed, km or 0, int(modes or 0)), kv)
-            if r.actual_class is not None and r.actual_class < z.distance_class:
-                issues.append(Issue(INFO, f"«{r.inp.team}»: фактически пройден {r.actual_class} класс "
-                                          f"(заявлен {z.distance_class})", source=z.key, team=r.inp.team))
+    _actual_class(run, zdata, z, issues)
     return run
 
 

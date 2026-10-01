@@ -29,6 +29,8 @@ from st_secretary.psr_run import (
     TeamInput,
     TeamResult,
     ZachetRun,
+    norms_for,
+    parse_cells,
     parse_points,
     stages_of,
     status_of,
@@ -37,7 +39,6 @@ from st_secretary.psr_run import (
 )
 from st_secretary.qualification import Qual
 from st_secretary.rank import RankEntry, evsk_participation_ok, qualification_rank
-from st_secretary.reference import norm_edition
 
 # Дисциплины со стартом и финишем: спелео, пешеходные, северная ходьба (результат — время) и горные (баллы за
 # время, технику и тактику).
@@ -202,108 +203,101 @@ def _hundredths(x: Fraction) -> Fraction:
     return Fraction(math.floor(x * 100 + Fraction(1, 2)), 100)
 
 
-def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -> ZachetRun:
-    stages = stages_of(zdata)
-    known = {s.id for s in stages}
-    stored = zdata.get("teams", {})
-    issues: list[Issue] = []
+def _config(z: Zachet, zdata: dict) -> dict:
+    """Настройки расчёта зачёта: профиль, система, КВ/ОКВ, эквивалент балла, составляющие результата."""
     st = settings(z, zdata)
-    kind, penalty_system = st["profile"], st["system"] == "penalty"
+    kind = st["profile"]
     kv = parse_points(zdata.get("kv")) if str(zdata.get("kv", "")).strip().isdigit() else None
-    okv = kv * 60 if kv is not None else None  # ОКВ, с
     spp_set = str(zdata.get("spp", "")).strip()
     expected = str(zdata.get("expected", "")).strip()
     if kind == "nordic":
         spp = 15  # северная ходьба: 1 балл = 15 с (п. 10.3.2)
     else:
         spp = int(spp_set) if spp_set in ("15", "30") else (15 if expected.isdigit() and int(expected) <= 30 else 30)
-    unit = unit_kind(z.rank_format)
-    adds = adds_of(zdata)
+    return {"kind": kind, "system": st["system"], "penalty": st["system"] == "penalty", "removal": st["removal"],
+            "rate": st["rate"], "kv": kv, "okv": kv * 60 if kv is not None else None,  # ОКВ, с
+            "spp": spp, "adds": adds_of(zdata)}
 
-    planned = start_list.planned_starts(zdata, teams)  # «Время старта — время, указанное в стартовом протоколе»
-    rows: list[TeamResult] = []
-    for i, t in enumerate(start_list.ordered(teams, zdata), start=1):
-        d = stored.get(t.file, {})
-        raw = {k: str(v) for k, v in d.get("points", {}).items() if k in known and str(v).strip() != ""}
-        pts, bad, removals = {}, [], 0
-        for sid, v in raw.items():
-            if v.strip().lower() in REMOVAL:
-                removals += 1
-                continue
-            try:
-                x = parse_points(v)
-            except ValueError:
-                bad.append(sid)
-                continue
-            if x is not None:
-                pts[sid] = x
-        status = status_of(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
-        r = TeamResult(t, i, pts, raw, bad, status, str(d.get("note", "")), removals=removals,
-                       chip=str(d.get("chip", "")).strip() or next((m.chip for m in t.members if getattr(m, "chip", "")), ""))
-        r.total = sum(pts.values(), Fraction(0))  # пока — сумма баллов; ниже станет результатом
-        r.tours = {tour: sum((pts.get(s.id, Fraction(0)) for s in stages if s.tour == tour), Fraction(0))
-                   for tour in tours_of(stages)}
-        fields = [("start", parse_clock), ("finish", parse_clock), ("cutoffs", parse_duration)]
-        if kind in ("pedestrian", "nordic"):
-            fields.append(("pen_time", parse_duration))
-        if kind == "mountain":
-            fields.append(("declared", parse_duration))
-        for field, parse in fields:
-            try:
-                val = parse(d.get(field, ""))
-            except ValueError:
-                what = {"start": "старт", "finish": "финиш", "cutoffs": "отсечки", "pen_time": "штрафное время",
-                        "declared": "заявленное время"}[field]
-                issues.append(Issue(ERROR, f"«{t.team}»: {what} «{d.get(field)}» — не время (нужно "
-                                           f"{'чч:мм:сс' if field in ('start', 'finish') else 'мм:сс'})",
-                                    source=z.key, team=t.team, target=f"cell:{t.file}:{field}"))
-                bad.append(field)
-                continue
-            if field in ("start", "finish", "cutoffs"):
-                setattr(r, field, val if val is not None else (Fraction(0) if field == "cutoffs" else None))
-            else:
-                r.extra[field] = val or Fraction(0)
-        for a in adds:  # дополнительные составляющие результата (Правки, п. 32)
-            fld = f"add-{a['id']}"
-            try:
-                val = parse_duration(d.get(fld, "")) if a["kind"] == "time" else parse_points(d.get(fld, ""))
-            except ValueError:
-                what = "время (мм:сс или ч:мм:сс)" if a["kind"] == "time" else "число"
-                issues.append(Issue(ERROR, f"«{t.team}»: {a['name']} «{d.get(fld)}» — не {what}", source=z.key,
-                                    team=t.team, target=f"cell:{t.file}:{fld}"))
-                bad.append(fld)
-                continue
-            r.extra[fld] = val or Fraction(0)
-        r.red = kind == "nordic" and _flag(d.get("red"), RED)
-        r.no_tactics = kind == "mountain" and _flag(d.get("no_tactics"), NO_TACTICS)
-        if r.start is None and "start" not in r.bad and t.file in planned:
-            r.start, r.planned_start = Fraction(planned[t.file]), True
-        for sid in [b for b in bad if b in known]:
-            s = next(s for s in stages if s.id == sid)
-            issues.append(Issue(ERROR, f"«{t.team}», {s.title}: «{raw[sid]}» — не число и не «с» (снятие)",
-                                source=z.key, team=t.team, target=f"cell:{t.file}:{sid}"))
-        if pts and not penalty_system:
-            issues.append(Issue(ERROR, f"«{t.team}»: в бесштрафовой системе штрафных баллов нет — в клетках этапов "
-                                       "только «с» (снятие); штрафное время — в колонке «Штраф. время»",
-                                source=z.key, team=t.team, target=f"cell:{t.file}:{next(iter(pts))}"))
-            bad.append("points")
-        if r.start is not None and r.finish is not None:
-            finish = r.finish if r.finish >= r.start else r.finish + 86400  # финиш после полуночи
-            r.distance_time = finish - r.start - r.cutoffs
-            if r.distance_time <= 0:
-                issues.append(Issue(ERROR, f"«{t.team}»: время на дистанции получилось {clock_text(r.distance_time)} — "
-                                           "проверьте старт, финиш и отсечки", source=z.key, team=t.team,
-                                    target=f"cell:{t.file}:finish"))
-                r.distance_time = None
-            elif kv is not None and r.distance_time > kv * 60 and status is Status.FINISHED:
-                r.status, r.auto_status = Status.OVER_TIME, True
-        # снятие с дистанции по правилам дисциплины (пешеходные — за снятие с этапа, СХ — за красную карточку)
-        if r.status is Status.FINISHED and st["removal"] == "dsq" and (
-                (kind == "pedestrian" and removals) or r.red):
-            r.status, r.auto_status = Status.REMOVED, True
-        rows.append(r)
 
-    # штрафные баллы по пунктам таблицы штрафов, которые отметили судьи (п. 16), — колонки «п. N» в протоколе спелео
+FIELD_WORDS = {"start": "старт", "finish": "финиш", "cutoffs": "отсечки", "pen_time": "штрафное время",
+               "declared": "заявленное время"}
+
+
+def _team_row(i: int, t: TeamInput, d: dict, stages, cfg: dict, planned: dict, z: Zachet,
+              issues: list[Issue]) -> TeamResult:
+    """Строка команды: клетки этапов (баллы и «с» — снятия), старт, финиш, отсечки, штрафное время, составляющие;
+    время на дистанции, превышение КВ и снятие с дистанции по правилам дисциплины. Ошибки — в issues."""
+    kind = cfg["kind"]
+    known = {s.id for s in stages}
+    raw, pts, bad, removals = parse_cells(d, known, REMOVAL)
+    status = status_of(d.get("status", Status.FINISHED.value if t.admitted else Status.DNS.value))
+    r = TeamResult(t, i, pts, raw, bad, status, str(d.get("note", "")), removals=removals,
+                   chip=str(d.get("chip", "")).strip() or next((m.chip for m in t.members if getattr(m, "chip", "")), ""))
+    r.total = sum(pts.values(), Fraction(0))  # пока — сумма баллов; станет результатом в _score
+    r.tours = {tour: sum((pts.get(s.id, Fraction(0)) for s in stages if s.tour == tour), Fraction(0))
+               for tour in tours_of(stages)}
+    fields = [("start", parse_clock), ("finish", parse_clock), ("cutoffs", parse_duration)]
+    if kind in ("pedestrian", "nordic"):
+        fields.append(("pen_time", parse_duration))
+    if kind == "mountain":
+        fields.append(("declared", parse_duration))
+    for field, parse in fields:
+        try:
+            val = parse(d.get(field, ""))
+        except ValueError:
+            issues.append(Issue(ERROR, f"«{t.team}»: {FIELD_WORDS[field]} «{d.get(field)}» — не время (нужно "
+                                       f"{'чч:мм:сс' if field in ('start', 'finish') else 'мм:сс'})",
+                                source=z.key, team=t.team, target=f"cell:{t.file}:{field}"))
+            bad.append(field)
+            continue
+        if field in ("start", "finish", "cutoffs"):
+            setattr(r, field, val if val is not None else (Fraction(0) if field == "cutoffs" else None))
+        else:
+            r.extra[field] = val or Fraction(0)
+    for a in cfg["adds"]:  # дополнительные составляющие результата (Правки, п. 32)
+        fld = f"add-{a['id']}"
+        try:
+            val = parse_duration(d.get(fld, "")) if a["kind"] == "time" else parse_points(d.get(fld, ""))
+        except ValueError:
+            what = "время (мм:сс или ч:мм:сс)" if a["kind"] == "time" else "число"
+            issues.append(Issue(ERROR, f"«{t.team}»: {a['name']} «{d.get(fld)}» — не {what}", source=z.key,
+                                team=t.team, target=f"cell:{t.file}:{fld}"))
+            bad.append(fld)
+            continue
+        r.extra[fld] = val or Fraction(0)
+    r.red = kind == "nordic" and _flag(d.get("red"), RED)
+    r.no_tactics = kind == "mountain" and _flag(d.get("no_tactics"), NO_TACTICS)
+    if r.start is None and "start" not in r.bad and t.file in planned:
+        r.start, r.planned_start = Fraction(planned[t.file]), True
+    for sid in [b for b in bad if b in known]:
+        s = next(s for s in stages if s.id == sid)
+        issues.append(Issue(ERROR, f"«{t.team}», {s.title}: «{raw[sid]}» — не число и не «с» (снятие)",
+                            source=z.key, team=t.team, target=f"cell:{t.file}:{sid}"))
+    if pts and not cfg["penalty"]:
+        issues.append(Issue(ERROR, f"«{t.team}»: в бесштрафовой системе штрафных баллов нет — в клетках этапов "
+                                   "только «с» (снятие); штрафное время — в колонке «Штраф. время»",
+                            source=z.key, team=t.team, target=f"cell:{t.file}:{next(iter(pts))}"))
+        bad.append("points")
+    kv = cfg["kv"]
+    if r.start is not None and r.finish is not None:
+        finish = r.finish if r.finish >= r.start else r.finish + 86400  # финиш после полуночи
+        r.distance_time = finish - r.start - r.cutoffs
+        if r.distance_time <= 0:
+            issues.append(Issue(ERROR, f"«{t.team}»: время на дистанции получилось {clock_text(r.distance_time)} — "
+                                       "проверьте старт, финиш и отсечки", source=z.key, team=t.team,
+                                target=f"cell:{t.file}:finish"))
+            r.distance_time = None
+        elif kv is not None and r.distance_time > kv * 60 and status is Status.FINISHED:
+            r.status, r.auto_status = Status.OVER_TIME, True
+    # снятие с дистанции по правилам дисциплины (пешеходные — за снятие с этапа, СХ — за красную карточку)
+    if r.status is Status.FINISHED and cfg["removal"] == "dsq" and ((kind == "pedestrian" and removals) or r.red):
+        r.status, r.auto_status = Status.REMOVED, True
+    return r
+
+
+def _pen_items(rows: list[TeamResult], stages, zdata: dict) -> None:
+    """Штрафные баллы по пунктам таблицы штрафов, которые отметили судьи (п. 16), — колонки «п. N» в протоколе
+    спелео (r.by_item)."""
     from st_secretary import judge_sync as js
 
     for r in rows:
@@ -314,48 +308,60 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                     r.by_item[code] = r.by_item.get(code, Fraction(0)) + \
                         Fraction(p["v"]).limit_denominator(1000) * int(p.get("n") or 1)
 
-    # результат: секунды (спелео, пешеходные, СХ) или баллы (горные); места
+
+def _score(r: TeamResult, cfg: dict) -> tuple[bool, Fraction | None, int]:
+    """Результат команды: (есть ли он, результат — секунды или баллы горных, «группа» для мест — число снятий)."""
+    kind, okv, adds = cfg["kind"], cfg["okv"], cfg["adds"]
+    ok = r.status is Status.FINISHED and r.distance_time is not None and \
+        not any(b in ("start", "finish", "cutoffs", "pen_time", "declared", "points") or b.startswith("add-")
+                for b in r.bad)
+    if not ok:
+        return False, None, 0
+    add_time = sum((r.extra.get(f"add-{a['id']}", Fraction(0)) for a in adds if a["kind"] == "time"), Fraction(0))
+    add_points = sum((r.extra.get(f"add-{a['id']}", Fraction(0)) for a in adds if a["kind"] == "points"),
+                     Fraction(0))
+    points = r.total if cfg["penalty"] else Fraction(0)
+    if kind == "mountain":
+        rate = cfg["rate"]
+        tactics = Fraction(0)
+        if r.no_tactics and okv is not None:
+            tactics += Fraction(okv, 60) * rate / 2  # заявка по тактике не сдана — 50 % ОКВ (п. 6.5.4)
+        declared = r.extra.get("declared") or Fraction(0)
+        if declared:
+            tactics += Fraction(2, 10) * math.floor(abs(r.distance_time - declared) / declared * 100)
+        r.extra["tactics"] = tactics
+        return True, _hundredths((r.distance_time + add_time) / 60 * rate + points + tactics + add_points), r.removals
+    score = r.distance_time + (points + add_points) * cfg["spp"] + r.extra.get("pen_time", Fraction(0)) + add_time
+    if kind == "pedestrian" and cfg["removal"] == "okv" and okv is not None:
+        score += r.removals * okv  # ОКВ за каждое снятие с этапа (п. 6.2.8 б)
+    if kind == "nordic" and r.red and okv is not None:
+        score += okv  # красная карточка — штрафное время, равное ОКВ (п. 10.4.4 б)
+    return True, score, r.removals if kind == "speleo" else 0
+
+
+def _places(rows: list[TeamResult], cfg: dict, zdata: dict) -> list[TeamResult]:
+    """Места: прошедшие полностью — по результату, со снятиями — после них (спелео п. 6.5; горные — по числу снятий)."""
     runs, by_entry = [], {}
     for r in rows:
-        ok = r.status is Status.FINISHED and r.distance_time is not None and \
-            not any(b in ("start", "finish", "cutoffs", "pen_time", "declared", "points") or b.startswith("add-")
-                    for b in r.bad)
-        score, group = None, 0
-        add_time = sum((r.extra.get(f"add-{a['id']}", Fraction(0)) for a in adds if a["kind"] == "time"), Fraction(0))
-        add_points = sum((r.extra.get(f"add-{a['id']}", Fraction(0)) for a in adds if a["kind"] == "points"),
-                         Fraction(0))
-        if ok:
-            points = r.total if penalty_system else Fraction(0)
-            if kind == "mountain":
-                rate = st["rate"]
-                tactics = Fraction(0)
-                if r.no_tactics and okv is not None:
-                    tactics += Fraction(okv, 60) * rate / 2  # заявка по тактике не сдана — 50 % ОКВ (п. 6.5.4)
-                declared = r.extra.get("declared") or Fraction(0)
-                if declared:
-                    tactics += Fraction(2, 10) * math.floor(abs(r.distance_time - declared) / declared * 100)
-                r.extra["tactics"] = tactics
-                score = _hundredths((r.distance_time + add_time) / 60 * rate + points + tactics + add_points)
-                group = r.removals
-            else:
-                score = r.distance_time + (points + add_points) * spp + r.extra.get("pen_time", Fraction(0)) \
-                    + add_time
-                if kind == "pedestrian" and st["removal"] == "okv" and okv is not None:
-                    score += r.removals * okv  # ОКВ за каждое снятие с этапа (п. 6.2.8 б)
-                if kind == "nordic" and r.red and okv is not None:
-                    score += okv  # красная карточка — штрафное время, равное ОКВ (п. 10.4.4 б)
-                group = r.removals if kind == "speleo" else 0
+        ok, score, group = _score(r, cfg)
         runs.append(SpeleoRun(r.inp.file, r.start_order, Fraction(0) if ok else None, score, Fraction(0),
                               Fraction(0), group, Status.FINISHED if ok else Status.DNS))
         by_entry[r.inp.file] = (r, score)
     ordered = []
-    by_count = kind == "mountain" or zdata.get("removed_order") == "count"  # горные — всегда (п. 6.1.6)
+    by_count = cfg["kind"] == "mountain" or zdata.get("removed_order") == "count"  # горные — всегда (п. 6.1.6)
     for p in standings(runs, 1, removed_by_count=by_count):
         r, score = by_entry[p.item.entry]
         r.place = p.place
         if score is not None:
             r.total = score
         ordered.append(r)
+    return ordered
+
+
+def _status_issues(ordered: list[TeamResult], rows: list[TeamResult], cfg: dict, z: Zachet,
+                   issues: list[Issue]) -> None:
+    """Замечания к итогам: нет старта или финиша, превышено КВ, снятие по правилам, не задан ОКВ."""
+    kind, kv = cfg["kind"], cfg["kv"]
     empty = [r.inp.team for r in ordered if r.status is Status.FINISHED and r.place is None
              and not any(b in ("start", "finish", "cutoffs") for b in r.bad) and r.distance_time is None]
     if empty and len(empty) < len(ordered):
@@ -371,44 +377,19 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 f"снятий с этапов: {r.removals} — снятие с дистанции (п. 6.2.8 а)"
             issues.append(Issue(WARNING, f"«{r.inp.team}»: {why}", source=z.key, team=r.inp.team,
                                 target=f"cell:{r.inp.file}:status"))
-    if kind in ("pedestrian", "nordic", "mountain") and okv is None and (
+    if kind in ("pedestrian", "nordic", "mountain") and cfg["okv"] is None and (
             any(r.red for r in rows) or any(r.no_tactics for r in rows)
-            or (kind == "pedestrian" and st["removal"] == "okv" and any(r.removals for r in rows))):
+            or (kind == "pedestrian" and cfg["removal"] == "okv" and any(r.removals for r in rows))):
         issues.append(Issue(ERROR, "не задан КВ (ОКВ) дистанции — штрафное время по ОКВ не посчитать", source=z.key,
                             target="stages:f-kvd"))
 
-    started = [r for r in ordered if r.status not in (Status.DNS, Status.OUT_OF_COMPETITION)]
-    rank, norms = None, None
-    fmt = z.rank_format
-    try:
-        norms = norm_edition(comp.norms_edition)
-    except KeyError:
-        issues.append(Issue(ERROR, f"нет редакции норм «{comp.norms_edition}» — нормативы не считаются", source=z.key,
-                            target="card"))
-    if comp.unofficial:  # неофициальные: ни ранга, ни нормативов (решение 038)
-        norms = None
-        issues.append(Issue(INFO, "неофициальные соревнования — квалификационный ранг, % от победителя и разряды "
-                                  "не считаются", source=z.key))
-    if norms and fmt:
-        rank = qualification_rank([RankEntry(r.place, tuple(m.qual or Qual.BR for m in r.inp.members))
-                                   for r in started], fmt, norms)
-    scoring = "points" if kind == "mountain" else "time"
-    run = ZachetRun(z, stages, ordered, rank, issues, kind="time", seconds_per_point=spp, scoring=scoring,
-                    unit=unit, profile=kind, system=st["system"], adds=adds)
-    placed = [r for r in ordered if r.place is not None]
-    # ЕВСК п. 25.4: баллы, начисляемые судьями (штрафная система, горные), — не менее 6 участников, иначе 3
-    ok, why = evsk_participation_ok(comp.level, len(started), None, judged_points=penalty_system)
-    subjects_unknown = not ok and "не указано число субъектов" in (why or "")
-    run.norms_ok = (ok or subjects_unknown) and not comp.unofficial
-    run.norms_why = "" if ok or subjects_unknown else (why or "")
-    if comp.unofficial:
-        return run
-    if why:
-        issues.append(Issue(INFO, f"нормативы: {why}" + (" — проверьте по справке о количестве субъектов"
-                                                          if subjects_unknown else " — разряды не присваиваются"),
-                            source=z.key))
-    method = comp.percent_method if scoring == "points" else PercentMethod.TIME
-    if scoring == "points" and method is None:
+
+def _percent_and_norms(run: ZachetRun, comp: Competition, z: Zachet, norms, rank, issues: list[Issue]) -> None:
+    """Процент от победителя (по времени — от времени, у горных — методикой карточки) и выполненный разряд; со
+    снятиями с этапов разряд не присваивается."""
+    placed = [r for r in run.rows if r.place is not None]
+    method = comp.percent_method if run.scoring == "points" else PercentMethod.TIME
+    if run.scoring == "points" and method is None:
         issues.append(Issue(INFO, "в карточке не выбрана методика «% от победителя» — процент и нормативы не "
                                   "считаются", source=z.key))
     if placed and method is not None:
@@ -429,6 +410,42 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
     if any(r.removals for r in placed):
         issues.append(Issue(INFO, "со снятиями с этапов разряды не присваиваются — дистанция пройдена не полностью",
                             source=z.key))
+
+
+def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -> ZachetRun:
+    """Расчёт зачёта по времени: строки команд → результаты и места → ранг → процент и разряды."""
+    stages = stages_of(zdata)
+    stored = zdata.get("teams", {})
+    issues: list[Issue] = []
+    cfg = _config(z, zdata)
+    planned = start_list.planned_starts(zdata, teams)  # «Время старта — время, указанное в стартовом протоколе»
+    rows = [_team_row(i, t, stored.get(t.file, {}), stages, cfg, planned, z, issues)
+            for i, t in enumerate(start_list.ordered(teams, zdata), start=1)]
+    _pen_items(rows, stages, zdata)
+    ordered = _places(rows, cfg, zdata)
+    _status_issues(ordered, rows, cfg, z, issues)
+
+    started = [r for r in ordered if r.status not in (Status.DNS, Status.OUT_OF_COMPETITION)]
+    norms = norms_for(comp, z, issues)
+    rank = None
+    if norms and z.rank_format:
+        rank = qualification_rank([RankEntry(r.place, tuple(m.qual or Qual.BR for m in r.inp.members))
+                                   for r in started], z.rank_format, norms)
+    scoring = "points" if cfg["kind"] == "mountain" else "time"
+    run = ZachetRun(z, stages, ordered, rank, issues, kind="time", seconds_per_point=cfg["spp"], scoring=scoring,
+                    unit=unit_kind(z.rank_format), profile=cfg["kind"], system=cfg["system"], adds=cfg["adds"])
+    # ЕВСК п. 25.4: баллы, начисляемые судьями (штрафная система, горные), — не менее 6 участников, иначе 3
+    ok, why = evsk_participation_ok(comp.level, len(started), None, judged_points=cfg["penalty"])
+    subjects_unknown = not ok and "не указано число субъектов" in (why or "")
+    run.norms_ok = (ok or subjects_unknown) and not comp.unofficial
+    run.norms_why = "" if ok or subjects_unknown else (why or "")
+    if comp.unofficial:
+        return run
+    if why:
+        issues.append(Issue(INFO, f"нормативы: {why}" + (" — проверьте по справке о количестве субъектов"
+                                                          if subjects_unknown else " — разряды не присваиваются"),
+                            source=z.key))
+    _percent_and_norms(run, comp, z, norms, rank, issues)
     if rank and rank.value is None and rank.reason:
         issues.append(Issue(INFO, f"ранг не определяется: {rank.reason}", source=z.key))
     return run
