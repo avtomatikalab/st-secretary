@@ -32,6 +32,7 @@
 <section class="panel" id="draw">
   <h2>1. Жеребьёвка — зачёт {{ zachet.title }}</h2>
   {% if sl.drawn %}<p><span class="status-badge gear-ok">{{ icon("check", 14) }} проведена</span> {{ draw_line }}</p>{% endif %}
+  {% if fit_notes %}<div class="st-fit"><b>Перерыв участника соблюдён:</b><ul>{% for n in fit_notes %}<li>{{ n }}</li>{% endfor %}</ul></div>{% endif %}
   <form method="post" action="{{ base }}/start/draw?{{ zq }}">
     <fieldset class="st-methods">
       <legend>Способ</legend>
@@ -49,6 +50,11 @@
       {% endif %}
       {% endfor %}
     </fieldset>
+    <input type="hidden" name="spread_set" value="1">
+    <label class="check st-spread"><input type="checkbox" name="spread" value="1"{% if sl.settings.spread %} checked{% endif %}>
+      <span><b>Максимально разнести старты команд одной делегации</b> — если у делегации общее снаряжение: после жребия
+      её команды расставляются как можно дальше друг от друга (только перестановки внутри группы — жребий не
+      ломается). Делегация — территория и представитель в заявке.</span></label>
     <p class="hint">Компьютерная жеребьёвка случайными числами допускается Правилами. Программа записывает время
       и число жребия — их видно в протоколе. «По жеребьёвке на совещании» — кнопка расставит команды по номерам,
       затем впишите в колонку «Порядок» номера, которые вытянули представители, и нажмите «Сохранить порядок».</p>
@@ -66,10 +72,12 @@
       <input id="f-first" type="text" name="first" value="{{ sl.settings.first or defaults.first }}" placeholder="10:00" inputmode="numeric"></div>
     <div class="field span-3"><label for="f-iv">Интервал, минут</label>
       <input id="f-iv" type="text" name="interval" value="{{ sl.settings.interval }}" placeholder="5" inputmode="decimal"></div>
-    {% if zachety|length > 1 %}<div class="field span-3"><label for="f-brk">Перерыв между стартами участника, мин</label>
+    {% if zachety|length > 1 or festival %}<div class="field span-3"><label for="f-brk">Перерыв между стартами участника, мин</label>
       <input id="f-brk" type="text" name="break" value="{{ start_break or '' }}" placeholder="0" inputmode="numeric">
-      <p class="hint">Для всех зачётов: кто заявлен в нескольких — не стартует раньше, чем через расчётное время прошлой
-        дистанции (если задано) + перерыв. Конфликты — вверху страницы.</p></div>{% endif %}
+      <p class="hint">Для всех зачётов{% if festival %} всех соревнований фестиваля{% endif %}: кто заявлен в нескольких — не
+        стартует раньше, чем через расчётное время прошлой дистанции (если задано) + перерыв. Жеребьёвка и смена времени
+        соблюдают его сами: меняют команду местами с соседней из той же группы, а если нельзя — сдвигают время старта.
+        Что осталось — вверху страницы.</p></div>{% endif %}
     <div class="span-12"><p class="hint">Без времени первого старта протокол будет без времени — только очерёдность.
       Интервал 0 — все стартуют одновременно. Время отдельной команды можно поправить в таблице ниже.
       {% if is_time %}В этом зачёте время из протокола — время старта команды, если старт не вписан и не загружен из SPORTident

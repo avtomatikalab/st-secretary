@@ -215,3 +215,31 @@ def test_festival_one_fee_for_whole_festival_or_by_competition(client, tmp_path,
     assert ws["A2"].value == "Ведомость стартовых взносов" and any(c.value == 4500 for c in ws["I"])
     sheet = load_workbook(io.BytesIO(client.get(base(a) + "/admission/report.xlsx").content))["Ведомость взносов"]
     assert any("один за фестиваль" in str(c.value) for row in sheet.iter_rows() for c in row)
+
+
+def test_festival_break_between_starts_of_one_person_in_two_competitions(client, tmp_path, psr_card):
+    """Правки, п. 25.3: перерыв — общий для соревнований фестиваля; жеребьёвка второго соревнования его соблюдает."""
+    from urllib.parse import urlencode
+
+    store = client.app.state.store
+    a = store.create(psr_card)
+    b = store.create(replace(psr_card, title="Кубок города N по спортивному туризму"))
+    a.add_preapp("Кедр.xlsx", kedr(tmp_path))
+    a.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    b.add_preapp("Кедр.xlsx", kedr(tmp_path))  # те же люди
+    b.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    fid = make_festival(client, a, b)
+    q = "?" + urlencode({"z": "М/Ж_3"})
+    times = {"day": "2025-09-20", "first": "10:00", "interval": "10", "break": "30"}
+    client.post(base(a) + "/start/draw" + q, data=times)
+    assert store.festival(fid)["start_break"] == 30 and "start_break" not in a.run_data()
+    client.post(base(a) + "/start/draw" + q, data={"method": "number", "action": "draw"})
+    first_a = a.run_data()["zachety"]["М/Ж_3"]["draw"]["order"][0]
+    # во втором соревновании та же раскладка: кто стартовал первым в первом — не раньше чем через 30 мин
+    r = client.post(base(b) + "/start/draw" + q, data={k: v for k, v in times.items() if k != "break"},
+                    follow_redirects=False)
+    assert "start_times_fit" in r.headers["location"]
+    dr = b.run_data()["zachety"]["М/Ж_3"]["draw"]
+    assert dr["times"].get(first_a) and dr["times"][first_a] >= "10:30" and dr["fit"]
+    page = client.get(base(b) + "/start" + q).text
+    assert "Перерыв участника соблюдён" in page and "всех соревнований фестиваля" in page

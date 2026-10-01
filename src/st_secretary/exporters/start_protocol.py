@@ -42,6 +42,8 @@ def draw_line(sl: StartList) -> str:
             "manual": "на совещании ГСК с представителями команд",
             "number": "не проводилась — по стартовым номерам"}.get(sl.method, METHODS.get(sl.method, ""))
     tail = f", число жребия {sl.seed}" if sl.method in ("random", "rank", "strict") and sl.seed is not None else ""
+    if sl.method in ("random", "rank", "strict") and sl.settings.get("spread"):
+        tail += "; старты команд одной делегации максимально разнесены (перестановки внутри групп жребия)"
     edited = f"; порядок изменён вручную {sl.edited_at:%d.%m.%Y в %H:%M}" if sl.edited_at else ""
     return f"Жеребьёвка: {what}; {sl.drawn_at:%d.%m.%Y в %H:%M}{tail}{edited}."
 

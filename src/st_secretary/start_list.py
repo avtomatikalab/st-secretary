@@ -68,7 +68,127 @@ def settings(zdata: dict) -> dict:
             "groups": int(groups) if groups.isdigit() and 1 <= int(groups) <= 10 else 2,
             "strong": "first" if d.get("strong") == "first" else "last",
             "day": str(d.get("day", "")), "first": str(d.get("first", "")),
-            "interval": str(d.get("interval", ""))}
+            "interval": str(d.get("interval", "")), "spread": bool(d.get("spread"))}
+
+
+# ------------------------------------------------------------------ делегации и перерыв (Правки, п. 25.3–4)
+
+
+def delegation_of(t) -> str:
+    """Делегация участника зачёта: территория и представитель (как в комиссии по допуску)."""
+    def n(s) -> str:
+        return " ".join(str(s or "").lower().replace("ё", "е").split())
+
+    return f"{n(t.territory)}|{n(t.representative)}"
+
+
+def blocks_of(order: list[str], method: str, groups: dict[str, int], ranks: dict[str, Fraction | None]) -> dict:
+    """В каких пределах можно переставлять, не ломая жребий: групповая — внутри группы, строго по рангу — среди
+    равных рангов, общая — все; «на совещании» и «по номерам» — нельзя (у каждой команды свой блок)."""
+    if method == "rank":
+        return {f: groups.get(f, 0) for f in order}
+    if method == "strict":
+        return {f: ranks.get(f) or Fraction(0) for f in order}
+    if method == "random":
+        return dict.fromkeys(order, 0)
+    return {f: i for i, f in enumerate(order)}
+
+
+def spread(order: list[str], deleg: dict[str, str], blocks: dict) -> list[str]:
+    """«Максимально разнести старты команд одной делегации» (п. 25.4): внутри каждого блока (группы жеребьёвки)
+    команды делегации — на равномерно разнесённых местах (крупные делегации — первыми), остальные — на свободные
+    места в порядке жребия; порядок команд одной делегации между собой — по жребию."""
+    out = list(order)
+    for b in dict.fromkeys(blocks[f] for f in order):
+        idx = [i for i, f in enumerate(order) if blocks[f] == b]
+        files = [order[i] for i in idx]
+        by: dict[str, list[str]] = {}
+        for f in files:
+            by.setdefault(deleg.get(f, f), []).append(f)
+        free = list(range(len(files)))
+        placed: dict[int, str] = {}
+        for _, teams in sorted(((d, ts) for d, ts in by.items() if len(ts) > 1),
+                               key=lambda x: (-len(x[1]), files.index(x[1][0]))):
+            m, k = len(free), len(teams)
+            picks = [free[round(j * (m - 1) / (k - 1))] for j in range(k)] if m > 1 else free[:1]
+            placed.update(zip(picks, teams))
+            free = [s for s in free if s not in picks]
+        placed.update(zip(free, [f for f in files if f not in placed.values()]))
+        for pos, i in enumerate(idx):
+            out[i] = placed[pos]
+    return out
+
+
+def person_key(m) -> str:
+    return " ".join(m.fio.lower().replace("ё", "е").split()) + "|" + (m.birth or "")
+
+
+def busy_starts(lists: list[tuple[StartList, int | None]]) -> dict[str, list[tuple[datetime, int]]]:
+    """Старты людей в других зачётах (и соревнованиях фестиваля): человек → [(старт, расчётное время, с)]."""
+    out: dict[str, list[tuple[datetime, int]]] = {}
+    for sl, expected in lists:
+        if sl.start_day is None:
+            continue
+        for r in sl.rows:
+            if r.time is None:
+                continue
+            at = datetime.combine(sl.start_day, time()) + timedelta(seconds=r.time)
+            for m in r.inp.members:
+                out.setdefault(person_key(m), []).append((at, expected or 0))
+    return out
+
+
+def fit_break(order: list[str], units: dict, day: date | None, first: int | None, interval: int,
+              busy: dict[str, list[tuple[datetime, int]]], break_min: int, expected: int | None,
+              blocks: dict | None) -> tuple[list[str], dict[str, int], list[str]]:
+    """Перерыв между стартами участника (п. 25.3): старт — не раньше, чем старт в другом зачёте + расчётное время
+    той дистанции + перерыв (и наоборот). Сначала меняет команду местами с ближайшей следующей из того же блока,
+    которой здесь можно; нельзя — сдвигает время старта этой и следующих команд. Возвращает (порядок, время
+    вручную {файл: с от начала суток} у сдвинутых, что сделано)."""
+    if day is None or first is None or not busy or not order:
+        return order, {}, []
+    order, notes = list(order), []
+    brk = timedelta(minutes=break_min)
+    own = timedelta(seconds=expected or 0)
+
+    def clash(f: str, t: datetime) -> list[datetime]:
+        """Когда можно стартовать не раньше (если сейчас — конфликт): список «не раньше» по каждому конфликту."""
+        later = []
+        for m in units[f].members:
+            for s, exp in busy.get(person_key(m), []):
+                # там старт раньше — здесь не раньше конца той дистанции + перерыв; там позже — то же наоборот
+                if (s <= t and (t - s < timedelta(seconds=exp) + brk or s == t)) or (s > t and s - t < own + brk):
+                    later.append(s + timedelta(seconds=exp) + brk)
+        return later
+
+    base = datetime.combine(day, time())
+    shift, times = timedelta(), {}
+    for i in range(len(order)):
+        t = base + timedelta(seconds=first + i * interval) + shift
+        if not clash(order[i], t):
+            if shift:
+                times[order[i]] = int((t - base).total_seconds())
+            continue
+        j = next((j for j in range(i + 1, len(order)) if blocks is not None
+                  and blocks.get(order[j]) == blocks.get(order[i]) and not clash(order[j], t)), None)
+        if j is not None:
+            notes.append(f"{units[order[i]].team} и {units[order[j]].team} поменялись местами — перерыв участника")
+            order[i], order[j] = order[j], order[i]
+        else:
+            t2 = t
+            for _ in range(20):  # следующий конфликт может быть позже — ищем первое свободное время
+                need = clash(order[i], t2)
+                if not need:
+                    break
+                t2 = max(need)
+            if t2 > t:
+                notes.append(f"{units[order[i]].team}: старт сдвинут на {int((t2 - t).total_seconds() // 60)} мин "
+                             f"(с {t:%H:%M} на {t2:%H:%M}) — перерыв участника; следующие — тоже")
+                shift += t2 - t
+                t = t2
+        if shift:
+            times[order[i]] = int((t - base).total_seconds())
+    return order, times, notes
 
 
 def _num_key(t) -> tuple:

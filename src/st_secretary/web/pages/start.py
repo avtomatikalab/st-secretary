@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from urllib.parse import urlencode
@@ -25,6 +26,7 @@ def register(app, cx) -> None:
     comp_ctx = cx.comp_ctx
     folder = cx.folder
     page = cx.page
+    store = cx.store
     PROTEST_HOUR = cx.PROTEST_HOUR  # из pages/results.py
     def _save_zachet(*a, **k):  # из pages/results.py
         return cx._save_zachet(*a, **k)
@@ -57,14 +59,39 @@ def register(app, cx) -> None:
         return adm.date(), f"{adm:%H:%M}" if adm.hour or adm.minute else ""
 
     def start_break(f: CompFolder) -> int:
-        """Перерыв между стартами одного участника в разных зачётах, мин (для всего соревнования)."""
-        v = str(f.run_data().get("start_break", "")).strip()
+        """Перерыв между стартами одного участника в разных зачётах, мин (для всего соревнования; на фестивале — для
+        всех его соревнований)."""
+        fest = f.festival()
+        v = str((fest or {}).get("start_break", "") if fest else f.run_data().get("start_break", "")).strip()
         return int(v) if v.isdigit() else 0
 
     def expected_secs(f: CompFolder, z) -> int | None:
         """Расчётное время дистанции зачёта (задаётся в дисциплинах по времени), с."""
         v = str(f.run_data().get("zachety", {}).get(z.key, {}).get("expected", "")).strip()
         return int(v) * 60 if v.isdigit() else None
+
+    def all_lists(f: CompFolder, comp) -> list[tuple]:
+        """Стартовые протоколы всех зачётов соревнования и — на фестивале — его остальных соревнований:
+        [(папка, карточка, зачёт, протокол, расчётное время, с)]."""
+        out = [(f, comp, x, start_ctx(f, comp, x)[3], expected_secs(f, x)) for x in comp.zachety]
+        fest = f.festival()
+        for m in (fest or {}).get("members", []):
+            g = store.get(m) if m != f.id else None
+            try:
+                other = g.load() if g else None
+            except Exception:  # noqa: BLE001 — карточка не читается: её стартов не видно
+                other = None
+            for x in (other.zachety if other is not None else []):
+                lst = start_ctx(g, other, x)[3]
+                # зачёт другого соревнования: свой ключ и название с соревнованием — «М/Ж_3 (Кубок …)»
+                lst.zachet = replace(x, zid=f"{g.id}/{x.key}", name=f"{x.title} ({other.title})")
+                out.append((g, other, x, lst, expected_secs(g, x)))
+        return out
+
+    def others_busy(f: CompFolder, comp, z) -> dict:
+        """Старты людей в других зачётах (и соревнованиях фестиваля) — для перерыва участника."""
+        return sl.busy_starts([(lst, exp) for g, _, x, lst, exp in all_lists(f, comp)
+                               if not (g.id == f.id and x.key == z.key)])
 
     def start_name(z) -> str:
         return f"Стартовый протокол {safe_name(z.key.replace('/', '-'))}.xlsx"
@@ -78,8 +105,9 @@ def register(app, cx) -> None:
         zz = need_zachet(comp, z)
         _, teams, _, lst = start_ctx(f, comp, zz)
         brk = start_break(f)
-        if len(comp.zachety) > 1:  # один человек в нескольких зачётах — не слишком близко (Правки, п. 25.3)
-            lists = [(lst if x.key == zz.key else start_ctx(f, comp, x)[3], expected_secs(f, x)) for x in comp.zachety]
+        everything = all_lists(f, comp)
+        if len(everything) > 1:  # один человек в нескольких зачётах — не слишком близко (Правки, п. 25.3)
+            lists = [(lst if g.id == f.id and x.key == zz.key else s, exp) for g, _, x, s, exp in everything]
             lst.issues += [i for keys, i in sl.person_conflicts(lists, brk) if zz.key in keys]
         pub = _parse_dt(lst.published["at"]) if lst.published else None
         day, first = start_default(f, comp)
@@ -88,7 +116,9 @@ def register(app, cx) -> None:
                     zq=urlencode({"z": zz.key}), pub_at=pub, until=pub + PROTEST_HOUR if pub else None,
                     defaults={"day": day.isoformat(), "first": first}, is_time=tr.is_time_discipline(zz),
                     publish_by=lst.first_start - PROTEST_HOUR if lst.first_start else None, now=app.state.clock(),
-                    not_admitted=[t.team for t in teams if not t.admitted], start_break=brk, **comp_ctx(f))
+                    not_admitted=[t.team for t in teams if not t.admitted], start_break=brk,
+                    fit_notes=f.run_data().get("zachety", {}).get(zz.key, {}).get("draw", {}).get("fit", []),
+                    **comp_ctx(f))
 
     @app.post("/c/{cid}/start/draw")
     async def start_draw(request: Request, cid: str, z: str = ""):
@@ -109,22 +139,45 @@ def register(app, cx) -> None:
                "day": str(form.get("day", "")).strip(), "first": first,
                "interval": str(form.get("interval", "")).strip().replace(",", ".")}
         new = {k: v for k, v in new.items() if k in form}  # у жеребьёвки и времени старта — разные формы
-        if "break" in form:  # перерыв между стартами участника — для всего соревнования
+        if "spread_set" in form:  # галочка «развести делегацию» (снятая галочка в форму не приходит)
+            new["spread"] = bool(form.get("spread"))
+        if "break" in form:  # перерыв между стартами участника — для всего соревнования (на фестивале — для всех)
             brk = str(form.get("break", "")).strip()
-            with cx.run_lock:
-                data = f.run_data()
-                data["start_break"] = int(brk) if brk.isdigit() and int(brk) <= 600 else 0
-                f.save_run_data(data)
+            value = int(brk) if brk.isdigit() and int(brk) <= 600 else 0
+            if fest := f.festival():
+                store.update_festival(fest["id"], lambda x: x.__setitem__("start_break", value))
+            else:
+                with cx.run_lock:
+                    data = f.run_data()
+                    data["start_break"] = value
+                    f.save_run_data(data)
         drawing = form.get("action") == "draw"
-        order, seed, groups = [], None, {}
+        zdata, teams, ranks, lst = start_ctx(f, comp, zz)
+        st = sl.settings({"draw": {**zdata.get("draw", {}), **new}})
+        order, seed, groups, blocks = [r.inp.file for r in lst.rows], None, {}, None
+        units = {t.file: t for t in teams if t.admitted}
         if drawing:
-            zdata, teams, ranks, _ = start_ctx(f, comp, zz)
-            admitted = [t for t in teams if t.admitted]
-            if not admitted:
+            if not units:
                 return _redirect(_with_done(back, "start_empty"))
-            st = sl.settings({"draw": {**zdata.get("draw", {}), **new}})
             seed = secrets.randbelow(900000) + 100000  # шесть цифр — легко записать и проверить
-            order, groups = sl.draw_groups(admitted, st["method"], seed, ranks, st["groups"], st["strong"] == "last")
+            order, groups = sl.draw_groups(list(units.values()), st["method"], seed, ranks, st["groups"],
+                                           st["strong"] == "last")
+            blocks = sl.blocks_of(order, st["method"], groups, ranks)  # переставлять — не ломая жребий
+            if st["spread"]:  # команды одной делегации — как можно дальше друг от друга (п. 25.4)
+                order = sl.spread(order, {f_: sl.delegation_of(t) for f_, t in units.items()}, blocks)
+        # перерыв участника (п. 25.3): после жеребьёвки — перестановка соседей или сдвиг; при смене времени — сдвиг
+        brk, times, notes = start_break(f), {}, []
+        if brk and (drawing or {"first", "interval", "day"} & set(new)) and units:
+            try:
+                first = sl.parse_hm(st["first"])
+            except ValueError:
+                first = None
+            iv = st["interval"].strip().replace(",", ".")
+            interval = round(float(iv) * 60) if re.fullmatch(r"\d+(\.\d+)?", iv) else 0
+            day = date.fromisoformat(st["day"]) if re.fullmatch(r"\d{4}-\d\d-\d\d", st["day"]) else \
+                start_default(f, comp)[0]
+            order, times, notes = sl.fit_break([x for x in order if x in units], units, day, first, interval,
+                                               others_busy(f, comp, zz), brk, expected_secs(f, zz), blocks)
         now = app.state.clock()
 
         def update(d):
@@ -135,10 +188,14 @@ def register(app, cx) -> None:
                           groups_of=groups)
                 for k in ("times", "edited"):  # ручные правки — от прежнего порядка
                     dr.pop(k, None)
+            if drawing or notes:
+                dr["fit"] = notes
+            if times:
+                dr["times"] = {**dr.get("times", {}), **{k: sl.hm_text(v) for k, v in times.items()}}
 
         _save_zachet(f, zz.key, update)
         return _redirect(_with_done(back + ("#order" if drawing else "#times"),
-                                    "start_drawn" if drawing else "start_times"))
+                                    ("start_drawn" if drawing else "start_times") + ("_fit" if notes else "")))
 
     @app.post("/c/{cid}/start/order")
     async def start_order(request: Request, cid: str, z: str = ""):

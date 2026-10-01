@@ -220,3 +220,48 @@ def test_person_in_two_zachety_starts_too_close():
     assert out[0][1].text.endswith("меньше, чем расчётное время М/Ж_3 (40 мин) + перерыв 5 мин")
     same = sl.build(z2, {"draw": {"order": ["B.xlsx#x"], "first": "10:20", **day}}, [b])
     assert sl.person_conflicts([(l3, None), (same, None)], 0)[0][1].text.endswith("— одновременно")
+
+
+def test_spread_delegation_teams_inside_lot_groups():
+    """Правки, п. 25.4: «максимально разнести старты команд одной делегации» — только перестановки внутри групп
+    жребия; одиночные команды остаются в порядке жребия."""
+    order = [f"{n}.xlsx" for n in ("А1", "А2", "А3", "Б1", "В1", "Г1", "Д1", "Е1")]
+    deleg = {f: ("А" if f.startswith("А") else f) for f in order}
+    out = sl.spread(order, deleg, dict.fromkeys(order, 0))
+    pos = [out.index(f) for f in ("А1.xlsx", "А2.xlsx", "А3.xlsx")]
+    assert pos == [0, 4, 7] and min(b - a for a, b in zip(pos, pos[1:])) >= 3  # как можно дальше: 8 мест, 3 команды
+    assert [f for f in out if not f.startswith("А")] == ["Б1.xlsx", "В1.xlsx", "Г1.xlsx", "Д1.xlsx", "Е1.xlsx"]
+    # две группы жребия: команды не переходят из группы в группу
+    blocks = {f: (1 if i < 4 else 2) for i, f in enumerate(order)}
+    out = sl.spread(order, deleg, blocks)
+    assert set(out[:4]) == set(order[:4]) and out[:4].index("А3.xlsx") - out[:4].index("А1.xlsx") >= 2
+    ts = teams()
+    assert sl.delegation_of(ts[0]) == "г. n|представитель кедр"
+
+
+def test_draw_keeps_break_by_swapping_neighbours_or_shifting_time():
+    """Правки, п. 25.3: перерыв считается от старта + расчётное время дистанции; жеребьёвка меняет местами соседей
+    из той же группы, а если нельзя — сдвигает время старта этой и следующих команд."""
+    from datetime import datetime
+
+    ts = teams(4)
+    units = {t.file: t for t in ts}
+    day = date(2026, 10, 3)
+    p = ts[0].members[0]  # участник «Кедра» стартует в другом зачёте в 10:00, дистанция — 30 мин
+    busy = {sl.person_key(p): [(datetime(2026, 10, 3, 10, 0), 1800)]}
+    order = [t.file for t in ts]
+    out, times, notes = sl.fit_break(order, units, day, 10 * 3600, 600, busy, 30, None, dict.fromkeys(order, 0))
+    # «Кедр» не может раньше 11:00 (10:00 + 30 мин дистанции + 30 перерыва): уходит в конец, его старт — 11:00
+    assert out == ["Сосна.xlsx", "Ель.xlsx", "Пихта.xlsx", "Кедр.xlsx"] and times == {"Кедр.xlsx": 11 * 3600}
+    assert "поменялись местами" in notes[0] and "старт сдвинут на 30 мин" in notes[-1]
+    # в большом зачёте хватает перестановок: «Кедр» встаёт на первое разрешённое место, время не меняется
+    big = teams(8)
+    out, times, notes = sl.fit_break([t.file for t in big], {t.file: t for t in big}, day, 10 * 3600, 600, busy, 30,
+                                     None, dict.fromkeys([t.file for t in big], 0))
+    assert out.index("Кедр.xlsx") == 6 and not times  # 10:00 + 6 × 10 мин = 11:00
+    # переставлять нельзя (порядок вытянули на совещании) — время сдвигается
+    out, times, notes = sl.fit_break(order, units, day, 10 * 3600, 600, busy, 30, None, None)
+    assert out == order and times["Кедр.xlsx"] == 11 * 3600 and times["Сосна.xlsx"] == 11 * 3600 + 600
+    assert "старт сдвинут на 60 мин" in notes[0]
+    # перерыв 0 и нет общих людей — ничего не меняется
+    assert sl.fit_break(order, units, day, 10 * 3600, 600, {}, 30, None, None) == (order, {}, [])
