@@ -167,6 +167,15 @@ def _fees(ws, teams: list[TeamCheck], comp: Competition, data: dict, note: str =
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
 
+def _doc_mark(p, key: str) -> str:
+    """Клетка документа в листе участников: да / не нужен (только несовершеннолетним) / «или» / —."""
+    if p.docs[key]:
+        return "да"
+    if key in p.not_needed:
+        return "не нужен"
+    return f"не нужен: {p.covered[key]}" if key in p.covered else "—"
+
+
 def _people(ws, teams: list[TeamCheck], data: dict) -> None:
     """Для секретариата: у кого какие документы отмечены и почему не допущен (с ФИО — только на ноутбуке)."""
     pdocs, _ = required_docs(data)
@@ -182,7 +191,7 @@ def _people(ws, teams: list[TeamCheck], data: dict) -> None:
             e = p.entry
             birth = e.birth.strftime("%d.%m.%Y") if e.birth else (e.birth_year or "")
             values = [t.number, t.title, e.num_in_team, e.name.full, birth, e.qual.label if e.qual is not None else "",
-                      e.zachet.key if e.zachet else "", *["да" if p.docs[d.key] else "—" for d in pdocs],
+                      e.zachet.key if e.zachet else "", *[_doc_mark(p, d.key) for d in pdocs],
                       PERSON_LABEL[p.status], p.why]
             for c, v in enumerate(values, start=1):
                 ws.cell(r, c, v)

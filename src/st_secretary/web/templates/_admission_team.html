@@ -26,7 +26,8 @@
     <div class="adm-teamdocs">
       <span class="muted">Документы команды:</span>
       {% for d in tdocs %}
-      <label class="check" title="{{ d.title }}"><input type="checkbox" name="td-{{ d.key }}"{% if t.team_docs[d.key] %} checked{% endif %}> {{ d.title }}</label>
+      {% if d.key in t.team_not_needed %}<span class="check adm-na" title="{{ d.title }}">{{ d.short }} — не нужен: в команде нет несовершеннолетних</span>
+      {% else %}<label class="check" title="{{ d.title }}"><input type="checkbox" name="td-{{ d.key }}"{% if t.team_docs[d.key] %} checked{% endif %}> {{ d.title }}{% if d.key in t.team_covered %} <span class="adm-sub">не нужен: {{ t.team_covered[d.key] }}</span>{% endif %}</label>{% endif %}
       {% endfor %}
       {% if t.persons|selectattr("auto_docs")|list %}<div class="adm-sub">Мед. допуск участникам отмечен по допуску врача в
         заявке команды или делегации (кроме добавленных перезаявкой). Врач кого-то не допустил — снимите галочку у него.</div>{% endif %}
@@ -50,7 +51,9 @@
           <span class="adm-sub">{% if e.birth %}{{ e.birth|d }}{% elif e.birth_year %}{{ e.birth_year }}{% else %}дата рождения?{% endif %}
             · {{ e.qual.label if e.qual is not none else "разряд?" }} · {{ e.zachet.key if e.zachet else "зачёт?" }}</span></td>
         {% for d in pdocs %}
-        <td class="cb{% if d.key in p.auto_docs or d.key in p.shared_docs %} adm-auto{% endif %}"><input type="checkbox" name="p-{{ i }}-d-{{ d.key }}"{% if p.docs[d.key] %} checked{% endif %} aria-label="{{ d.short }}: {{ e.name.full }}{% if d.key in p.auto_docs %} (по допуску врача в заявке){% elif d.key in p.shared_docs %} (отмечено в команде «{{ p.shared_docs[d.key] }}»{% if d.key in p.shared_comp %}, {{ p.shared_comp[d.key] }}{% endif %}){% endif %}"{% if d.key in p.auto_docs %} title="По допуску врача в заявке. Снимите, если врач участника не допустил"{% elif d.key in p.shared_docs %} title="Отмечено в команде «{{ p.shared_docs[d.key] }}»{% if d.key in p.shared_comp %} — соревнование «{{ p.shared_comp[d.key] }}» фестиваля{% endif %} — тот же человек (ФИО и дата рождения). Снять — там"{% endif %}></td>
+        {% if d.key in p.not_needed %}<td class="cb adm-na" title="{{ d.title }} — не нужен: {{ when_label[d.when] if d.when == 'minor' else 'в команде нет несовершеннолетних' }}">—</td>{% elif d.key in p.covered %}
+        <td class="cb adm-auto"><input type="checkbox" name="p-{{ i }}-d-{{ d.key }}"{% if p.docs[d.key] %} checked{% endif %} aria-label="{{ d.short }}: {{ e.name.full }} (не нужен: {{ p.covered[d.key] }})" title="Не нужен: {{ p.covered[d.key] }}"></td>{% else %}
+        <td class="cb{% if d.key in p.auto_docs or d.key in p.shared_docs %} adm-auto{% endif %}"><input type="checkbox" name="p-{{ i }}-d-{{ d.key }}"{% if p.docs[d.key] %} checked{% endif %} aria-label="{{ d.short }}: {{ e.name.full }}{% if d.key in p.auto_docs %} (по допуску врача в заявке){% elif d.key in p.shared_docs %} (отмечено в команде «{{ p.shared_docs[d.key] }}»{% if d.key in p.shared_comp %}, {{ p.shared_comp[d.key] }}{% endif %}){% endif %}"{% if d.key in p.auto_docs %} title="По допуску врача в заявке. Снимите, если врач участника не допустил"{% elif d.key in p.shared_docs %} title="Отмечено в команде «{{ p.shared_docs[d.key] }}»{% if d.key in p.shared_comp %} — соревнование «{{ p.shared_comp[d.key] }}» фестиваля{% endif %} — тот же человек (ФИО и дата рождения). Снять — там"{% endif %}></td>{% endif %}
         {% endfor %}
         <td class="adm-decision">
           <span class="adm-status adm-status-{{ p.status }}">{{ p.label }}</span>

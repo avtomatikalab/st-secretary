@@ -1232,6 +1232,42 @@ def test_start_order_drag_markup(client):
     assert "стрелками" in html and "Перетащите команду" in html
 
 
+def test_own_documents_in_settings_remembered_on_computer(client, tmp_path, psr_card):
+    """Правки, п. 30: свой документ — в «Какие документы проверять» (название, у кого, кому нужен, «или»); набор
+    запоминается на компьютере — новое соревнование начинается с него; стёрли название — забыт."""
+    store = client.app.state.store
+    f = store.create(psr_card)
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))
+    page = client.get(base(f) + "/admission").text
+    assert "Свои документы — по Положению" in page
+    form = {"doc-id": "on", "doc-med": "on", "doc-book": "on", "doc-ins": "on", "tdoc-app": "on", "tdoc-doctor": "on",
+            "od-0-key": "", "od-0-on": "on", "od-0-title": "Расписка  родителей несовершеннолетнего",
+            "od-0-short": "", "od-0-scope": "person", "od-0-when": "minor", "od-0-alt": "",
+            "od-1-key": "", "od-1-on": "on", "od-1-title": "Журнал инструктажа по ТБ", "od-1-short": "Журнал ТБ",
+            "od-1-scope": "team", "od-1-when": "all", "od-1-alt": "",
+            "od-2-key": "", "od-2-title": "", "start_at": ""}
+    r = client.post(base(f) + "/admission/settings", data=form, follow_redirects=False)
+    assert "adm_settings" in r.headers["location"]
+    s = f.admission()["settings"]
+    rasp, journal = (d["key"] for d in s["own_docs"])
+    assert "oms" not in s["docs"] and rasp in s["docs"] and journal in s["team_docs"]
+    assert s["own_docs"][0]["title"] == "Расписка родителей несовершеннолетнего"
+    page = client.get(base(f) + "/admission").text
+    assert 'title="Расписка родителей несовершеннолетнего">Расписка родителей несовершеннолетнего</th>' in page
+    assert "Журнал ТБ — " not in page and "Журнал инструктажа по ТБ" in page
+    assert "не нужен: только несовершеннолетним" in page  # взрослым расписка не нужна — «—» в клетке
+
+    # новое соревнование на этом компьютере — с тем же набором
+    g = store.create(replace(psr_card, title="Кубок города N по спортивному туризму"))
+    store.apply_doc_set(g)
+    assert g.admission()["settings"]["docs"] == s["docs"] and len(g.admission()["settings"]["own_docs"]) == 2
+    # стёрли название — документ забыт и здесь, и на компьютере
+    form |= {"od-0-key": rasp, "od-0-title": "", "od-1-key": journal}
+    client.post(base(f) + "/admission/settings", data=form)
+    assert [d["key"] for d in f.admission()["settings"]["own_docs"]] == [journal]
+    assert [d["key"] for d in store.doc_set()["docs"]] == [journal]
+
+
 def test_draw_without_touching_time_fields_sets_start_times(client):
     """Правки, п. 40: в полях времени — настоящие значения по умолчанию (10:00, 5 мин), а не серые подсказки; кнопка
     жеребьёвки отправляет и время — после жеребьёвки у всех команд есть время старта."""

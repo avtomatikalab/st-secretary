@@ -72,6 +72,25 @@
       <fieldset><legend>Документы команды</legend>
         {% for d in all_team_docs %}<label class="check"><input type="checkbox" name="tdoc-{{ d.key }}"{% if d.key in adm_settings.team_docs %} checked{% endif %}> {{ d.title }}</label>{% endfor %}
       </fieldset>
+      <fieldset class="adm-own"><legend>Свои документы — по Положению</legend>
+        <p class="hint">Положение требует то, чего нет выше (расписка родителей, приказ о полномочиях представителя, журнал
+          инструктажа по технике безопасности), — впишите. «Кому нужен» — всем, только несовершеннолетним (на день начала
+          соревнований) или если в команде есть несовершеннолетний. «Или» — документ, который его заменяет: достаточно
+          одного из двух (приказ у команды или расписка у участника; мед. допуск в заявке или справка). Свои документы и
+          выбранный набор запоминаются на этом компьютере — новое соревнование начнётся с них. Убрать документ совсем —
+          сотрите название. Новый документ в «или» можно выбрать после сохранения.</p>
+        <div class="table-wrap"><table class="tbl adm-own-tbl">
+          <thead><tr><th class="cb">Проверять</th><th>Документ</th><th>Коротко (колонка)</th><th>У кого</th><th>Кому нужен</th><th>Или</th></tr></thead>
+          <tbody>{% for r in own_rows %}{% set i = loop.index0 %}<tr>
+            <td class="cb"><input type="hidden" name="od-{{ i }}-key" value="{{ r.key }}"><input type="checkbox" name="od-{{ i }}-on"{% if r.on %} checked{% endif %} aria-label="Проверять: {{ r.title or 'новый документ' }}"></td>
+            <td><input type="text" name="od-{{ i }}-title" value="{{ r.title }}" placeholder="{{ 'новый документ' if not r.key else '' }}" aria-label="Документ"></td>
+            <td><input type="text" name="od-{{ i }}-short" value="{{ r.short }}" placeholder="сама" class="adm-own-short" aria-label="Коротко — в заголовке колонки"></td>
+            <td><select name="od-{{ i }}-scope" aria-label="У кого">{% for k, v in scope_label.items() %}<option value="{{ k }}"{% if r.scope == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></td>
+            <td><select name="od-{{ i }}-when" aria-label="Кому нужен">{% for k, v in when_label.items() %}<option value="{{ k }}"{% if r.when == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></td>
+            <td><select name="od-{{ i }}-alt" aria-label="Или — чем заменяется"><option value="">—</option>{% for d in alt_choices if d.key != r.key %}<option value="{{ d.key }}"{% if r.alt == d.key %} selected{% endif %}>{{ d.short }}</option>{% endfor %}</select></td>
+          </tr>{% endfor %}</tbody>
+        </table></div>
+      </fieldset>
       <div class="field adm-start">
         <label for="f-start_at">Начало соревнований (первый старт)</label>
         <input id="f-start_at" type="datetime-local" name="start_at" value="{{ adm_settings.start_at }}">

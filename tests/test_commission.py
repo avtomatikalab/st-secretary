@@ -1,5 +1,6 @@
 """Комиссия по допуску: документы, решения, взносы, протокол по форме Правил, перезаявки."""
 
+from dataclasses import replace
 from datetime import datetime
 
 from conftest import make_application
@@ -9,6 +10,7 @@ from st_secretary.commission import (
     ADMITTED,
     PENDING,
     REJECTED,
+    clean_own_docs,
     evaluate,
     person_key,
     protocol_row,
@@ -240,3 +242,52 @@ def test_person_documents_marked_once_count_in_all_his_teams(tmp_path, psr_card)
     assert ivanov.shared_docs["med"] == "Лесовики" and not ivanov.missing
     assert not any(kuzmin.docs.values())  # Кузьмин Олег Игоревич 01.01.1990 — не тот, что в «Лесовиках» (1960)
     assert not any(belova.docs.values())  # Белова Ирина Петровна есть в «Сосне», но там ничего не отмечено
+
+
+def test_own_documents_for_minors_with_or_pair(tmp_path, psr_card):
+    """Правки, п. 30 (ИБ Кубка г. Красноярска, п. 9.2): свои документы по Положению — расписка родителей (только
+    несовершеннолетним) ИЛИ приказ о полномочиях представителя у команды (если в ней есть несовершеннолетний);
+    журнал инструктажа — у команды; ОМС не требуется."""
+    comp = replace(psr_card, zachety=[replace(psr_card.zachety[0], age_from=14, age_from_by_gsk=None)])
+    own = clean_own_docs([{"title": "Расписка родителей несовершеннолетнего", "scope": "person", "when": "minor"},
+                          {"title": "Приказ о полномочиях представителя", "scope": "team", "when": "team_minor"},
+                          {"title": "Журнал инструктажа по технике безопасности", "scope": "team"}])
+    rasp, prikaz, journal = (d["key"] for d in own)
+    own[0]["alt"] = prikaz  # «или» — в обе стороны
+    docs = {k: v for k, v in ALL_DOCS.items() if k != "oms"}
+    data = {"settings": {"docs": ["id", "med", "book", "ins", rasp], "team_docs": ["app", "doctor", prikaz, journal],
+                         "own_docs": own},
+            "teams": {f: {"team_docs": {"app": True, "doctor": True, journal: True},
+                          "people": {person_key(n): {"docs": dict(docs)} for n in names}}
+                      for f, names in (("Лесовики.xlsx", LES), ("Сосна.xlsx", SOS))}}
+    pdocs, tdocs = required_docs(data)
+    assert [d.short for d in pdocs][-1] == "Расписка родителей несовершеннолетнего" and "oms" not in [d.key for d in pdocs]
+    assert [d.short for d in tdocs][-2:] == ["Приказ о полномочиях…", "Журнал инструктажа по…"]
+
+    teams = check(tmp_path, comp, data)
+    les, sos = teams["Лесовики.xlsx"], teams["Сосна.xlsx"]
+    # у «Лесовиков» нет несовершеннолетних — ни расписка, ни приказ не нужны
+    assert les.status == ADMITTED and prikaz in les.team_not_needed and all(rasp in p.not_needed for p in les.persons)
+    pestov = next(p for p in sos.persons if p.entry.name.full == "Пестов Юрий Андреевич")  # 16 лет
+    orlov = next(p for p in sos.persons if p.entry.name.full == "Орлов Павел Ильич")
+    # без расписки и без приказа — ждут оба: участник (нет расписки) и команда (нет приказа)
+    assert [d.key for d in pestov.missing] == [rasp] and pestov.status == PENDING and rasp in orlov.not_needed
+    assert [d.key for d in sos.missing_team_docs] == [prikaz] and sos.status == PENDING
+
+    # приказ у команды — несовершеннолетний без расписки допущен
+    data["teams"]["Сосна.xlsx"]["team_docs"][prikaz] = True
+    sos = check(tmp_path, comp, data)["Сосна.xlsx"]
+    pestov = next(p for p in sos.persons if p.entry.name.full == "Пестов Юрий Андреевич")
+    assert pestov.status == ADMITTED and not pestov.missing and "Приказ" in pestov.covered[rasp]
+    assert sos.status == ADMITTED
+
+    # приказа нет, но расписки у всех несовершеннолетних — приказ не нужен
+    data["teams"]["Сосна.xlsx"]["team_docs"][prikaz] = False
+    data["teams"]["Сосна.xlsx"]["people"][person_key("Пестов Юрий Андреевич")]["docs"][rasp] = True
+    sos = check(tmp_path, comp, data)["Сосна.xlsx"]
+    assert sos.status == ADMITTED and "Расписка" in sos.team_covered[prikaz]
+
+    # журнал инструктажа нужен всем командам
+    data["teams"]["Лесовики.xlsx"]["team_docs"][journal] = False
+    les = check(tmp_path, comp, data)["Лесовики.xlsx"]
+    assert [d.key for d in les.missing_team_docs] == [journal] and les.status == PENDING

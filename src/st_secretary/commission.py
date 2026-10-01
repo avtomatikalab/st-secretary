@@ -27,12 +27,23 @@ PERSON_LABEL = {ADMITTED: "Допущен", PENDING: "Ожидает", REJECTED:
 TEAM_LABEL = {ADMITTED: "Допущена", PENDING: "Ожидает", REJECTED: "Не допущена"}
 
 
+# Кому нужен документ (Правки, п. 30): всем; только несовершеннолетним (на день начала соревнований); команде (и её
+# участникам), если в ней есть несовершеннолетний — например, приказ о полномочиях представителя.
+ALL, MINOR, TEAM_MINOR = "all", "minor", "team_minor"
+WHEN_LABEL = {ALL: "всем", MINOR: "только несовершеннолетним (на день начала)",
+              TEAM_MINOR: "если в команде есть несовершеннолетний"}
+SCOPE_LABEL = {"person": "у участника", "team": "у команды"}
+
+
 @dataclass(frozen=True)
 class Doc:
     key: str
     title: str  # полностью — в настройках и подсказках
     short: str  # в заголовке колонки
     default: bool = True  # нужен по умолчанию (по Правилам); остальные включаются по Положению
+    when: str = ALL  # кому нужен: ALL, MINOR, TEAM_MINOR
+    alt: str = ""  # «или»: другой документ, который его заменяет — достаточно одного из двух
+    own: bool = False  # свой документ — из Положения соревнования, не из Правил
 
 
 # Правила, раздел 3, п. 8.1: документы на каждого участника и требования к заявке.
@@ -59,18 +70,90 @@ def person_key(name: str) -> str:
 
 
 def settings(data: dict) -> dict:
-    """Настройки комиссии: какие документы нужны, начало соревнований (для перезаявок)."""
+    """Настройки комиссии: какие документы нужны (и свои документы по Положению), начало соревнований (для
+    перезаявок)."""
     s = data.get("settings", {})
     return {
         "docs": s.get("docs", [d.key for d in PERSON_DOCS if d.default]),
         "team_docs": s.get("team_docs", [d.key for d in TEAM_DOCS if d.default]),
+        "own_docs": clean_own_docs(s.get("own_docs", [])),
         "start_at": s.get("start_at", ""),
     }
 
 
+def doc_key(title: str) -> str:
+    """Ключ своего документа — по названию: тот же документ в разных соревнованиях и в запомненном наборе."""
+    import hashlib
+
+    return "x" + hashlib.sha1(person_key(title).encode("utf-8")).hexdigest()[:8]
+
+
+def short_title(title: str) -> str:
+    """Для заголовка колонки: начало названия до скобки или запятой, не длиннее трёх слов."""
+    head = title.split("(", maxsplit=1)[0].split(",", maxsplit=1)[0].strip() or title
+    words = head.split()
+    return " ".join(words[:3]) + ("…" if len(words) > 3 else "")
+
+
+def clean_own_docs(items) -> list[dict]:
+    """Свои документы (Правки, п. 30): [{key, title, short, scope: person|team, when, alt}] — без пустых и повторов."""
+    builtin = {d.key for d in (*PERSON_DOCS, *TEAM_DOCS)}
+    out, seen = [], set()
+    for x in items if isinstance(items, list) else []:
+        title = " ".join(str(x.get("title", "")).split()) if isinstance(x, dict) else ""
+        if not title:
+            continue
+        key = str(x.get("key") or doc_key(title))
+        if key in seen or key in builtin:
+            continue
+        seen.add(key)
+        short = " ".join(str(x.get("short", "")).split()) or short_title(title)
+        out.append({"key": key, "title": title, "short": short, "scope": "team" if x.get("scope") == "team" else "person",
+                    "when": x.get("when") if x.get("when") in WHEN_LABEL else ALL, "alt": str(x.get("alt", ""))})
+    return out
+
+
+def own_doc(x: dict) -> Doc:
+    return Doc(x["key"], x["title"], x["short"], True, x["when"], x["alt"], True)
+
+
+def all_docs(data: dict) -> tuple[list[Doc], list[Doc]]:
+    """Все документы на выбор: из Правил и свои (по Положению) — (участника, команды)."""
+    own = settings(data)["own_docs"]
+    return ([*PERSON_DOCS, *[own_doc(x) for x in own if x["scope"] == "person"]],
+            [*TEAM_DOCS, *[own_doc(x) for x in own if x["scope"] == "team"]])
+
+
 def required_docs(data: dict) -> tuple[list[Doc], list[Doc]]:
     s = settings(data)
-    return [d for d in PERSON_DOCS if d.key in s["docs"]], [d for d in TEAM_DOCS if d.key in s["team_docs"]]
+    pdocs, tdocs = all_docs(data)
+    return [d for d in pdocs if d.key in s["docs"]], [d for d in tdocs if d.key in s["team_docs"]]
+
+
+def alternatives(docs: list[Doc]) -> dict[str, set[str]]:
+    """Пары «или» в обе стороны: {документ: документы, любой из которых его заменяет}."""
+    keys = {d.key for d in docs}
+    out: dict[str, set[str]] = {}
+    for d in docs:
+        if d.alt and d.alt in keys and d.alt != d.key:
+            out.setdefault(d.key, set()).add(d.alt)
+            out.setdefault(d.alt, set()).add(d.key)
+    return out
+
+
+def is_minor(e: Entry, comp: Competition) -> bool:
+    """Несовершеннолетний на день начала соревнований (дата рождения неизвестна — не считается)."""
+    age = age_on_start(e, comp)
+    return age is not None and age < 18
+
+
+def needs(d: Doc, team_minor: bool, minor: bool | None = None) -> bool:
+    """Нужен ли документ: участнику (minor — несовершеннолетний ли он) или команде (minor=None)."""
+    if d.when == MINOR:
+        return minor if minor is not None else team_minor
+    if d.when == TEAM_MINOR:
+        return team_minor
+    return True
 
 
 def person_id(e: Entry) -> str:
@@ -153,6 +236,8 @@ class PersonCheck:
     auto_docs: set[str] = field(default_factory=set)  # отмечены сами: мед. допуск — по допуску врача в заявке
     shared_docs: dict[str, str] = field(default_factory=dict)  # отмечены у этого человека в другой команде: док → команда
     shared_comp: dict[str, str] = field(default_factory=dict)  # …в другом соревновании фестиваля: док → соревнование
+    not_needed: set[str] = field(default_factory=set)  # документ ему не нужен (только несовершеннолетним и т. п.)
+    covered: dict[str, str] = field(default_factory=dict)  # не нужен — есть документ «или»: док → чем заменён
 
     @property
     def label(self) -> str:
@@ -203,6 +288,8 @@ class TeamCheck:
     problem_targets: list[str] = field(default_factory=list)  # где исправить каждую из problems (Issue.target)
     unreviewed: bool = False  # секретарь не отметил заявку «Проверено» (п. 24 правок)
     fee_by: str = ""  # взнос платит делегация одной строкой — её название (Правки, п. 20)
+    team_not_needed: set[str] = field(default_factory=set)  # документ команды не нужен (нет несовершеннолетних)
+    team_covered: dict[str, str] = field(default_factory=dict)  # не нужен — есть документ «или»: док → чем заменён
 
     @property
     def by_decision(self) -> bool:
@@ -252,6 +339,8 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
     outside — документы людей, отмеченные в других соревнованиях фестиваля: {человек: {документ: (команда,
     соревнование)}}; doctor_files — заявки, чья делегация сдала заявку с печатью врача (Правки, п. 20)."""
     pdocs, tdocs = required_docs(data)
+    alts = alternatives([*pdocs, *tdocs])
+    titles = {d.key: d.short for d in (*pdocs, *tdocs)}
     teams = {t.source: t for t in result.teams}
     marked = docs_by_person(result, files, data)  # документы человека отмечают один раз — в любой его команде
     by_source: dict[str, list[Issue]] = {}
@@ -263,6 +352,8 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
         team = teams.get(file)
         issues = by_source.get(file, [])
         persons = []
+        tdoc = {d.key: bool(m.get("team_docs", {}).get(d.key)) for d in tdocs}
+        team_minor = any(is_minor(e, comp) for e in (team.entries if team else []))
         for e in (team.entries if team else []):
             key = person_key(e.name.full)
             pm = m.get("people", {}).get(key, {})
@@ -281,10 +372,20 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
             # «проверено» на предзаявках снимает сомнение в данных (ФИО, территория), но не решает допуск:
             # возраст младше, чем в Положении, — только решением ГСК на комиссии
             waiting = [i for i in mine if i.severity == WARNING or (i.severity == CHECKED and i.field in DECIDED_HERE)]
-            p = PersonCheck(e, key, PENDING, docs, [d for d in pdocs if not docs[d.key]],
+            # кому документ не нужен (только несовершеннолетним) и чем заменён («или») — Правки, п. 30
+            skip = {d.key for d in pdocs if not needs(d, team_minor, is_minor(e, comp))}
+            covered = {}
+            for d in pdocs:
+                for a in sorted(alts.get(d.key, ())) if d.key not in skip and not docs[d.key] else ():
+                    if docs.get(a):
+                        covered[d.key] = f"есть «{titles[a]}»"
+                    elif tdoc.get(a):
+                        covered[d.key] = f"у команды есть «{titles[a]}»"
+            p = PersonCheck(e, key, PENDING, docs,
+                            [d for d in pdocs if not docs[d.key] and d.key not in skip and d.key not in covered],
                             [i for i in mine if i.severity == ERROR], waiting,
                             pm.get("decision", ""), pm.get("reason", ""), auto, shared,
-                            {k: v[1] for k, v in far.items()})
+                            {k: v[1] for k, v in far.items()}, skip, covered)
             if p.decision == REJECTED:
                 p.status = REJECTED
             elif p.errors:
@@ -293,13 +394,23 @@ def evaluate(result: PreappResult, files: list[str], comp: Competition, data: di
                 p.status = ADMITTED  # решением комиссии без документов — только с основанием
             persons.append(p)
 
-        tdoc = {d.key: bool(m.get("team_docs", {}).get(d.key)) for d in tdocs}
+        tskip = {d.key for d in tdocs if not needs(d, team_minor)}
+        tcovered = {}
+        for d in tdocs:
+            for a in sorted(alts.get(d.key, ())) if d.key not in tskip and not tdoc[d.key] else ():
+                those = [p for p in persons if a not in p.not_needed]  # документ участника «или» — у всех, кому нужен
+                if tdoc.get(a):
+                    tcovered[d.key] = f"есть «{titles[a]}»"
+                elif any(x.key == a for x in pdocs) and those and all(p.docs.get(a) for p in those):
+                    tcovered[d.key] = f"у всех, кому нужна, есть «{titles[a]}»"
         head = [i for i in issues if not i.row]
-        t = TeamCheck(file, team, PENDING, persons, tdoc, [d for d in tdocs if not tdoc[d.key]],
+        t = TeamCheck(file, team, PENDING, persons, tdoc,
+                      [d for d in tdocs if not tdoc[d.key] and d.key not in tskip and d.key not in tcovered],
                       [i for i in head if i.severity == ERROR], [i for i in head if i.severity == WARNING], [],
                       _int(m.get("number")), m.get("decision", ""), m.get("note", ""),
                       fee_due=0, fee_paid=_int(m.get("fee_paid")) or 0, fee_method=m.get("fee_method", ""),
                       reentries=list(m.get("reentries", [])))
+        t.team_not_needed, t.team_covered = tskip, tcovered
         t.fee_due = fee_due(t, comp)
         t.unreviewed = team is not None and reviewed is not None and not reviewed.get(file, False)
         t.extra = list((extra or {}).get(file, []))

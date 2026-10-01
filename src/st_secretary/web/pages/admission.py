@@ -127,6 +127,7 @@ def register(app, cx) -> None:
         pdocs, tdocs = cm.required_docs(data)
         fest = f.festival()
         return {"pdocs": pdocs, "tdocs": tdocs, "adm_settings": cm.settings(data), "fee_methods": cm.FEE_METHODS,
+                "when_label": cm.WHEN_LABEL,
                 "base": _base(f), "docs_n": {p.name: len(store.team_docs(f, p.name)) for p in f.preapp_files()},
                 "gear_on": bool(eq.settings(f.equipment())["items"]),
                 "fest_fee": fest if fv.mode(fest, "fee") == "festival" else None,
@@ -145,8 +146,21 @@ def register(app, cx) -> None:
                 notes = fv.number_problems([(g.id, c.title, ts) for g, c, _, ts in festival_members(fest)])
         return page(request, "admission.html", active="admission", blocked=blocked, teams=teams,
                     totals=adm_totals(teams), all_person_docs=cm.PERSON_DOCS, all_team_docs=cm.TEAM_DOCS,
+                    own_rows=(rows := own_rows(data)), scope_label=cm.SCOPE_LABEL,
+                    alt_choices=[*cm.PERSON_DOCS, *cm.TEAM_DOCS, *[cm.own_doc(r) for r in cm.clean_own_docs(rows)]],
                     by_delegation=by == "delegation", delegations=cm.delegations(teams, data), number_notes=notes,
                     deleg_fee=cm.DELEGATION_FEE, deleg_anchor=deleg_anchor, **{**ctx, **adm_parts(f, data)})
+
+    def own_rows(data: dict) -> list[dict]:
+        """Строки «Свои документы» в настройках: документы этого соревнования (включены), запомненные на компьютере
+        (выключены) и две пустые — добавить."""
+        s = cm.settings(data)
+        on = set(s["docs"]) | set(s["team_docs"])
+        have = {d["key"] for d in s["own_docs"]}
+        rows = [d | {"on": d["key"] in on} for d in s["own_docs"]]
+        rows += [d | {"on": False} for d in store.doc_set()["docs"] if d["key"] not in have]
+        return rows + [{"key": "", "title": "", "short": "", "scope": "person", "when": cm.ALL, "alt": "", "on": True}
+                       for _ in range(2)]
 
     def deleg_anchor(key: str) -> str:
         import hashlib
@@ -262,10 +276,25 @@ def register(app, cx) -> None:
         f = folder(cid)
         form = await request.form()
         data = f.admission()
-        data["settings"] = {"docs": [d.key for d in cm.PERSON_DOCS if form.get(f"doc-{d.key}")],
-                            "team_docs": [d.key for d in cm.TEAM_DOCS if form.get(f"tdoc-{d.key}")],
+        # свои документы по Положению (Правки, п. 30): строки od-N-…; пустое название — убрать (и с компьютера)
+        rows, forget = [], set()
+        for i in sorted({int(k.split("-")[1]) for k in form if re.fullmatch(r"od-\d+-title", k)}):
+            row = {k: str(form.get(f"od-{i}-{k}", "")) for k in ("key", "title", "short", "scope", "when", "alt")}
+            if not row["title"].strip():
+                forget.add(row["key"])
+                continue
+            rows.append(row | {"on": bool(form.get(f"od-{i}-on"))})
+        own = cm.clean_own_docs(rows)
+        on = {cm.clean_own_docs([r])[0]["key"] for r in rows if r["on"]}
+        data["settings"] = {"docs": [d.key for d in cm.PERSON_DOCS if form.get(f"doc-{d.key}")]
+                            + [d["key"] for d in own if d["scope"] == "person" and d["key"] in on],
+                            "team_docs": [d.key for d in cm.TEAM_DOCS if form.get(f"tdoc-{d.key}")]
+                            + [d["key"] for d in own if d["scope"] == "team" and d["key"] in on],
+                            "own_docs": [d for d in own if d["key"] in on],
                             "start_at": str(form.get("start_at", "")).strip()}
         f.save_admission(data)
+        store.save_doc_set(own, forget - {d["key"] for d in own},
+                           {k: data["settings"][k] for k in ("docs", "team_docs")})
         return _redirect(f"{_base(f)}/admission?done=adm_settings")
 
     @app.post("/c/{cid}/admission/numbers")

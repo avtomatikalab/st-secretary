@@ -678,6 +678,11 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 
 /* Комиссия: мед. допуск, отмеченный сам по допуску врача в заявке */
 .adm-people td.adm-auto { background: var(--ok-bg); }
+.adm-people td.adm-na, .adm-teamdocs .adm-na { color: var(--muted); }
+.adm-teamdocs .adm-na { font-size: .9rem; }
+.adm-own-tbl input[type=text] { width: 100%; min-width: 9em; }
+.adm-own-tbl .adm-own-short { min-width: 7em; }
+.adm-own-tbl select { max-width: 16em; }
 
 /* Комиссия: допущены без проверки секретаря — решением комиссии */
 .adm-nocheck { margin: -8px 0 20px; padding: 10px 14px; }

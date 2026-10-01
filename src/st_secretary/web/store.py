@@ -74,6 +74,7 @@ OWN_KINDS = ("groups", "names", "disciplines")
 FESTIVALS = "Фестивали.json"
 # Свои формы предзаявок (Правки, п. 37) — на этом компьютере, рядом с личными данными судей
 FORMS = "Свои формы заявок.json"
+DOC_SET = "Документы комиссии.json"  # свои документы комиссии и последний набор — на этом компьютере (Правки, п. 30)
 DELEGATION_SOURCES = "Заявки делегаций (исходные)"
 CONTRACTS_DIR = "Договоры и табель"
 # Сканы и фото документов участников (паспорта, полисы, справки): только на этом компьютере и не в облачной
@@ -514,6 +515,44 @@ class Store:
         tmp = self.docs_root / f"~{FORMS}"
         tmp.write_text(json.dumps({"forms": items}, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, self.forms_path)
+
+    @property
+    def doc_set_path(self) -> Path:
+        return self.docs_root / DOC_SET
+
+    def doc_set(self) -> dict:
+        """Запомненное на этом компьютере (Правки, п. 30): свои документы комиссии {"docs": [...]} и последний набор
+        {"last": {"docs": [...], "team_docs": [...]}} — новое соревнование начинается с него, собирать заново не нужно."""
+        from st_secretary.commission import clean_own_docs
+
+        try:
+            data = json.loads(self.doc_set_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        data = data if isinstance(data, dict) else {}
+        last = data.get("last") if isinstance(data.get("last"), dict) else {}
+        return {"docs": clean_own_docs(data.get("docs", [])),
+                "last": {k: [str(x) for x in last.get(k, [])] for k in ("docs", "team_docs") if k in last}}
+
+    def save_doc_set(self, own: list[dict], forget: set[str], last: dict) -> None:
+        """Запомнить свои документы (с тем же ключом — заменить; forget — убрать) и набор, выбранный последним."""
+        mine = {d["key"]: d for d in own}
+        docs = [mine.pop(d["key"], d) for d in self.doc_set()["docs"] if d["key"] not in forget] + list(mine.values())
+        self.docs_root.mkdir(parents=True, exist_ok=True)
+        tmp = self.docs_root / f"~{DOC_SET}"
+        tmp.write_text(json.dumps({"docs": docs, "last": last}, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.doc_set_path)
+
+    def apply_doc_set(self, f: CompFolder) -> None:
+        """Новое соревнование: документы комиссии — как в прошлый раз на этом компьютере (если набор запомнен)."""
+        s = self.doc_set()
+        if not s["last"]:
+            return
+        chosen = set(s["last"].get("docs", [])) | set(s["last"].get("team_docs", []))
+        data = f.admission()
+        data["settings"] = {**data.get("settings", {}), **s["last"],
+                            "own_docs": [d for d in s["docs"] if d["key"] in chosen]}
+        f.save_admission(data)
 
     @property
     def samples_dir(self) -> Path:

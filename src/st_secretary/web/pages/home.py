@@ -104,6 +104,7 @@ def register(app, cx) -> None:
         if errors:
             return page(request, "new.html", status_code=422, form=form, errors=errors, ch=choices())
         f = store.create(comp)
+        store.apply_doc_set(f)  # документы комиссии — как в прошлый раз на этом компьютере (Правки, п. 30)
         return _redirect(f"{_base(f)}/card/edit?done=created")
 
     @app.get("/help")
@@ -139,6 +140,7 @@ def register(app, cx) -> None:
                                              "с листами «Карточка», «ГСК», «Зачёты» — его можно получить кнопкой "
                                              "«Новое соревнование» или командой card-template."], 422)
         f = store.create(comp, card_bytes=data)
+        store.apply_doc_set(f)
         return _redirect(f"{_base(f)}?done=imported")
 
     @app.post("/restore")
