@@ -18,6 +18,8 @@ build/
 *.pdf
 *.csv
 !tests/fixtures/*.csv
+# Выдуманный бланк делегации из двух листов (Правки, п. 29) — без реальных данных.
+!tests/fixtures/class_sheets_application.xls
 # Инструкция секретаря — снимки учебного соревнования с выдуманными данными (tools/make_manual.py).
 !docs/Инструкция секретаря.docx
 !docs/Инструкция секретаря.pdf
