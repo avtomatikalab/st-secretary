@@ -156,6 +156,11 @@ def messages(folder: Path) -> list[Message]:
     return sorted(out, key=lambda m: m.path.name, reverse=True)
 
 
+def unsent_count(folder: Path) -> int:
+    """Сколько сообщений ещё не отправлено разработчику (для главной и панели)."""
+    return sum(1 for m in messages(folder) if not m.sent)
+
+
 def set_status(m: Message, status: str) -> None:
     m.head["Статус"] = status
     m.path.write_text(render(m.title, m.head, m.sections), encoding="utf-8")

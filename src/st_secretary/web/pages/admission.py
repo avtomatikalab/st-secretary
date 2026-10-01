@@ -22,8 +22,17 @@ from st_secretary import festival as fv
 from st_secretary.exporters.commission_xlsx import write_commission_report
 from st_secretary.issues import ERROR
 from st_secretary.web.common import XLSX, base_url, key_of, redirect, team_anchor, with_done
-from st_secretary.web.review import DONE
-from st_secretary.web.store import COMMISSION_REPORT, IMAGE_TYPES, CompFolder
+from st_secretary.web.shared import (
+    adm_totals,
+    back_to,
+    commission,
+    doc_list,
+    festival_members,
+    need_comp,
+    need_file,
+    team_url,
+)
+from st_secretary.web.store import COMMISSION_REPORT, CompFolder
 
 
 def register(app, cx) -> None:
@@ -32,69 +41,11 @@ def register(app, cx) -> None:
     page = cx.page
     store = cx.store
     templates = cx.templates
-    def back_to(*a, **k):  # из pages/preapps.py
-        return cx.back_to(*a, **k)
-    def need_comp(*a, **k):  # из pages/preapps.py
-        return cx.need_comp(*a, **k)
-    def need_file(*a, **k):  # из pages/preapps.py
-        return cx.need_file(*a, **k)
-    def team_url(*a, **k):  # из pages/preapps.py
-        return cx.team_url(*a, **k)
 
     # ------------------------------------------------------------ комиссия по допуску
 
-    def commission(f: CompFolder, comp):
-        """Отметки комиссии и состояние допуска по каждой заявке (в порядке списка заявок). На фестивале с одним
-        взносом за фестиваль взноса у команд соревнования нет — он в ведомости фестиваля."""
-        result, reviews = store.review(f, comp)
-        data = f.admission()
-        files = [p.name for p in f.preapp_files()]
-        gear = eq.admission_problems(eq.evaluate(result, files, f.equipment(), key_of), f.equipment())
-        fest = f.festival()
-        teams = cm.evaluate(result, files, comp, data, gear, {k: r.status == DONE for k, r in reviews.items()},
-                            outside=festival_marks(fest, f.id) if fest else None,
-                            doctor_files=cm.doctor_files(result, data))
-        if fv.mode(fest, "fee") == "festival":
-            for t in teams:
-                t.fee_due = t.fee_paid = 0
-        else:
-            cm.apply_delegation_fees(teams, data)  # делегация платит одной строкой — оплата по её командам
-        return data, teams
 
-    def festival_marks(fest: dict, cid: str) -> dict[str, dict[str, tuple[str, str]]]:
-        """Документы людей, отмеченные в других соревнованиях фестиваля: {человек: {документ: (команда,
-        соревнование)}} — человек проверяется один раз (Правки, п. 20)."""
-        out: dict[str, dict[str, tuple[str, str]]] = {}
-        for m in fest["members"]:
-            g = store.get(m) if m != cid else None
-            try:
-                comp = g.load() if g else None
-            except Exception:  # noqa: BLE001 — карточка не читается
-                comp = None
-            if comp is None or any(i.severity == ERROR for i in comp.check()):
-                continue
-            result, _ = store.review(g, comp)
-            data = g.admission()
-            marks = cm.own_marks(result, [p.name for p in g.preapp_files()], data, cm.doctor_files(result, data))
-            for pid, docs in marks.items():
-                for k, team in docs.items():
-                    out.setdefault(pid, {}).setdefault(k, (team, comp.title))
-        return out
 
-    def festival_members(fest: dict) -> list[tuple]:
-        """Соревнования фестиваля с комиссией: [(папка, карточка, отметки комиссии, команды)]; соревнования с
-        ошибками в карточке пропускаются."""
-        out = []
-        for m in fest["members"]:
-            g = store.get(m)
-            try:
-                comp = g.load() if g else None
-            except Exception:  # noqa: BLE001 — карточка не читается
-                comp = None
-            if comp is None or any(i.severity == ERROR for i in comp.check()):
-                continue
-            out.append((g, comp, *commission(g, comp)))
-        return out
 
     def shared_numbers(f: CompFolder) -> dict | None:
         """Фестиваль, если стартовые номера в нём общие (Правки, п. 19)."""
@@ -110,18 +61,9 @@ def register(app, cx) -> None:
             return [x.title for x in teams if x.number == t.number and x.file != t.file]
         me = fv.ident_of(f.id, t)
         return list(dict.fromkeys(
-            x.title + ("" if g.id == f.id else f" ({comp.title})") for g, comp, _, ts in festival_members(fest)
+            x.title + ("" if g.id == f.id else f" ({comp.title})") for g, comp, _, ts in festival_members(store, fest)
             for x in ts if x.number == t.number and fv.ident_of(g.id, x) != me))
 
-    def adm_totals(teams: list) -> dict:
-        people = [p for t in teams for p in t.persons]
-        return {"teams": len(teams), "teams_ok": sum(t.status == cm.ADMITTED for t in teams),
-                "teams_by": Counter(t.status for t in teams),
-                "people": len(people), "people_ok": sum(p.status == cm.ADMITTED for p in people),
-                "people_wait": sum(p.status == cm.PENDING for p in people),
-                "people_no": sum(p.status == cm.REJECTED for p in people),
-                "fee_due": sum(t.fee_due for t in teams), "fee_paid": sum(t.fee_paid for t in teams),
-                "no_check": cm.without_check(teams)}
 
     def adm_parts(f: CompFolder, data: dict) -> dict:
         pdocs, tdocs = cm.required_docs(data)
@@ -141,9 +83,9 @@ def register(app, cx) -> None:
         blocked = [i for i in comp.check() if i.severity == ERROR] if comp else ctx["card_errors"]
         teams, data, notes = [], f.admission(), []
         if comp and not blocked:
-            data, teams = commission(f, comp)
+            data, teams = commission(store, f, comp)
             if fest := shared_numbers(f):
-                notes = fv.number_problems([(g.id, c.title, ts) for g, c, _, ts in festival_members(fest)])
+                notes = fv.number_problems([(g.id, c.title, ts) for g, c, _, ts in festival_members(store, fest)])
         return page(request, "admission.html", active="admission", blocked=blocked, teams=teams,
                     totals=adm_totals(teams), all_person_docs=cm.PERSON_DOCS, all_team_docs=cm.TEAM_DOCS,
                     own_rows=(rows := own_rows(data)), scope_label=cm.SCOPE_LABEL,
@@ -190,7 +132,7 @@ def register(app, cx) -> None:
         f = folder(cid)
         comp = need_comp(f)
         key = str((await request.form()).get("key", ""))
-        data, teams = commission(f, comp)
+        data, teams = commission(store, f, comp)
         d = next((x for x in cm.delegations(teams, data) if x.key == key), None)
         if d is None:
             raise HTTPException(404)
@@ -215,7 +157,7 @@ def register(app, cx) -> None:
         everything = form.get("do") == "all_docs"  # «Отметить все документы»
         # мед. допуск, стоявший сам по допуску врача в заявке, — не отметка секретаря: сняли — врач не допустил
         keys = [str(form.get(k)) for k in form if re.fullmatch(r"p-\d+-key", k)]
-        _, before = commission(f, comp)
+        _, before = commission(store, f, comp)
         shared = {p.key: set(p.shared_docs) for t in before if t.file == path.name for p in t.persons}
         # мед. допуск, стоявший сам — по допуску врача у команды или у её делегации
         auto_med = {p.key for t in before if t.file == path.name for p in t.persons if cm.MED in p.auto_docs}
@@ -248,11 +190,11 @@ def register(app, cx) -> None:
             pm["decision"] = decision if decision in (cm.ADMITTED, cm.REJECTED) else ""
             pm["reason"] = str(form.get(f"p-{i}-reason", "")).strip() if pm["decision"] else ""
         f.save_admission(data)
-        data, teams = commission(f, comp)
+        data, teams = commission(store, f, comp)
         t = next(x for x in teams if x.file == path.name)
         if renumbered and (fest := shared_numbers(f)):  # общие номера: тот же номер — этой команде везде
             me = fv.ident_of(f.id, t)
-            for g, _, gdata, ts in festival_members(fest):
+            for g, _, gdata, ts in festival_members(store, fest):
                 files = [x.file for x in ts if g.id != f.id and fv.ident_of(g.id, x) == me]
                 for file in files:
                     gdata.setdefault("teams", {}).setdefault(file, {})["number"] = t.number
@@ -304,7 +246,7 @@ def register(app, cx) -> None:
         comp = need_comp(f)
         again = (await request.form()).get("mode") == "all"
         if fest := shared_numbers(f):  # общие номера фестиваля — сразу во всех его соревнованиях
-            members = festival_members(fest)
+            members = festival_members(store, fest)
             new = fv.assign_numbers([(g.id, ts) for g, _, _, ts in members], again)
             for g, _, gdata, ts in members:
                 for t in ts:
@@ -312,7 +254,7 @@ def register(app, cx) -> None:
                         gdata.setdefault("teams", {}).setdefault(t.file, {})["number"] = new[(g.id, t.file)]
                 g.save_admission(gdata)
             return redirect(f"{base_url(f)}/admission?done=adm_numbers_fest")
-        data, teams = commission(f, comp)
+        data, teams = commission(store, f, comp)
         taken = set() if again else {t.number for t in teams if t.number is not None}
         n = 1
         for t in teams:
@@ -329,7 +271,7 @@ def register(app, cx) -> None:
         comp = need_comp(f)
         if not f.preapp_files():
             raise HTTPException(409, "Пока нет ни одной заявки — добавьте их на странице «Предварительные заявки».")
-        data, teams = commission(f, comp)
+        data, teams = commission(store, f, comp)
         gdata, gear = gear_ctx(f, comp)
         fest = f.festival()
         note = (f"Стартовый взнос — один за фестиваль «{fest['title']}»: ведомость взносов — на странице фестиваля."
@@ -525,31 +467,16 @@ def register(app, cx) -> None:
         f = folder(cid)
         comp = need_comp(f)
         path = need_file(f, file)
-        data, teams = commission(f, comp)
+        data, teams = commission(store, f, comp)
         order = [t.file for t in teams]
         at = order.index(path.name)
         near = {k: teams[j] for k, j in (("prev", at - 1), ("next", at + 1)) if 0 <= j < len(order)}
         return page(request, "admission_check.html", active="admission", focus=True, t=teams[at],
-                    docs=doc_list(f, path.name, teams[at]),
+                    docs=doc_list(store, f, path.name, teams[at]),
                     position=(at + 1, len(order)), prev_team=near.get("prev"), next_team=near.get("next"),
                     docs_dir=store.team_docs_dir(f, path.name), here=f"{base_url(f)}/admission/check?file={quote(path.name)}",
                     **{**comp_ctx(f), **adm_parts(f, data)})
 
-    def doc_list(f: CompFolder, file: str, t=None) -> list[dict]:
-        """Сканы команды и — если есть — её участников из папки делегации (Правки, п. 20)."""
-        out = []
-        for p in store.team_docs(f, file):
-            ext = p.suffix.lower()
-            kind = "image" if ext in IMAGE_TYPES else "pdf" if ext == ".pdf" else "other"
-            out.append({"name": p.name, "label": p.stem, "kind": kind,
-                        "url": f"{base_url(f)}/docs/view?{urlencode({'file': file, 'name': p.name})}"})
-        if t is not None and t.team:
-            for fio, p in store.person_docs(f, cm.delegation_title(t.team), [x.entry for x in t.persons]):
-                ext = p.suffix.lower()
-                kind = "image" if ext in IMAGE_TYPES else "pdf" if ext == ".pdf" else "other"
-                out.append({"name": p.name, "label": f"{fio}: {p.stem}", "kind": kind,
-                            "url": f"{base_url(f)}/docs/person?{urlencode({'file': file, 'fio': fio, 'name': p.name})}"})
-        return out
 
     @app.get("/c/{cid}/docs/person")
     def docs_person(cid: str, file: str = "", fio: str = "", name: str = ""):
@@ -557,7 +484,7 @@ def register(app, cx) -> None:
         f = folder(cid)
         comp = need_comp(f)
         path = need_file(f, file)
-        _, teams = commission(f, comp)
+        _, teams = commission(store, f, comp)
         t = next((x for x in teams if x.file == path.name), None)
         e = next((p.entry for p in (t.persons if t else []) if p.entry.name.full == fio), None)
         if t is None or e is None or not t.team:
@@ -569,4 +496,3 @@ def register(app, cx) -> None:
         return FileResponse(doc, content_disposition_type="inline", filename=doc.name,
                             headers={"Cache-Control": "no-store"})
 
-    cx.update(adm_totals=adm_totals, commission=commission, doc_list=doc_list, festival_members=festival_members)

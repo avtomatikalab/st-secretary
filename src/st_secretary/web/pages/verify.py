@@ -11,6 +11,7 @@ from st_secretary import staff as sf
 from st_secretary import verify as vf
 from st_secretary.issues import ERROR, WARNING
 from st_secretary.textclean import alpha_key
+from st_secretary.web.shared import need_comp
 from st_secretary.web.store import CompFolder
 
 
@@ -19,8 +20,6 @@ def register(app, cx) -> None:
     folder = cx.folder
     page = cx.page
     store = cx.store
-    def need_comp(*a, **k):  # из pages/preapps.py
-        return cx.need_comp(*a, **k)
 
     # ------------------------------------------------------------ сверка документов
 

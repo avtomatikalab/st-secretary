@@ -13,53 +13,27 @@ from fastapi import Request
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException
 
-from st_secretary import commission as cm
 from st_secretary import start_list as sl
 from st_secretary import time_run as tr
 from st_secretary.exporters import start_protocol as sp
 from st_secretary.rank import INDIVIDUAL, PAIR
-from st_secretary.reference import norm_edition
 from st_secretary.web.common import XLSX, base_url, parse_dt, redirect, with_done
+from st_secretary.web.shared import PROTEST_HOUR, need_comp, need_zachet, save_zachet, start_ctx, start_default
 from st_secretary.web.store import CompFolder, safe_name
 
 DEFAULT_FIRST, DEFAULT_INTERVAL = "10:00", "5"  # время старта по умолчанию: первый старт, интервал в минутах
 
 
 def register(app, cx) -> None:
+    run_lock = cx.run_lock
     comp_ctx = cx.comp_ctx
     folder = cx.folder
     page = cx.page
     store = cx.store
-    PROTEST_HOUR = cx.PROTEST_HOUR  # из pages/results.py
-    def _save_zachet(*a, **k):  # из pages/results.py
-        return cx._save_zachet(*a, **k)
-    def need_comp(*a, **k):  # из pages/preapps.py
-        return cx.need_comp(*a, **k)
-    def need_zachet(*a, **k):  # из pages/results.py
-        return cx.need_zachet(*a, **k)
-    def zachet_inputs(*a, **k):  # из pages/results.py
-        return cx.zachet_inputs(*a, **k)
 
     # ------------------------------------------------------------ жеребьёвка и стартовые протоколы
 
-    def start_ctx(f: CompFolder, comp, z, teams: list | None = None):
-        """(данные зачёта, команды, ранги составов, стартовый протокол)."""
-        zdata = f.run_data().get("zachety", {}).get(z.key, {})
-        teams = zachet_inputs(f, comp, z) if teams is None else teams
-        try:
-            norms = norm_edition(comp.norms_edition)
-        except KeyError:
-            norms = None
-        fmt = z.rank_format
-        ranks = {t.file: sl.team_rank(t.members, fmt, norms) for t in teams}
-        return zdata, teams, ranks, sl.build(z, zdata, teams, ranks, start_default(f, comp)[0])
 
-    def start_default(f: CompFolder, comp) -> tuple[date, str]:
-        """День и время старта по умолчанию — «Начало соревнований» у комиссии по допуску или первый день."""
-        adm = parse_dt(cm.settings(f.admission())["start_at"])
-        if adm is None:
-            return comp.date_from, ""
-        return adm.date(), f"{adm:%H:%M}" if adm.hour or adm.minute else ""
 
     def time_fields(f: CompFolder, comp, zdata: dict) -> dict:
         """Время старта в полях (Правки, п. 40): сохранённое, а пока его не сохраняли — настоящее значение по
@@ -87,7 +61,7 @@ def register(app, cx) -> None:
     def all_lists(f: CompFolder, comp) -> list[tuple]:
         """Стартовые протоколы всех зачётов соревнования и — на фестивале — его остальных соревнований:
         [(папка, карточка, зачёт, протокол, расчётное время, с)]."""
-        out = [(f, comp, x, start_ctx(f, comp, x)[3], expected_secs(f, x)) for x in comp.zachety]
+        out = [(f, comp, x, start_ctx(store, f, comp, x)[3], expected_secs(f, x)) for x in comp.zachety]
         fest = f.festival()
         for m in (fest or {}).get("members", []):
             g = store.get(m) if m != f.id else None
@@ -96,7 +70,7 @@ def register(app, cx) -> None:
             except Exception:  # noqa: BLE001 — карточка не читается: её стартов не видно
                 other = None
             for x in (other.zachety if other is not None else []):
-                lst = start_ctx(g, other, x)[3]
+                lst = start_ctx(store, g, other, x)[3]
                 # зачёт другого соревнования: свой ключ и название с соревнованием — «М/Ж_3 (Кубок …)»
                 lst.zachet = replace(x, zid=f"{g.id}/{x.key}", name=f"{x.title} ({other.title})")
                 out.append((g, other, x, lst, expected_secs(g, x)))
@@ -117,7 +91,7 @@ def register(app, cx) -> None:
         if not comp.zachety:
             return page(request, "start.html", active="start", zachet=None, **comp_ctx(f))
         zz = need_zachet(comp, z)
-        _, teams, _, lst = start_ctx(f, comp, zz)
+        _, teams, _, lst = start_ctx(store, f, comp, zz)
         brk = start_break(f)
         everything = all_lists(f, comp)
         if len(everything) > 1:  # один человек в нескольких зачётах — не слишком близко (Правки, п. 25.3)
@@ -166,7 +140,7 @@ def register(app, cx) -> None:
                     data["start_break"] = value
                     f.save_run_data(data)
         drawing = form.get("action") == "draw"
-        zdata, teams, ranks, lst = start_ctx(f, comp, zz)
+        zdata, teams, ranks, lst = start_ctx(store, f, comp, zz)
         if drawing:  # время старта не задавали — жеребьёвка берёт значения по умолчанию из полей (Правки, п. 40)
             defaults = time_fields(f, comp, zdata)
             new.update({k: defaults[k] for k in ("first", "interval") if k not in new})
@@ -210,7 +184,7 @@ def register(app, cx) -> None:
             if times:
                 dr["times"] = {**dr.get("times", {}), **{k: sl.hm_text(v) for k, v in times.items()}}
 
-        _save_zachet(f, zz.key, update)
+        save_zachet(run_lock, f, zz.key, update)
         done = ("start_drawn" if drawing else "start_times") + ("_fit" if notes else "")
         if drawing:  # в сообщении — с какого времени и через сколько стартуют
             return redirect(with_done(back + "#order", done, first=st["first"], interval=st["interval"]))
@@ -223,7 +197,7 @@ def register(app, cx) -> None:
         comp = need_comp(f)
         zz = need_zachet(comp, z)
         form = await request.form()
-        _, _, _, lst = start_ctx(f, comp, zz)
+        _, _, _, lst = start_ctx(store, f, comp, zz)
         known = {r.inp.file for r in lst.rows}
         rows = []
         for i in range(len(lst.rows)):
@@ -247,7 +221,7 @@ def register(app, cx) -> None:
             dr["order"] = order + [x for x in dr.get("order", []) if x not in order]
             dr["times"] = times
 
-        _save_zachet(f, zz.key, update)
+        save_zachet(run_lock, f, zz.key, update)
         return redirect(with_done(f"{base_url(f)}/start?{urlencode({'z': zz.key})}#order", "start_saved"))
 
     @app.post("/c/{cid}/start/publish")
@@ -256,7 +230,7 @@ def register(app, cx) -> None:
         f = folder(cid)
         comp = need_comp(f)
         zz = need_zachet(comp, z)
-        _, _, _, lst = start_ctx(f, comp, zz)
+        _, _, _, lst = start_ctx(store, f, comp, zz)
         back = f"{base_url(f)}/start?{urlencode({'z': zz.key})}#publish"
         if not lst.rows:
             return redirect(with_done(back, "start_empty"))
@@ -275,7 +249,7 @@ def register(app, cx) -> None:
                           done_method="number")
             dr["published"] = {"at": now.isoformat(timespec="minutes"), "fp": lst.fingerprint, "file": path.name}
 
-        _save_zachet(f, zz.key, update)
+        save_zachet(run_lock, f, zz.key, update)
         app.state.opener(path)
         return redirect(with_done(back, "start_published", until=f"{now + PROTEST_HOUR:%H:%M}"))
 
@@ -336,7 +310,7 @@ def register(app, cx) -> None:
             z = next((x for x in (c.zachety if c else []) if x.key == lane.get("zkey")), None)
             if z is None:
                 continue
-            _, _, _, lst = start_ctx(g, c, z)
+            _, _, _, lst = start_ctx(store, g, c, z)
             known = [r.inp.file for r in lst.rows]
             order = [x for x in lane.get("order", []) if x in known]
             order += [x for x in known if x not in order]
@@ -364,7 +338,6 @@ def register(app, cx) -> None:
                 if first:
                     dr["first"] = first
 
-            _save_zachet(g, z.key, update)
+            save_zachet(run_lock, g, z.key, update)
         return JSONResponse({"ok": True, "saved": now.strftime("%H:%M:%S")})
 
-    cx.update(start_ctx=start_ctx)

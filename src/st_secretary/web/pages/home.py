@@ -17,6 +17,7 @@ from starlette.exceptions import HTTPException
 from st_secretary import __version__, training
 from st_secretary import backup as bk
 from st_secretary import commission as cm
+from st_secretary import feedback as fb
 from st_secretary import festival as fv
 from st_secretary import practice as pt_
 from st_secretary.importers.card_xlsx import CardError, load_card
@@ -30,6 +31,7 @@ from st_secretary.web.forms import (
     officials_form,
     officials_from_rows,
 )
+from st_secretary.web.shared import festival_members
 from st_secretary.web.store import CONTRACTS
 
 
@@ -52,7 +54,8 @@ def register(app, cx) -> None:
         journal = app.state.journal
         return page(request, "home.html", status_code=status_code, items=items, data_dir=store.root,
                     import_errors=import_errors, crashed_before=bool(journal and journal.crashed_before),
-                    crashed_at=journal.previous if journal else "", festivals=groups, fb_unsent=cx.feedback_unsent(),
+                    crashed_at=journal.previous if journal else "", festivals=groups,
+                    fb_unsent=fb.unsent_count(fb.folder_for(store.root)),  # «Есть неотправленные сообщения»
                     loose=[it for it in items if it["folder"].id not in in_fest])
 
     @app.get("/")
@@ -219,7 +222,7 @@ def register(app, cx) -> None:
 
     def fest_groups(x: dict) -> list[tuple]:
         """[(соревнование, название, команды комиссии)] — для общих номеров и взноса за фестиваль."""
-        return [(g.id, comp.title, teams) for g, comp, _, teams in cx.festival_members(x)]
+        return [(g.id, comp.title, teams) for g, comp, _, teams in festival_members(store, x)]
 
     @app.post("/festival/{fid}/fees")
     async def festival_fees(request: Request, fid: str):

@@ -21,6 +21,15 @@ from st_secretary import time_run as tr
 from st_secretary.disciplines import Status
 from st_secretary.web.board import BoardServer, create_board_app, qr_svg
 from st_secretary.web.common import XLSX, base_url, parse_dt, redirect, with_done
+from st_secretary.web.shared import (
+    need_comp,
+    need_zachet,
+    protocol_state,
+    run_ctx,
+    save_zachet,
+    start_ctx,
+    zachet_inputs,
+)
 from st_secretary.web.store import CompFolder
 
 
@@ -32,20 +41,6 @@ def register(app, cx) -> None:
     run_lock = cx.run_lock
     store = cx.store
     templates = cx.templates
-    def _save_zachet(*a, **k):  # из pages/results.py
-        return cx._save_zachet(*a, **k)
-    def need_comp(*a, **k):  # из pages/preapps.py
-        return cx.need_comp(*a, **k)
-    def need_zachet(*a, **k):  # из pages/results.py
-        return cx.need_zachet(*a, **k)
-    def protocol_state(*a, **k):  # из pages/results.py
-        return cx.protocol_state(*a, **k)
-    def run_ctx(*a, **k):  # из pages/results.py
-        return cx.run_ctx(*a, **k)
-    def start_ctx(*a, **k):  # из pages/start.py
-        return cx.start_ctx(*a, **k)
-    def zachet_inputs(*a, **k):  # из pages/results.py
-        return cx.zachet_inputs(*a, **k)
 
     # ------------------------------------------------------------ табло (Wi-Fi ноутбука)
 
@@ -79,10 +74,10 @@ def register(app, cx) -> None:
         now = app.state.clock()
         blocks = []
         for z in comp.zachety:
-            _, zdata, run = run_ctx(f, comp, z)
+            _, zdata, run = run_ctx(store, f, comp, z)
             start = None
             if zdata.get("draw", {}).get("published"):  # стартовый протокол — с момента публикации
-                lst = start_ctx(f, comp, z, [r.inp for r in run.rows])[3]
+                lst = start_ctx(store, f, comp, z, [r.inp for r in run.rows])[3]
                 pub = parse_dt(lst.published["at"])
                 start = {"rows": lst.rows, "hm": sl.hm_text,
                          "label": f"Опубликован {pub:%d.%m в %H:%M}" + (" — после публикации менялся, уточняйте у "
@@ -156,7 +151,7 @@ def register(app, cx) -> None:
         if found is None:
             return None
         f, comp, z, stage = found
-        _, zdata, run = run_ctx(f, comp, z)
+        _, zdata, run = run_ctx(store, f, comp, z)
         log = zdata.get("judge", {}).get(stage.id, {})
         add = add_kind(zdata, stage.id)
         auto = None  # ПСР, этап с НВ и ВШ: телефон показывает, из чего сложится итог (stage_time.py)
@@ -187,13 +182,13 @@ def register(app, cx) -> None:
         if found is None:
             return None
         f, comp, z, stage = found
-        files = {t.file for t in zachet_inputs(f, comp, z)}
+        files = {t.file for t in zachet_inputs(store, f, comp, z)}
         records = [js.Record.from_json(r) for r in payload.get("records", [])[:500] if isinstance(r, dict)]
         device = " ".join(str(payload.get("device", "")).split())[:40] or "телефон"
         now = app.state.clock()
         out = {}
         mark = "с" if tr.is_time_discipline(z) else ""  # спелео: снятие с этапа — «с» в клетке этапа
-        _save_zachet(f, z.key, lambda zdata: out.update(js.merge(
+        save_zachet(run_lock, f, z.key, lambda zdata: out.update(js.merge(
             zdata, stage.id, records, files, device, now.isoformat(timespec="seconds"), mark, stage=stage,
             distance_cutoffs=tr.is_time_discipline(z), judge=payload.get("judge"), add_kind=add_kind(zdata, stage.id))))
         return {"saved": out.get("saved", []), "time": f"{now:%H:%M:%S}", "contacts": contacts(f, comp)}
@@ -207,7 +202,7 @@ def register(app, cx) -> None:
         if not comp.zachety:
             return page(request, "judges.html", active="judges", zachet=None, **comp_ctx(f))
         zz = need_zachet(comp, z)
-        data, zdata, run = run_ctx(f, comp, zz)
+        data, zdata, run = run_ctx(store, f, comp, zz)
         srv = app.state.board
         urls = srv.urls() if srv.running else []
         stages = []
@@ -278,11 +273,11 @@ def register(app, cx) -> None:
             if not rows:
                 return redirect(with_done(back, "penalty_bad", why="выберите файл Excel с таблицей"))
             custom = {"title": "Таблица штрафов (своя)", "source": name[:120], "rows": [asdict(r) for r in rows]}
-            _save_zachet(f, zz.key, lambda zd: zd.update(penalty_custom=custom, penalty_table="custom"))
+            save_zachet(run_lock, f, zz.key, lambda zd: zd.update(penalty_custom=custom, penalty_table="custom"))
             return redirect(with_done(back, "penalty_loaded", n=str(len(rows))))
         c = str(form.get("table", "auto"))
         jar = "\n".join(line.strip() for line in str(form.get("jargon", "")).splitlines() if "=" in line)[:5000]
-        _save_zachet(f, zz.key, lambda zd: zd.update(penalty_table=c if c in pen.CHOICES else "auto",
+        save_zachet(run_lock, f, zz.key, lambda zd: zd.update(penalty_table=c if c in pen.CHOICES else "auto",
                                                      protocol_codes=bool(form.get("protocol_codes")), pen_jargon=jar))
         return redirect(with_done(back, "penalty_saved"))
 
@@ -300,7 +295,7 @@ def register(app, cx) -> None:
         row = next((r for r in table.rows if r.code == code), None) if table and code else None
         if code and row is None:
             return redirect(with_done(back, "pen_code_bad", code=code))
-        _save_zachet(f, zz.key, lambda zd: js.map_pen(zd, sid, file, pid, row))
+        save_zachet(run_lock, f, zz.key, lambda zd: js.map_pen(zd, sid, file, pid, row))
         return redirect(with_done(back, "pen_code_saved"))
 
     def need_penalties(f: CompFolder, z: str):
@@ -374,7 +369,7 @@ def register(app, cx) -> None:
         f = folder(cid)
         comp = need_comp(f)
         zz = need_zachet(comp, z)
-        data, _, run = run_ctx(f, comp, zz)
+        data, _, run = run_ctx(store, f, comp, zz)
         urls = app.state.board.urls() if app.state.board.running else []
         cards = []
         for s in run.stages:

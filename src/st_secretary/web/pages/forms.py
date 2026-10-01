@@ -19,6 +19,7 @@ from st_secretary.importers.preapp_xlsx import _grids
 from st_secretary.preapp import process
 from st_secretary.textclean import clean_spaces
 from st_secretary.web.common import base_url, redirect
+from st_secretary.web.shared import need_comp
 from st_secretary.web.store import NAMED_TEMPLATE, CompFolder
 
 SAMPLE_TYPES = (".xlsx", ".xls")
@@ -31,8 +32,6 @@ def register(app, cx) -> None:
     store = cx.store
     comp_ctx = cx.comp_ctx
 
-    def need_comp(*a, **k):  # из pages/preapps.py
-        return cx.need_comp(*a, **k)
 
     def sample_path(token: str) -> Path | None:
         if not re.fullmatch(r"[0-9a-f]{16}", token or ""):

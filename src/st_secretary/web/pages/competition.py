@@ -16,6 +16,7 @@ from st_secretary.issues import ERROR, FIXED, WARNING
 from st_secretary.web.common import base_url, redirect, with_done
 from st_secretary.web.forms import GROUP_SUGGESTIONS, card_to_form, choices, form_from_data, form_to_card
 from st_secretary.web.review import DONE
+from st_secretary.web.shared import adm_totals, commission
 
 
 def register(app, cx) -> None:
@@ -23,10 +24,6 @@ def register(app, cx) -> None:
     folder = cx.folder
     page = cx.page
     store = cx.store
-    def adm_totals(*a, **k):  # из pages/admission.py
-        return cx.adm_totals(*a, **k)
-    def commission(*a, **k):  # из pages/admission.py
-        return cx.commission(*a, **k)
 
     # ------------------------------------------------------------ соревнование
 
@@ -56,7 +53,7 @@ def register(app, cx) -> None:
             pre = {"teams": len(r.teams), "entries": len(r.entries), "errors": r.count(ERROR),
                    "warnings": r.count(WARNING), "fixed": r.count(FIXED),
                    "done": sum(v.status == DONE for v in reviews.values()), "files": len(reviews)}
-        adm = adm_totals(commission(f, comp)[1]) if pre else None
+        adm = adm_totals(commission(store, f, comp)[1]) if pre else None
         backups = bk.listing(bk.backups_dir(store.root), f.path.name)
         return page(request, "overview.html", active="", card_issues=card_issues, files=files, pre=pre, adm=adm,
                     backups=backups[:5], backups_count=len(backups), backups_dir=bk.backups_dir(store.root), **ctx)

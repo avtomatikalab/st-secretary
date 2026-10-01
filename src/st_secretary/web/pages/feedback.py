@@ -43,9 +43,7 @@ def register(app, cx) -> None:
         return f"{version()}, {kind}, {platform.system()} {platform.release()}"
 
     def unsent() -> int:
-        return sum(1 for m in fb.messages(fb_folder()) if not m.sent)
-
-    cx.update(feedback_unsent=unsent)
+        return fb.unsent_count(fb_folder())
 
     @app.post("/feedback")
     async def feedback_save(request: Request):

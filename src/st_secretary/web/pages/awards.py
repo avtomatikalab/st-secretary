@@ -19,6 +19,7 @@ from st_secretary.exporters import awards as aw
 from st_secretary.exporters import final as fin
 from st_secretary.exporters import judges as jd
 from st_secretary.web.common import DOCX, GRADES, XLSX, base_url, redirect
+from st_secretary.web.shared import commission, need_comp
 from st_secretary.web.store import CompFolder
 
 
@@ -27,10 +28,6 @@ def register(app, cx) -> None:
     folder = cx.folder
     page = cx.page
     store = cx.store
-    def commission(*a, **k):  # из pages/admission.py
-        return cx.commission(*a, **k)
-    def need_comp(*a, **k):  # из pages/preapps.py
-        return cx.need_comp(*a, **k)
 
     # ------------------------------------------------------------ награждение и документы по итогам
 
@@ -197,7 +194,7 @@ def register(app, cx) -> None:
         """Участники и территории команд, допущенных комиссией; если комиссия не велась — все заявившиеся."""
         if not f.preapp_files():
             return [], []
-        _, teams = commission(f, comp)
+        _, teams = commission(store, f, comp)
         ok = [t for t in teams if t.status == cm.ADMITTED and t.team] or [t for t in teams if t.team]
         people = [p.entry for t in ok for p in t.persons if p.status != cm.REJECTED]
         return people, [t.team.territory for t in ok]
@@ -221,7 +218,7 @@ def register(app, cx) -> None:
         """Территории команд, допущенных комиссией; если комиссия не велась — всех заявившихся."""
         if not f.preapp_files():
             return []
-        _, teams = commission(f, comp)
+        _, teams = commission(store, f, comp)
         ok = [t for t in teams if t.status == cm.ADMITTED and t.team]
         return [t.team.territory for t in (ok or [t for t in teams if t.team])]
 

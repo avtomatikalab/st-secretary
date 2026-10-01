@@ -3,10 +3,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -18,48 +17,35 @@ from st_secretary import judge_sync as js
 from st_secretary import psr_run as pr
 from st_secretary import stage_time as stt
 from st_secretary import time_run as tr
-from st_secretary import units as un
 from st_secretary.disciplines import Status
 from st_secretary.exporters import results_protocol as rp
 from st_secretary.importers.si_reader import read_si_reader
 from st_secretary.web.common import PROTEST_DECISIONS, XLSX, base_url, parse_dt, redirect, team_anchor, with_done
+from st_secretary.web.shared import (
+    PROTEST_HOUR,
+    fingerprint,
+    need_comp,
+    need_zachet,
+    protocol_state,
+    run_ctx,
+    save_zachet,
+    zachet_inputs,
+)
 from st_secretary.web.store import CompFolder, safe_name
 
 
 def register(app, cx) -> None:
+    store = cx.store
     comp_ctx = cx.comp_ctx
     folder = cx.folder
     page = cx.page
     run_lock = cx.run_lock
     templates = cx.templates
-    def commission(*a, **k):  # из pages/admission.py
-        return cx.commission(*a, **k)
-    def need_comp(*a, **k):  # из pages/preapps.py
-        return cx.need_comp(*a, **k)
 
     # ------------------------------------------------------------ протоколы этапов и результаты (ПСР)
 
-    def zachet_inputs(f: CompFolder, comp, z) -> list:
-        """Кто выступает в зачёте (команды, связки или спортсмены — по дисциплине): из заявок, номера и допуск — из
-        комиссии по допуску; не допущенные участники не в составе."""
-        if not f.preapp_files():
-            return []
-        _, teams = commission(f, comp)
-        return un.zachet_units(teams, z, z.rank_format)
 
-    def need_zachet(comp, key: str):
-        z = next((x for x in comp.zachety if x.key == key), None) if key else (comp.zachety[0] if comp.zachety else None)
-        if z is None:
-            raise HTTPException(404)
-        return z
 
-    def run_ctx(f: CompFolder, comp, z) -> tuple[dict, dict, object]:
-        data = f.run_data()
-        zdata = data.get("zachety", {}).get(z.key, {})
-        compute = tr.compute if tr.is_time_discipline(z) else pr.compute  # спелео, пешеходные — по времени
-        run = compute(comp, z, zdata, zachet_inputs(f, comp, z))
-        run.issues += js.judge_issues(zdata, run.stages, {r.inp.file: r.inp.team for r in run.rows})
-        return data, zdata, run
 
     # дополнительные колонки таблицы по дисциплине: (поле, подпись)
     EXTRA_FIELDS = {"pedestrian": (("pen_time", "Штраф. время"),),
@@ -89,17 +75,11 @@ def register(app, cx) -> None:
         if not comp.zachety:
             return page(request, "results.html", active="results", zachet=None, **comp_ctx(f))
         zz = need_zachet(comp, z)
-        _, zdata, run = run_ctx(f, comp, zz)
+        _, zdata, run = run_ctx(store, f, comp, zz)
         return page(request, "results.html", active="results", zachet=zz, zachety=comp.zachety,
                     state=protocol_state(zdata, run, app.state.clock()), decisions=PROTEST_DECISIONS,
                     **{**comp_ctx(f), **results_parts(f, zz, zdata, run)})
 
-    def _save_zachet(f: CompFolder, key: str, update) -> None:
-        with run_lock:  # секретарь и телефоны судей пишут в один файл — по очереди
-            data = f.run_data()
-            zdata = data.setdefault("zachety", {}).setdefault(key, {})
-            update(zdata)
-            f.save_run_data(data)
 
     @app.post("/c/{cid}/results/stages")
     async def results_stages(request: Request, cid: str, z: str = ""):
@@ -168,7 +148,7 @@ def register(app, cx) -> None:
                                  "kind": "points" if form.get(f"add-{i}-kind") == "points" else "time"})
                 zdata["adds"] = adds
 
-        _save_zachet(f, zz.key, update)
+        save_zachet(run_lock, f, zz.key, update)
         return redirect(f"{base_url(f)}/results?{urlencode({'z': zz.key, 'done': 'run_stages'})}#stages")
 
     @app.post("/c/{cid}/results/import")
@@ -191,8 +171,8 @@ def register(app, cx) -> None:
                 return redirect(with_done(back, "res_noxlrd"))
             except Exception:  # noqa: BLE001 — не та книга: объяснить, а не упасть
                 return redirect(with_done(back, "run_badbook"))
-        imported, notes = pr.import_group_protocol(sheet, zachet_inputs(f, comp, zz))
-        _save_zachet(f, zz.key, lambda zdata: zdata.update(imported))
+        imported, notes = pr.import_group_protocol(sheet, zachet_inputs(store, f, comp, zz))
+        save_zachet(run_lock, f, zz.key, lambda zdata: zdata.update(imported))
         return redirect(with_done(back, "run_imported", n=str(len(imported["stages"])),
                                     t=str(len(imported["teams"])), notes=" ".join(notes)[:900]))
 
@@ -210,9 +190,9 @@ def register(app, cx) -> None:
             cards = read_si_reader(await up.read())
         except ValueError as e:
             return redirect(with_done(back, "si_bad", why=str(e)))
-        teams = zachet_inputs(f, comp, zz)
+        teams = zachet_inputs(store, f, comp, zz)
         out = {}
-        _save_zachet(f, zz.key, lambda zdata: out.update(tr.apply_si(zdata, cards, teams)))
+        save_zachet(run_lock, f, zz.key, lambda zdata: out.update(tr.apply_si(zdata, cards, teams)))
         return redirect(with_done(back, "si_done", n=str(len(cards)), t=str(out["teams"]),
                                     unknown=", ".join(out["unknown"])[:600], replaced=", ".join(out["replaced"])[:600]))
 
@@ -228,7 +208,7 @@ def register(app, cx) -> None:
             if stage is not None and file:
                 stt.toggle_mark(zdata, stage, file)
 
-        _save_zachet(f, zz.key, update)
+        save_zachet(run_lock, f, zz.key, update)
         q = {"z": zz.key, "done": "run_saved", "focus": f"c-{team_anchor(file)}-{sid}"}
         return redirect(f"{base_url(f)}/results?{urlencode(q)}#points")
 
@@ -260,9 +240,9 @@ def register(app, cx) -> None:
                     if f"p-{i}-{fld}" in form:
                         t[fld] = " ".join(str(form.get(f"p-{i}-{fld}", "")).split())
 
-        _save_zachet(f, zz.key, update)
+        save_zachet(run_lock, f, zz.key, update)
         if request.headers.get("x-autosave"):
-            _, zdata, run = run_ctx(f, comp, zz)
+            _, zdata, run = run_ctx(store, f, comp, zz)
             parts = {"comp": comp, **results_parts(f, zz, zdata, run)}
             cells = {r.inp.file: {"total": pr.result_text(run, r) if run.kind == "time"
                                   else pr.points_text(r.total),
@@ -274,25 +254,7 @@ def register(app, cx) -> None:
 
     # ------------------------------------------------------------ предварительный протокол → протесты → официальный
 
-    PROTEST_HOUR = timedelta(hours=1)  # Правила, раздел 3, п. 8.17 и 8.18
 
-    def fingerprint(run) -> str:
-        """Отпечаток результатов: по нему видно, что после публикации баллы или статусы меняли."""
-        s = ";".join(f"{r.inp.file}|{r.place}|{r.total}|{r.status.value}" for r in run.rows)
-        return hashlib.sha1(s.encode("utf-8")).hexdigest()[:16]
-
-    def protocol_state(zdata: dict, run, now: datetime) -> dict:
-        pub, off = zdata.get("published"), zdata.get("official")
-        at = parse_dt(pub["at"]) if pub else None
-        until = at + PROTEST_HOUR if at else None
-        protests = zdata.get("protests", [])
-        return {"published": pub, "published_at": at, "until": until, "official": off,
-                "official_at": parse_dt(off["at"]) if off else None,
-                "hour_passed": bool(until and now >= until),
-                "changed": bool(pub and pub.get("fp") != fingerprint(run)),
-                "changed_after_official": bool(off and off.get("fp") != fingerprint(run)),
-                "open_protests": [p for p in protests if not p.get("decision")], "protests": protests,
-                "now": now}
 
     def protocol_name(z, kind: str, at: datetime) -> str:
         key = safe_name(z.key.replace("/", "-"))
@@ -305,7 +267,7 @@ def register(app, cx) -> None:
         f = folder(cid)
         comp = need_comp(f)
         zz = need_zachet(comp, z)
-        _, _, run = run_ctx(f, comp, zz)
+        _, _, run = run_ctx(store, f, comp, zz)
         now = app.state.clock()
         back = f"{base_url(f)}/results?{urlencode({'z': zz.key})}"
         if not any(r.place for r in run.rows):
@@ -318,7 +280,7 @@ def register(app, cx) -> None:
             d["published"] = {"at": now.isoformat(timespec="minutes"), "fp": fingerprint(run), "file": path.name}
             d.pop("official", None)  # новые предварительные результаты — новый час на протесты
 
-        _save_zachet(f, zz.key, update)
+        save_zachet(run_lock, f, zz.key, update)
         app.state.opener(path)
         return redirect(with_done(back + "#protocol", "run_published", until=f"{now + PROTEST_HOUR:%H:%M}"))
 
@@ -334,7 +296,7 @@ def register(app, cx) -> None:
         back = f"{base_url(f)}/results?{urlencode({'z': zz.key})}"
         if not text:
             return redirect(with_done(back + "#protocol", "run_protest_empty"))
-        _, zdata, run = run_ctx(f, comp, zz)
+        _, zdata, run = run_ctx(store, f, comp, zz)
         state = protocol_state(zdata, run, app.state.clock())
         late = bool(state["until"] and at > state["until"])
 
@@ -344,7 +306,7 @@ def register(app, cx) -> None:
                                                  "team": str(form.get("team", "")), "text": text, "late": late,
                                                  "decision": "", "note": ""})
 
-        _save_zachet(f, zz.key, update)
+        save_zachet(run_lock, f, zz.key, update)
         return redirect(with_done(back + "#protocol", "run_protest_late" if late else "run_protest"))
 
     @app.post("/c/{cid}/results/protest/decide")
@@ -361,7 +323,7 @@ def register(app, cx) -> None:
                     p["note"] = " ".join(str(form.get("note", "")).split())
                     p["decided_at"] = app.state.clock().isoformat(timespec="minutes") if p["decision"] else ""
 
-        _save_zachet(f, zz.key, update)
+        save_zachet(run_lock, f, zz.key, update)
         return redirect(f"{base_url(f)}/results?{urlencode({'z': zz.key, 'done': 'run_decided'})}#protocol")
 
     @app.post("/c/{cid}/results/approve")
@@ -370,7 +332,7 @@ def register(app, cx) -> None:
         f = folder(cid)
         comp = need_comp(f)
         zz = need_zachet(comp, z)
-        _, zdata, run = run_ctx(f, comp, zz)
+        _, zdata, run = run_ctx(store, f, comp, zz)
         now = app.state.clock()
         st = protocol_state(zdata, run, now)
         back = f"{base_url(f)}/results?{urlencode({'z': zz.key})}#protocol"
@@ -386,7 +348,7 @@ def register(app, cx) -> None:
             rp.write_protocol(comp, run, rp.OFFICIAL, now, path)
         except PermissionError:
             return redirect(with_done(back, "doc_locked"))
-        _save_zachet(f, zz.key, lambda d: d.update(official={"at": now.isoformat(timespec="minutes"),
+        save_zachet(run_lock, f, zz.key, lambda d: d.update(official={"at": now.isoformat(timespec="minutes"),
                                                              "fp": fingerprint(run), "file": path.name}))
         awards = f.results_data()
         awards.setdefault("zachety", {})[zz.key] = rp.awards_rows(run, f"СТ-Секретарь, утверждён {now:%d.%m.%Y %H:%M}")
@@ -404,5 +366,3 @@ def register(app, cx) -> None:
             raise HTTPException(404)
         return FileResponse(p, filename=p.name, media_type=XLSX)
 
-    cx.update(PROTEST_HOUR=PROTEST_HOUR, _save_zachet=_save_zachet, need_zachet=need_zachet,
-              protocol_state=protocol_state, run_ctx=run_ctx, zachet_inputs=zachet_inputs)

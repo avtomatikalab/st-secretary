@@ -22,6 +22,7 @@ from st_secretary.exporters import contracts as ct
 from st_secretary.money import money
 from st_secretary.names import initials
 from st_secretary.web.common import DOCX, XLSX, base_url, redirect, with_done
+from st_secretary.web.shared import need_comp
 from st_secretary.web.store import CompFolder, safe_name
 
 
@@ -31,8 +32,6 @@ def register(app, cx) -> None:
     page = cx.page
     store = cx.store
     templates = cx.templates
-    def need_comp(*a, **k):  # из pages/preapps.py
-        return cx.need_comp(*a, **k)
 
     # ------------------------------------------------------------ договоры, акты, табель
 

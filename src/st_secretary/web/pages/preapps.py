@@ -23,6 +23,7 @@ from st_secretary.qualification import Qual
 from st_secretary.web import preapp_form as pf
 from st_secretary.web.common import DOCX, XLSX, base_url, parse_dt, preapp_view, redirect, team_anchor, with_done
 from st_secretary.web.review import DONE, SAVE, STATUS_LABEL, is_clean, issue_key
+from st_secretary.web.shared import back_to, doc_list, need_comp, need_file, team_url
 from st_secretary.web.store import NAMED_TEMPLATE, SUMMARY, CompFolder, safe_name
 
 
@@ -31,8 +32,6 @@ def register(app, cx) -> None:
     folder = cx.folder
     page = cx.page
     store = cx.store
-    def doc_list(*a, **k):  # из pages/admission.py
-        return cx.doc_list(*a, **k)
 
     # ------------------------------------------------------------ предзаявки
 
@@ -103,14 +102,6 @@ def register(app, cx) -> None:
 
     # ------------------------------------------------------------ заявка в форме
 
-    def need_comp(f: CompFolder):
-        try:
-            comp = f.load()
-        except CardError:
-            raise HTTPException(409, "Карточка соревнования заполнена с ошибками — откройте её и исправьте.") from None
-        if any(i.severity == ERROR for i in comp.check()):
-            raise HTTPException(409, "Сначала исправьте ошибки в карточке соревнования: без неё заявку не с чем сверять.")
-        return comp
 
     def render_edit(request: Request, f: CompFolder, comp, form: dict, *, file: str = "", version: str = "",
                     issues: list[Issue] | None = None, errors: dict | None = None, status_code: int = 200, **extra):
@@ -122,18 +113,8 @@ def register(app, cx) -> None:
                     marks=marks, counts=counts, checked=issues is not None, ch=pf.choices(comp, form),
                     empty_row=pf.empty_row(comp), **comp_ctx(f), **extra)
 
-    def team_url(f: CompFolder, name: str, **q) -> str:
-        return f"{base_url(f)}/preapps/team?{urlencode({'file': name, **q})}"
 
-    def need_file(f: CompFolder, name: str) -> Path:
-        path = f.preapp_path(name)
-        if path is None:
-            raise HTTPException(404)
-        return path
 
-    def back_to(request: Request, f: CompFolder, sent: str, default: str) -> str:
-        """Вернуться туда, откуда нажали кнопку (только внутри этого соревнования)."""
-        return sent if sent.startswith(base_url(f) + "/") else default
 
     @app.get("/c/{cid}/preapps/team")
     def preapp_team(request: Request, cid: str, file: str = ""):
@@ -159,7 +140,7 @@ def register(app, cx) -> None:
                     prev_team=near.get("prev"), next_team=near.get("next"), position=(at + 1, len(order)),
                     review=reviews[path.name], counts=Counter(i.severity for i in issues), worst=worst,
                     show=pf.columns(comp, [vars(e) for e in team.entries] if team else []),
-                    here=team_url(f, path.name), docs=doc_list(f, path.name),
+                    here=team_url(f, path.name), docs=doc_list(store, f, path.name),
                     docs_dir=store.team_docs_dir(f, path.name),
                     check_url=f"{base_url(f)}/admission/check?{urlencode({'file': path.name})}", **comp_ctx(f))
 
@@ -341,4 +322,3 @@ def register(app, cx) -> None:
         named_template(f).write_bytes(await up.read())
         return redirect(f"{base_url(f)}/forms?done=named_saved#named")
 
-    cx.update(back_to=back_to, need_comp=need_comp, need_file=need_file, team_url=team_url)
