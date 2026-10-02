@@ -788,7 +788,9 @@ a.tile-link:hover, a.tile-link:focus-visible { box-shadow: 0 0 0 2px var(--prima
 .form-values td:last-child input { width: 10rem; }
 
 .res-adds { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
-.res-add { display: flex; gap: 8px; margin: 6px 0; } .res-add input[type=text] { flex: 1; max-width: 26em; }
+.res-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+.res-add input[type=text] { flex: 1 1 14em; min-width: 12em; max-width: 26em; }
+.res-add select { width: auto; flex: 0 1 auto; max-width: 100%; }  /* вид и «% от победителя» — по тексту, название не сжимают */
 
 /* «Сообщить» (Правки, п. 43): панель поверх страницы, снимок с пометками */
 .fb-panel { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 23, 42, .45); display: flex; align-items: flex-start; justify-content: center; padding: 4vh 16px; overflow: auto; }
