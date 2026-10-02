@@ -76,7 +76,7 @@
 
 {% if view.general %}<div class="panel">{{ issue_list(view.general) }}</div>{% endif %}
 
-<div class="tabs" role="tablist" aria-label="Результаты проверки">
+<div class="tabs" role="tablist" aria-label="Результаты проверки" id="teams">
   <button class="tab" role="tab" id="tab-issues" aria-controls="panel-issues" aria-selected="true" type="button">Команды и замечания</button>
   <button class="tab" role="tab" id="tab-people" aria-controls="panel-people" aria-selected="false" type="button">Участники ({{ result.entries|length }})</button>
   <button class="tab" role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false" type="button">Файлы заявок ({{ files|length }})</button>

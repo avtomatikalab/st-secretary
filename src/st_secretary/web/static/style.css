@@ -363,6 +363,7 @@ input:focus, select:focus, textarea:focus { outline: 3px solid var(--focus); out
 .people-form input[type=text] { padding: 8px 8px; }
 .people-form tbody.person { counter-increment: person; scroll-margin-top: calc(var(--top) + 60px); }
 #team { scroll-margin-top: calc(var(--top) + 20px); }
+#teams { scroll-margin-top: calc(var(--top) + 12px); }  /* плитки «ошибок» / «проверить»: вкладки и фильтр не под верхней полосой (п. 51) */
 .people-form td.num { color: var(--muted); font-weight: 600; text-align: center; }
 .people-form td.num::before { content: counter(person); }
 .people-form select { padding: 8px 6px; }

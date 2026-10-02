@@ -1474,6 +1474,9 @@ def test_check_badges_are_clickable(client, tmp_path, psr_card):
     client.post(b + "/preapps/upload", files=[("files", ("Лесовики.xlsx", lesoviki(tmp_path), XLSX))])
     page = client.get(b + "/preapps").text
     assert 'class="tile tile-warning tile-link" href="?show=' in page and 'data-show="' in page
+    # плитка прокручивает к списку команд (#teams) — метка должна быть на странице (сообщение пользователя, п. 51)
+    hrefs = set(re.findall(r'class="tile [^"]*tile-link" href="[^"]*#([\w-]+)"', page))
+    assert hrefs == {"teams"} and 'id="teams"' in page
     assert re.search(r'class="badge badge-(warning|error) badge-link" href="[^"]*preapps/team\?file=[^"]*&only=', page)
     card = client.get(b + "/preapps/team?file=" + quote("Лесовики.xlsx")).text
     assert "badge-link" in card and ("data-to-check" in card or "Исправить" in card)
