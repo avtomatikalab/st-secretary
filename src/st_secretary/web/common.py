@@ -224,6 +224,8 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "updated": ("ok", "Программа обновлена до версии {version}. Соревнования на месте. Прежняя версия "
                       "сохранена в папке «program.old» рядом с «{launcher}»."),
     "run_stages": ("ok", "Этапы дистанции сохранены."),
+    "run_spp_bad": ("err", "Этапы сохранены, а «1 штрафной балл =» — нет: впишите в «своё» целое число секунд от 1 "
+                           "до 600, как в Условиях."),
     "si_nofile": ("err", "Выберите файл si_reader.csv из SPORTident Reader."),
     "si_bad": ("err", "Файл не прочитан: {why}. Нужен экспорт SportIdent Reader «Config+ (card readout)»."),
     "run_saved": ("ok", "Баллы сохранены."),

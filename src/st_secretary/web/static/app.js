@@ -123,6 +123,17 @@
     try { savedFilter = sessionStorage.getItem("teams:" + location.pathname); } catch (e) { /* нет */ }
     if (savedFilter && teamFilters.some(function (b) { return b.dataset.teamFilter === savedFilter; })) filterTeams(savedFilter);
   }
+  // «своё» в выпадающем списке (1 штрафной балл = своё число секунд): поле для числа — только когда выбрано «своё»
+  document.querySelectorAll("select[data-own]").forEach(function (sel) {
+    var box = document.getElementById(sel.dataset.own);
+    if (!box) return;
+    function sync() { box.hidden = sel.value !== "own"; }
+    sel.addEventListener("change", function () {
+      sync();
+      if (sel.value === "own") { var inp = box.querySelector("input"); if (inp) inp.focus(); }
+    });
+    sync();
+  });
   document.querySelectorAll("[data-show-fixed]").forEach(function (box) {
     box.addEventListener("change", function () {
       document.querySelectorAll('[data-sev="fixed"]').forEach(function (el) { el.hidden = !box.checked; });

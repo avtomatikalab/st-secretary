@@ -76,6 +76,20 @@ def test_seconds_per_point_and_removal_order(speleo):
     assert run.rows[0].total == 50 * 60 + 60
 
 
+def test_own_seconds_per_point_from_conditions(speleo):
+    """Правки, п. 47: в Условиях бывает своё число секунд за балл (ЧК края 2021 — 60 с): 0,3 балла → 18 с."""
+    z = speleo.zachety[0]
+    zdata = {"stages": STAGES, "spp": "60", "teams": {
+        "А.xlsx": {"start": "10:00:00", "finish": "10:20:00", "points": {"s1": "0,3"}},
+        "Б.xlsx": {"start": "10:00:00", "finish": "10:20:00", "points": {"s1": "1,3"}}}}
+    run = tr.compute(speleo, z, zdata, [team("А", 1), team("Б", 2)])
+    assert run.seconds_per_point == 60
+    assert [r.total for r in run.rows] == [20 * 60 + 18, 20 * 60 + 78]
+    for bad in ("0", "601", "abc"):  # не число секунд — по расчётному времени (до 30 мин — 15 с)
+        assert tr.compute(speleo, z, {**zdata, "spp": bad, "expected": "25"}, [team("А", 1)]).seconds_per_point == 15
+    assert tr.own_spp("600") and not tr.own_spp("") and not tr.own_spp("-5")
+
+
 @pytest.mark.parametrize("s, sec", [("10:05:23", 36323), ("10:05", 36300), ("9:05:23,4", Fraction(327234, 10)), ("", None)])
 def test_parse_clock(s, sec):
     assert tr.parse_clock(s) == sec

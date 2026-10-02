@@ -1196,6 +1196,17 @@ def test_speleo_zachet_times_protocol_and_board(client, tmp_path, psr_card):
     client.post(base(f) + "/board/toggle", data={"on": "1"})
     assert "18:34,5" in TestClient(client.app.state.board.app).get("/").text
 
+    # своё число секунд за балл из Условий (Правки, п. 47): 0,3 × 60 с = 18 с
+    stages = {"st-0-id": "s1", "st-0-name": "Колодец", "st-1-id": "s2", "st-1-name": "Шкуродёр", "expected": "25",
+              "kv": "60", "removed_order": "after"}
+    r = client.post(url + "/stages" + q, data={**stages, "spp": "own", "spp_own": "60"})
+    assert "Этапы дистанции сохранены" in r.text and "1 балл = <b>60 с</b>" in r.text
+    assert '<option value="own" selected>' in r.text and 'name="spp_own" type="text" inputmode="numeric" value="60"' in r.text
+    j = client.post(url + "/points" + q, data=data, headers={"X-Autosave": "1"}).json()
+    assert j["cells"]["Кедр.xlsx"]["total"] == "18:48"  # 18:30 + 0,3 × 60 с
+    r = client.post(url + "/stages" + q, data={**stages, "spp": "own", "spp_own": "минута"})
+    assert "впишите в «своё» целое число секунд" in r.text and "1 балл = <b>60 с</b>" in r.text  # прежнее — на месте
+
 
 def test_si_reader_upload_fills_times(client, tmp_path, psr_card):
     from dataclasses import replace

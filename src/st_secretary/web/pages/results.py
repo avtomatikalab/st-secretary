@@ -123,9 +123,17 @@ def register(app, cx) -> None:
                 js.refresh_cutoffs(zdata)
             zdata["distance"] = {k: str(form.get(k, "")).strip() for k in ("km", "modes", "kv_hours")}
             zdata["tie"] = "start" if form.get("tie") == "start" else "same"
-            for k in ("spp", "expected", "kv", "cutoff_pairs"):  # по времени: эквивалент балла, расчётное время, КВ, отсечки SI
+            for k in ("expected", "kv", "cutoff_pairs"):  # по времени: расчётное время, КВ, отсечки SI
                 if k in form:
                     zdata[k] = str(form.get(k, "")).strip()
+            if "spp" in form:  # эквивалент балла: по расчётному времени, 15, 30 или своё из Условий (Правки, п. 47)
+                spp = str(form.get("spp", "")).strip()
+                if spp == "own":
+                    spp = str(form.get("spp_own", "")).strip()
+                    if not tr.own_spp(spp):
+                        bad_spp.append(spp)
+                        spp = zdata.get("spp", "")
+                zdata["spp"] = spp
             if "system" in form:  # пешеходные, северная ходьба: штрафная или бесштрафовая система
                 zdata["system"] = "nopenalty" if form.get("system") == "nopenalty" else "penalty"
             if "removal" in form:  # снятие с этапа (пешеходные) или красная карточка (СХ): а) или б)
@@ -150,8 +158,10 @@ def register(app, cx) -> None:
                                  "kind": "points" if form.get(f"add-{i}-kind") == "points" else "time"})
                 zdata["adds"] = adds
 
+        bad_spp: list[str] = []
         save_zachet(run_lock, f, zz.key, update)
-        return redirect(f"{base_url(f)}/results?{urlencode({'z': zz.key, 'done': 'run_stages'})}#stages")
+        done = "run_spp_bad" if bad_spp else "run_stages"
+        return redirect(f"{base_url(f)}/results?{urlencode({'z': zz.key, 'done': done})}#stages")
 
     @app.post("/c/{cid}/results/import")
     async def results_import(request: Request, cid: str, z: str = ""):

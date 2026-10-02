@@ -203,6 +203,14 @@ def _hundredths(x: Fraction) -> Fraction:
     return Fraction(math.floor(x * 100 + Fraction(1, 2)), 100)
 
 
+SPP_MAX = 600  # своё число секунд за штрафной балл — не больше 10 минут
+
+
+def own_spp(text: str) -> bool:
+    """Число секунд за штрафной балл из настройки зачёта: целое от 1 до SPP_MAX."""
+    return text.isdigit() and 0 < int(text) <= SPP_MAX
+
+
 def _config(z: Zachet, zdata: dict) -> dict:
     """Настройки расчёта зачёта: профиль, система, КВ/ОКВ, эквивалент балла, составляющие результата."""
     st = settings(z, zdata)
@@ -213,7 +221,8 @@ def _config(z: Zachet, zdata: dict) -> dict:
     if kind == "nordic":
         spp = 15  # северная ходьба: 1 балл = 15 с (п. 10.3.2)
     else:
-        spp = int(spp_set) if spp_set in ("15", "30") else (15 if expected.isdigit() and int(expected) <= 30 else 30)
+        # 15 или 30 с, или своё число из Условий (Правки, п. 47: ЧК края 2021 — 1 балл = 60 с)
+        spp = int(spp_set) if own_spp(spp_set) else (15 if expected.isdigit() and int(expected) <= 30 else 30)
     return {"kind": kind, "system": st["system"], "penalty": st["system"] == "penalty", "removal": st["removal"],
             "rate": st["rate"], "kv": kv, "okv": kv * 60 if kv is not None else None,  # ОКВ, с
             "spp": spp, "adds": adds_of(zdata)}

@@ -93,10 +93,14 @@
           <option value="nopenalty"{% if run.system == "nopenalty" %} selected{% endif %}>бесштрафовая (только время)</option></select></div>
       {% endif %}
       {% if prof in ("speleo", "pedestrian") %}
+      {% set spp = zdata.get("spp", "") %}{% set own_spp = spp not in ("", "15", "30") %}
       <div class="field span-3"><label for="f-spp">1 штрафной балл =</label>
-        <select id="f-spp" name="spp"><option value="">по расчётному времени</option>
-          <option value="15"{% if zdata.get("spp") == "15" %} selected{% endif %}>15 секунд{% if prof == "pedestrian" %} (короткая){% endif %}</option>
-          <option value="30"{% if zdata.get("spp") == "30" %} selected{% endif %}>30 секунд{% if prof == "pedestrian" %} (длинная){% endif %}</option></select></div>
+        <select id="f-spp" name="spp" data-own="f-spp-own-box"><option value="">по расчётному времени (15 или 30 секунд)</option>
+          <option value="15"{% if spp == "15" %} selected{% endif %}>15 секунд{% if prof == "pedestrian" %} (короткая){% endif %}</option>
+          <option value="30"{% if spp == "30" %} selected{% endif %}>30 секунд{% if prof == "pedestrian" %} (длинная){% endif %}</option>
+          <option value="own"{% if own_spp %} selected{% endif %}>своё — по Условиям</option></select></div>
+      <div class="field span-3" id="f-spp-own-box"><label for="f-spp-own">Своё: секунд за 1 балл</label>
+        <input id="f-spp-own" name="spp_own" type="text" inputmode="numeric" value="{{ spp if own_spp else '' }}" placeholder="например, 60"></div>
       <div class="field span-3"><label for="f-exp">Расчётное время дистанции, мин</label><input id="f-exp" name="expected" type="text" inputmode="numeric" value="{{ zdata.get('expected', '') }}"></div>
       {% endif %}
       <div class="field span-3"><label for="f-kvd">{% if prof == "speleo" %}КВ{% else %}ОКВ{% endif %} дистанции, мин</label><input id="f-kvd" name="kv" type="text" inputmode="numeric" value="{{ zdata.get('kv', '') }}"></div>
