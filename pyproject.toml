@@ -1,6 +1,6 @@
 [project]
 name = "st-secretary"
-version = "0.3.0"
+version = "0.4.0"
 description = "СТ-Секретарь: система для секретариата и судей соревнований по спортивному туризму"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
