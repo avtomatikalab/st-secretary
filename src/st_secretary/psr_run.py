@@ -146,7 +146,8 @@ class TeamResult:
     place: int | None = None
     percent: Fraction | None = None
     percent_base: Fraction | None = None  # результат для % от победителя — без составляющих «не в %» (Правки, п. 48)
-    norm: str = ""
+    norm: str = ""  # выполненный норматив; у связки и группы с разными — по участникам через запятую
+    member_norms: list[str] = field(default_factory=list)  # норматив каждого участника по его возрасту (п. 46)
     actual_class: int | None = None
     # дисциплины «по времени» (спелео, пешеходные в штрафной системе) — см. time_run.py
     start: Fraction | None = None  # время старта, с от начала суток
@@ -223,6 +224,25 @@ def parse_cells(d: dict, known: set[str], removal: tuple[str, ...] = ()) -> tupl
         if x is not None:
             pts[sid] = x
     return raw, pts, bad, removals
+
+
+def age_of(m: Member, year: int) -> int | None:
+    """Возраст в календарный год соревнований (так считаются возрастные условия ЕВСК); без года рождения — None."""
+    y = m.birth[:4]
+    return year - int(y) if y.isdigit() else None
+
+
+def set_norm(r: TeamResult, norms, comp: Competition, z: Zachet, rank: Fraction, nordic: bool = False) -> None:
+    """Выполненный норматив — у каждого участника по его возрасту (Правки, п. 46: юношеские разряды — только с
+    возрастом, взрослые — с минимального возраста). Одинаковый у всех — одна клетка, как у СЕКРЕТАРЬ_ST; разный — по
+    участникам через запятую в порядке состава («II, 2ю»)."""
+    labels = []
+    for m in r.inp.members or [None]:
+        age = age_of(m, comp.year) if m is not None else None
+        d = achieved_norm(norms, z.distance_class, rank, r.percent, comp.level, age=age, nordic_walking=nordic)
+        labels.append(d.qual.label if d.qual else "")
+    r.member_norms = labels if r.inp.members else []
+    r.norm = labels[0] if len(set(labels)) == 1 else ", ".join(x or "-" for x in labels)
 
 
 def norms_for(comp: Competition, z: Zachet, issues: list[Issue]):
@@ -349,8 +369,7 @@ def compute(comp: Competition, z: Zachet, zdata: dict, teams: list[TeamInput]) -
                 issues.append(Issue(WARNING, f"процент не считается: {e}", source=z.key))
                 break
             if norms and rank and rank.value is not None and run.norms_ok:
-                d = achieved_norm(norms, z.distance_class, rank.value, r.percent, comp.level)
-                r.norm = d.qual.label if d.qual else ""
+                set_norm(r, norms, comp, z, rank.value)
         if rank and rank.value is None and rank.reason:
             issues.append(Issue(INFO, f"ранг не определяется: {rank.reason}", source=z.key))
     _actual_class(run, zdata, z, issues)

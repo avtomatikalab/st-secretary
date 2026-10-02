@@ -23,7 +23,7 @@ from st_secretary.competition import Competition, Zachet
 from st_secretary.disciplines import Status
 from st_secretary.disciplines.speleo import SpeleoRun, standings
 from st_secretary.issues import ERROR, INFO, WARNING, Issue
-from st_secretary.norms import PercentMethod, achieved_norm, percent_of_winner
+from st_secretary.norms import PercentMethod, percent_of_winner
 from st_secretary.psr_run import (
     Stage,
     TeamInput,
@@ -32,6 +32,7 @@ from st_secretary.psr_run import (
     norms_for,
     parse_cells,
     parse_points,
+    set_norm,
     stages_of,
     status_of,
     tours_of,
@@ -442,9 +443,8 @@ def _percent_and_norms(run: ZachetRun, comp: Competition, z: Zachet, norms, rank
                 break
             if r.removals:
                 continue  # со снятиями с этапов дистанция пройдена не полностью — норматив не присваивается
-            if norms and rank and rank.value is not None and run.norms_ok:
-                d = achieved_norm(norms, z.distance_class, rank.value, r.percent, comp.level)
-                r.norm = d.qual.label if d.qual else ""
+            if norms and rank and rank.value is not None and run.norms_ok:  # по возрасту участников (п. 46)
+                set_norm(r, norms, comp, z, rank.value, nordic=run.profile == "nordic")
     elif placed:
         run.winner = placed[0].total
     if any(r.removals for r in placed):

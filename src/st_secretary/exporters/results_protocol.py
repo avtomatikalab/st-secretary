@@ -18,6 +18,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from st_secretary.competition import Competition
+from st_secretary.norms import JUNIOR_UNTIL
 from st_secretary.psr_run import ZachetRun, points_text, result_text
 from st_secretary.results import group_words
 from st_secretary.time_run import clock_text, percent_note
@@ -190,7 +191,7 @@ def _speleo(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, prot
                + [(_hms(t.extra[f"add-{a['id']}"]) if a["kind"] == "time" else points_text(t.extra[f"add-{a['id']}"]))
                   if f"add-{a['id']}" in t.extra else "" for a in run.adds]
                + [_hms(t.total) if finished else result_text(run, t) or "—", t.place or "—"]
-               + ([f"{_pct(t.percent)}%" if t.percent is not None else "", t.norm or "-"] if norms else []))
+               + ([f"{_pct(t.percent)}%" if t.percent is not None else "", _norm_cell(t.norm) or "-"] if norms else []))
         values = [n, *who_values, *[points_text(t.by_item.get(c)) if c in t.by_item else "" for c in items], *res]
         for c, v in enumerate(values, start=1):
             cell = ws.cell(r, c, v)
@@ -206,6 +207,8 @@ def _speleo(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, prot
         notes.append(FEW if "менее" in run.norms_why else f"Разряды не присваиваются: {run.norms_why}.")
     if norms and percent_note(run.adds):
         notes.append(percent_note(run.adds))
+    if norms and any(_junior(t.norm) for t in run.rows):
+        notes.append(JUNIOR_NOTE)
     for text in notes:
         ws.cell(r, 1, text).font = Font(size=10, italic=True)
         r += 1
@@ -218,6 +221,18 @@ def _speleo(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, prot
     ws.page_setup.orientation = "landscape" if not person else "portrait"
     ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+
+JUNIOR_NOTE = f"* Юношеские спортивные разряды присваиваются спортсменам до {JUNIOR_UNTIL} лет."
+
+
+def _junior(norm: str) -> bool:
+    return any(x.strip().endswith("ю") for x in norm.split(","))
+
+
+def _norm_cell(norm: str) -> str:
+    """Норматив в клетке протокола: юношеские — со звёздочкой («2ю*»), как у СЕКРЕТАРЬ_ST (ПК края 2021)."""
+    return ", ".join(x.strip() + ("*" if x.strip().endswith("ю") else "") for x in norm.split(",")) if norm else ""
 
 
 def write_protocol(comp: Competition, run: ZachetRun, kind: str, at: datetime, path: str | Path,
@@ -286,7 +301,7 @@ def _general(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, pro
                 *adds] if timed else [points_text(t.tours.get(x)) for x in tours])
         values = ([t.place or "—", t.inp.number or ""] + who_values + mid
                   + ([mark_text(run, t)] if show_marks else [])
-                  + [result] + ([_pct(t.percent), t.norm or ""] if norms else [])
+                  + [result] + ([_pct(t.percent), _norm_cell(t.norm)] if norms else [])
                   + ([t.actual_class or ""] if show_class else []))
         res_col = 3 + len(who) + len(middle) + (1 if show_marks else 0)
         for c, v in enumerate(values, start=1):
@@ -302,6 +317,8 @@ def _general(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, pro
         notes.append(f"Квалификационный ранг не определялся: {run.rank.reason}.")
     if norms and percent_note(run.adds):
         notes.append(percent_note(run.adds))
+    if norms and any(_junior(t.norm) for t in run.rows):
+        notes.append(JUNIOR_NOTE)
     for n in notes:
         ws.cell(r, 1, n).font = Font(size=10, italic=True)
         r += 1
@@ -323,12 +340,14 @@ def mark_text(run: ZachetRun, t) -> str:
 
 
 def awards_rows(run: ZachetRun, source: str) -> dict:
-    """Официальные результаты → данные страницы «Награждение» (как из протокола СЕКРЕТАРЬ_ST)."""
+    """Официальные результаты → данные страницы «Награждение» (как из протокола СЕКРЕТАРЬ_ST); если нормативы в
+    составе разные (по возрасту, п. 46) — у каждого участника свой «norm»."""
     rows = []
     for t in run.rows:  # спортсмен и связка: «команда» — их команда, награждаются участники
+        own = len(set(t.member_norms)) > 1
+        members = [{"fio": m.fio, "qual": m.qual_label} | ({"norm": n} if own else {})
+                   for m, n in zip(t.inp.members, t.member_norms or [""] * len(t.inp.members), strict=True)]
         rows.append({"team": t.inp.club or t.inp.team, "territory": t.inp.territory, "number": t.inp.number,
-                     "place": t.place,
-                     "result": result_text(run, t),
-                     "norm": t.norm, "members": [{"fio": m.fio, "qual": m.qual_label} for m in t.inp.members]})
+                     "place": t.place, "result": result_text(run, t), "norm": t.norm, "members": members})
     rank = run.rank.formatted() if run.rank and run.rank.value is not None else ""
     return {"source": source, "group_text": "", "rank": rank, "rows": rows}

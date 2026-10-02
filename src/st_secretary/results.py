@@ -36,6 +36,7 @@ class Member:
     birth: date | None = None
     birth_year: int | None = None
     sex: str | None = None
+    norm: str | None = None  # свой норматив, если в составе разные (по возрасту, п. 46); None — как у команды
 
     @property
     def first_last(self) -> str:
@@ -120,7 +121,7 @@ def load(data: dict, comp: Competition, preapps: PreappResult | None) -> list[Za
             for mm in r.get("members", []):
                 e = known.get(person_key(mm["fio"]))
                 members.append(Member(mm["fio"], mm.get("qual", ""), e.birth if e else None,
-                                      e.birth_year if e else None, e.sex if e else None))
+                                      e.birth_year if e else None, e.sex if e else None, mm.get("norm")))
             rows.append(Placement(r.get("team", ""), r.get("territory", ""), r.get("place"), r.get("result", ""),
                                   r.get("norm", ""), r.get("number", ""), members))
         rows.sort(key=lambda r: (r.place is None, r.place or 0))

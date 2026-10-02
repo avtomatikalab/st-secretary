@@ -208,6 +208,48 @@ def test_extra_result_part_topography_like_speleo_championship(speleo):
     assert [r.inp.team for r in run.rows[:2]] == ["Сосна", "Кедр"]
 
 
+def test_norm_by_member_age_juniors(speleo):
+    """Правки, п. 46 (ПК края 2021, юноши, 2 класс, ранг 8: 120,87 % — «2ю»): норматив — у каждого участника по его
+    возрасту в год соревнований; юношеские — только с возрастом и до 18 лет; в составе разные — по участникам."""
+    from datetime import date
+
+    from st_secretary.exporters import final
+    from st_secretary.exporters import results_protocol as rp
+    from st_secretary.results import Member as ResMember
+    from st_secretary.results import Placement
+
+    norms = norm_edition("2022-2025")
+    comp = replace(speleo, date_from=date(2025, 9, 20), date_to=date(2025, 9, 21))
+    z = Zachet("М/Ж", 2, "0840131811Я")
+
+    def result(*births, percent="120.87"):
+        inp = TeamInput("x.xlsx", "x", "", "1", [Member(f"Участник {i}", Qual.BR, "б/р", birth=b)
+                                                for i, b in enumerate(births)])
+        r = pr.TeamResult(inp, 1, {}, {}, [], Status.FINISHED, "", percent=Fraction(percent))
+        pr.set_norm(r, norms, comp, z, Fraction(8))
+        return r
+
+    assert result("2010-03-04").norm == "2ю" and result("2010").norm == "2ю"  # 15 лет в 2025 году
+    assert result("").norm == ""  # без года рождения юношеские не рассматриваются
+    assert result("1990").norm == ""  # 18 лет и старше — юношеские не присваиваются
+    assert result("1990", percent="100").norm == "III"
+    mixed = result("2010", "1990")
+    assert mixed.member_norms == ["2ю", ""] and mixed.norm == "2ю, -"
+    assert result("2010", "2011").norm == "2ю"
+
+    # протокол: юношеские — со звёздочкой и пометкой под таблицей, как у СЕКРЕТАРЬ_ST
+    assert rp._norm_cell("2ю") == "2ю*" and rp._norm_cell("2ю, -") == "2ю*, -" and rp._norm_cell("") == ""
+    assert rp.JUNIOR_NOTE == "* Юношеские спортивные разряды присваиваются спортсменам до 18 лет."
+    # награждение и выписки: свой норматив у каждого участника, если в составе разные
+    mixed.place = 1
+    run = pr.ZachetRun(z, [], [mixed], None, [], kind="time", scoring="time")
+    [row] = rp.awards_rows(run, "протокол")["rows"]
+    assert [m.get("norm") for m in row["members"]] == ["2ю", ""]
+    p = Placement("x", "", 1, norm="2ю, -", members=[ResMember("А", "б/р", norm="2ю"), ResMember("Б", "б/р", norm=""),
+                                                       ResMember("В", "б/р")])
+    assert [final.member_norm(p, m) for m in p.members] == ["2ю", "", "2ю, -"]
+
+
 def test_percent_without_extra_part_like_sekretar_st(speleo):
     """Правки, п. 48 (ЧК края 2021, группа спелео; ответ владельца — как СЕКРЕТАРЬ_ST, с настройкой): места — по
     полному результату с «Топосъёмкой», а % от победителя — по умолчанию без неё: 0:22:37 / 0:18:05 = 125,07 %;

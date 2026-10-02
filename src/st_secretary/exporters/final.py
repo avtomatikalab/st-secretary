@@ -65,10 +65,11 @@ def write_extracts(results: list[ZachetResults], comp: Competition, path: str | 
             cell.font, cell.fill, cell.border, cell.alignment = Font(bold=True, size=10), HEAD, BOX, WRAP
         r = r0 + 1
         for p in z.rows:
-            if not p.norm:
-                continue
             for m in p.members:
-                values = [p.place_text, m.fio, m.birth_text, m.qual, p.result, p.norm, p.team, p.territory]
+                norm = member_norm(p, m)
+                if not norm:
+                    continue
+                values = [p.place_text, m.fio, m.birth_text, m.qual, p.result, norm, p.team, p.territory]
                 for c, v in enumerate(values, start=1):
                     cell = ws.cell(r, c, v)
                     cell.border, cell.alignment = BOX, WRAP
@@ -92,8 +93,13 @@ def write_extracts(results: list[ZachetResults], comp: Competition, path: str | 
     return path
 
 
+def member_norm(p, m) -> str:
+    """Норматив участника: свой (если в составе разные — по возрасту, п. 46) или команды."""
+    return m.norm if m.norm is not None else p.norm
+
+
 def extract_count(results: list[ZachetResults]) -> int:
-    return sum(len(p.members) for z in results for p in z.rows if p.norm)
+    return sum(1 for z in results for p in z.rows for m in p.members if member_norm(p, m))
 
 
 # ------------------------------------------------------------------ отчёт главного судьи
@@ -144,7 +150,7 @@ def write_report(comp: Competition, results: list[ZachetResults], people: list, 
             names = ", ".join(m.fio.rsplit(" ", 1)[0] if len(m.fio.split()) > 2 else m.fio for m in p.members)
             _para(doc, f"{ROMAN[p.place]} место — команда «{p.team}» ({p.territory}): {names}", 12, align=left,
                   space_after=2)
-        norms = Counter(p.norm for p in z.rows if p.norm for _ in p.members)
+        norms = Counter(n for p in z.rows for m in p.members if (n := member_norm(p, m)))
         if norms:
             _para(doc, "Выполнили нормативы: " + ", ".join(f"{k} — {v} чел." for k, v in norms.items()), 12,
                   align=left, space_after=6)

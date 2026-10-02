@@ -66,6 +66,9 @@ class NormDecision:
     notes: tuple[str, ...] = ()
 
 
+JUNIOR_UNTIL = 18  # юношеские разряды — до 18 лет (база знаний, «Возраст выполнения»)
+
+
 def achieved_norm(
     norms: NormEdition,
     distance_class: int,
@@ -93,7 +96,7 @@ def achieved_norm(
             notes.append(f"{q.label}: не допускается уровнем соревнований")
             continue
         if q.is_junior:
-            if age is None or age >= 18:
+            if age is None or age >= JUNIOR_UNTIL:
                 continue
             if age < norms.min_age["junior"]:
                 continue
