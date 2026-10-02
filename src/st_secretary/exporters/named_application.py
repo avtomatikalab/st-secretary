@@ -7,9 +7,9 @@
 допущено / не допущено», врач, тренер-представитель, «С правилами техники безопасности ознакомлен», руководитель
 командирующей организации, М.П., приложения. Пустые поля — для подписей и печатей.
 
-Свой шаблон соревнования (.docx) — с метками в тексте: {соревнование}, {даты}, {место}, {команда}, {территория},
-{представитель}, {телефон}, {всего}; строка таблицы с меткой {ФИО} повторяется на каждого участника (в ней же
-{№}, {дата рождения}, {разряд}, {зачёт}).
+Свой шаблон соревнования (.docx) — с метками в тексте: {соревнование}, {соревнования} (в родительном падеже: «В ГСК
+{соревнования}»), {даты}, {место}, {команда}, {территория}, {представитель}, {телефон}, {всего}; строка таблицы
+с меткой {ФИО} повторяется на каждого участника (в ней же {№}, {дата рождения}, {разряд}, {зачёт}).
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from docx.shared import Cm, Pt
 
 from st_secretary.competition import Competition
 from st_secretary.preapp import TeamApplication
+from st_secretary.results import title_of
 
 HEAD = ["№ п/п", "Фамилия, имя, отчество участника", "Дата рождения", "Спортивная квалификация",
         "Медицинский допуск: слово «допущен», подпись и печать врача напротив каждого участника", "Подпись участника",
@@ -47,8 +48,8 @@ def person_values(n: int, e) -> dict[str, str]:
 
 
 def team_values(comp: Competition, team: TeamApplication) -> dict[str, str]:
-    return {"соревнование": comp.title, "даты": comp.dates_text, "место": comp.place, "команда": team.team,
-            "территория": team.territory, "представитель": team.representative,
+    return {"соревнование": comp.title, "соревнования": title_of(comp), "даты": comp.dates_text, "место": comp.place,
+            "команда": team.team, "территория": team.territory, "представитель": team.representative,
             "телефон": ", ".join(x for x in (team.phone, team.email) if x), "всего": str(len(team.entries))}
 
 
@@ -75,7 +76,7 @@ def write_standard(comp: Competition, team: TeamApplication, path: str | Path,
     sec = doc.sections[0]
     sec.left_margin = sec.right_margin = Cm(1.5)
     sec.top_margin = sec.bottom_margin = Cm(1.5)
-    _para(doc, f"В Главную судейскую коллегию {comp.title}, {comp.dates_text}, {comp.place}", size=11,
+    _para(doc, f"В Главную судейскую коллегию {title_of(comp)}, {comp.dates_text}, {comp.place}", size=11,
           align=WD_ALIGN_PARAGRAPH.RIGHT)
     _para(doc, "от " + "_" * 60, align=WD_ALIGN_PARAGRAPH.RIGHT)
     _caption(doc, "(название командирующей организации, адрес, телефон, e-mail)")

@@ -132,14 +132,19 @@ def load(data: dict, comp: Competition, preapps: PreappResult | None) -> list[Za
 
 _PREPOSITIONAL = {"Чемпионат": "Чемпионате", "Первенство": "Первенстве", "Кубок": "Кубке",
                   "Соревнования": "Соревнованиях", "Фестиваль": "Фестивале", "Турнир": "Турнире",
-                  "Спартакиада": "Спартакиаде", "Этап": "Этапе", "Открытый": "Открытом", "Открытое": "Открытом",
-                  "Открытые": "Открытых"}
+                  "Спартакиада": "Спартакиаде", "Этап": "Этапе"}
 
 
 _GENITIVE = {"Чемпионат": "Чемпионата", "Первенство": "Первенства", "Кубок": "Кубка",
              "Соревнования": "Соревнований", "Фестиваль": "Фестиваля", "Турнир": "Турнира",
-             "Спартакиада": "Спартакиады", "Этап": "Этапа", "Открытый": "Открытого", "Открытое": "Открытого",
-             "Открытые": "Открытых"}
+             "Спартакиада": "Спартакиады", "Этап": "Этапа"}
+
+# Прилагательные перед названием («Учебный», «Краевой», «Открытое», «Всероссийские») — по окончанию; после г, к, х
+# в предложном падеже «-ом» («Всероссийском»), после других — «-ем» («Летнем»). Правки, п. 50.
+_ADJ_GENITIVE = {"ый": "ого", "ой": "ого", "ий": "его", "ое": "ого", "ее": "его", "ая": "ой", "яя": "ей",
+                 "ые": "ых", "ие": "их"}
+_ADJ_PREPOSITIONAL = {"ый": "ом", "ой": "ом", "ий": "ем", "ое": "ом", "ее": "ем", "ая": "ой", "яя": "ей",
+                      "ые": "ых", "ие": "их"}
 
 
 def _inflect(word: str, table: dict[str, str]) -> str:
@@ -150,22 +155,41 @@ def _inflect(word: str, table: dict[str, str]) -> str:
     return found if word[:1].isupper() else found[:1].lower() + found[1:]
 
 
-def _title(comp: Competition, table: dict[str, str]) -> str:
-    first, _, rest = comp.title.partition(" ")
-    if first.lower() in ("открытый", "открытое", "открытые") and rest:
-        second, _, tail = rest.partition(" ")
-        rest = f"{_inflect(second, table)} {tail}".strip()
-    return f"{_inflect(first, table)} {rest}".strip()
+def _adjective(word: str, endings: dict[str, str]) -> str | None:
+    """Прилагательное в нужном падеже по окончанию; не прилагательное — None."""
+    end = word[-2:].lower()
+    if len(word) < 4 or end not in endings:
+        return None
+    new = endings[end]
+    if end == "ий" and word[-3:-2].lower() in "гкх":  # «Всероссийский» → «Всероссийского» / «Всероссийском»
+        new = "ого" if endings is _ADJ_GENITIVE else "ом"
+    return word[:-2] + new
+
+
+def _title(comp: Competition, table: dict[str, str], endings: dict[str, str]) -> str:
+    """Склоняет прилагательные в начале и первое существительное («Учебный чемпионат г. N» → «Учебного
+    чемпионата г. N»); если существительное не из списка — название как есть."""
+    words = comp.title.split(" ")
+    out: list[str] = []
+    for i, word in enumerate(words):
+        noun = _inflect(word, table)
+        if noun != word:
+            return " ".join([*out, noun, *words[i + 1:]]).strip()
+        adj = _adjective(word, endings)
+        if adj is None:
+            break
+        out.append(adj)
+    return comp.title
 
 
 def title_in(comp: Competition) -> str:
-    """«на Чемпионате г. Красноярска…» — название в предложном падеже (первое слово; после «Открытый» — и второе)."""
-    return _title(comp, _PREPOSITIONAL)
+    """«на Чемпионате г. Красноярска…» — название в предложном падеже (с прилагательными в начале)."""
+    return _title(comp, _PREPOSITIONAL, _ADJ_PREPOSITIONAL)
 
 
 def title_of(comp: Competition) -> str:
-    """«в судействе Чемпионата г. Красноярска…» — название в родительном падеже."""
-    return _title(comp, _GENITIVE)
+    """«в судействе Чемпионата г. Красноярска…» — название в родительном падеже (с прилагательными в начале)."""
+    return _title(comp, _GENITIVE, _ADJ_GENITIVE)
 
 
 def date_text(d: date) -> str:

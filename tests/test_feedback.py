@@ -83,7 +83,7 @@ def test_feedback_from_page_list_send_and_error_page(tmp_path):
     assert "Есть неотправленные сообщения: 1" in client.get("/").text
 
     page = client.get("/feedback").text
-    assert "Не видно, где время старта." in page and "Отправить разработчику" in page
+    assert "Не видно, где время старта." in page and "Отправить разработчику — новых: 1" in page
     r = client.post("/feedback/send", follow_redirects=False)
     assert "fb_sent" in r.headers["location"] and opened[-1].name == "Отправка"
     page = client.get(r.headers["location"]).text

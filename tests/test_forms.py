@@ -112,6 +112,21 @@ def test_own_form_other_order_three_name_columns_year_and_own_column(client, tmp
     assert app.problems and "похожа на форму «Кубок города N — команды»" in app.problems[0][0]
 
 
+def test_sample_grid_shows_dates_as_in_excel(client, tmp_path, psr_card):
+    """Правки, п. 50: в сетке образца дата рождения — «04.03.1995», а не «1995-03-04 00:00:00»."""
+    from datetime import datetime
+
+    f = client.app.state.store.create(psr_card)
+    wb = Workbook()
+    wb.active.append(["№", "ФИО", "Дата рождения", "Пол", "Разряд", "Зачёт"])
+    wb.active.append([1, "Сводов Артём Игоревич", datetime(1995, 3, 4), "м", "I", "М/Ж_3"])
+    wb.save(tmp_path / "даты.xlsx")
+    r = client.post(base(f) + "/forms/sample", files={"sample": ("даты.xlsx", (tmp_path / "даты.xlsx").read_bytes())},
+                    follow_redirects=False)
+    grid = client.get(r.headers["location"]).text.split('class="tbl form-grid"')[1].split("</table>")[0]
+    assert "<td>04.03.1995</td>" in grid and "00:00:00" not in grid
+
+
 def test_delegation_form_by_speleo_blank_splits_into_teams(client, tmp_path, psr_card):
     """Бланк делегации спелео (образец «Blank_predzayavki.xls»): листы по классам, команда в каждой строке."""
     store = client.app.state.store

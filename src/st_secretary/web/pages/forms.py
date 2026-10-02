@@ -7,6 +7,7 @@ import json
 import re
 import secrets
 import time
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -24,6 +25,15 @@ from st_secretary.web.store import NAMED_TEMPLATE, CompFolder
 
 SAMPLE_TYPES = (".xlsx", ".xls")
 PREVIEW_ROWS, PREVIEW_COLS = 14, 24
+
+
+def cell_text(v) -> str:
+    """Ячейка образца в сетке: даты — «04.03.1995», как в Excel, а не «1995-03-04 00:00:00» (Правки, п. 50)."""
+    if isinstance(v, datetime):
+        return v.strftime("%d.%m.%Y" if v.time() == datetime.min.time() else "%d.%m.%Y %H:%M")
+    if isinstance(v, date):
+        return v.strftime("%d.%m.%Y")
+    return clean_spaces(v)
 
 
 def register(app, cx) -> None:
@@ -178,7 +188,7 @@ def register(app, cx) -> None:
             preview = [e for t in result.teams for e in t.entries][:10]
             issues = result.issues
         same = [n for n, _, _ in fm._sheet_rows(grids, {"signature": form["signature"]})] if grids else []
-        sheets = [{"name": n, "rows": [[clean_spaces(v) for v in row[:PREVIEW_COLS]] for row in g[:PREVIEW_ROWS]],
+        sheets = [{"name": n, "rows": [[cell_text(v) for v in row[:PREVIEW_COLS]] for row in g[:PREVIEW_ROWS]],
                    "same": n in same} for n, g in (grids or [])]
         # образец новой формы, а такая (или похожая) уже сохранена — предложить открыть её (п. 41)
         known = fm.match(store.forms(), grids) if grids and saved is None else None

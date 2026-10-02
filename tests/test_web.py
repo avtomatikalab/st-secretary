@@ -1406,7 +1406,7 @@ def test_named_application_word_from_preapp(client, tmp_path, psr_card):
     assert r.status_code == 200 and r.content[:2] == b"PK"
     doc = Document(io.BytesIO(r.content))
     text = "\n".join(p.text for p in doc.paragraphs)
-    assert f"В Главную судейскую коллегию {psr_card.title}" in text and "ЗАЯВКА" in text
+    assert "В Главную судейскую коллегию Чемпионата города N по спортивному туризму" in text and "ЗАЯВКА" in text
     assert "команду «Кедр» (Красноярск)" in text and "Лебедев Антон Игоревич" in text  # представитель
     assert "«С правилами техники безопасности ознакомлен»" in text and "Приложения: 1. Документы о возрасте" in text
     rows = [[c.text for c in row.cells] for row in doc.tables[0].rows]
@@ -1417,6 +1417,7 @@ def test_named_application_word_from_preapp(client, tmp_path, psr_card):
     # свой бланк соревнования: метки в тексте и строка участника с {ФИО}
     tpl = Document()
     tpl.add_paragraph("Заявка команды {команда} на {соревнование}")
+    tpl.add_paragraph("В ГСК {соревнования}")
     t = tpl.add_table(rows=2, cols=3)
     for c, v in zip(t.rows[0].cells, ["№", "ФИО", "Год"], strict=True):
         c.text = v
@@ -1430,6 +1431,7 @@ def test_named_application_word_from_preapp(client, tmp_path, psr_card):
     assert "Сейчас — <b>свой бланк</b>" in client.get(base(f) + "/forms").text
     doc = Document(io.BytesIO(client.get(base(f) + "/preapps/named.docx?file=Кедр.xlsx").content))
     assert doc.paragraphs[0].text == f"Заявка команды Кедр на {psr_card.title}"
+    assert doc.paragraphs[1].text == "В ГСК Чемпионата города N по спортивному туризму"
     assert [[c.text for c in row.cells] for row in doc.tables[0].rows][1:] == [
         ["1", "Лебедев Антон Игоревич", "02.02.1990"], ["2", "Зуева Мария Олеговна", "05.06.1996"],
         ["3", "Носов Глеб Андреевич", "09.09.1993"]]
