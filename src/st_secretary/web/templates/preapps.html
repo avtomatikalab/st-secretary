@@ -147,6 +147,7 @@
   <table class="tbl people">
     <thead><tr><th>№</th><th>Фамилия Имя Отчество</th><th>Дата рождения</th><th>Разряд</th><th>Пол</th><th>Зачёт</th><th>Проверка</th></tr></thead>
     {% for g in view.groups if g.team %}
+    {% set card_url = base ~ "/preapps/team?file=" ~ (g.file|urlencode) %}
     <tbody>
       <tr class="team-row"><th colspan="7">{{ g.team.team }} — {{ g.team.territory }}</th></tr>
       {% for e in g.team.entries %}{% set w = g.worst.get(e.name.full) %}

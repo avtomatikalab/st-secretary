@@ -4,6 +4,7 @@ import io
 import os
 import re
 from dataclasses import replace
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -366,6 +367,26 @@ def test_team_card_is_read_only_with_edit_button(client, tmp_path, psr_card):
     # ФИО в списке участников — без ссылок; ссылки — только значки «Ошибка» / «Проверить» (п. 22 правок)
     assert "Кузьмин Олег Игоревич" in people
     assert people.count("<a ") == people.count('<a class="badge ')
+
+
+def test_preapps_page_links_open(client, tmp_path, psr_card):
+    """Все ссылки страницы предзаявок (обе вкладки) открываются: значки «Ошибка» / «Проверить» на вкладке
+    «Участники» ведут в карточку своей команды (п. 49 правок)."""
+    f = client.app.state.store.create(psr_card)
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))  # ошибка
+    f.add_preapp("Сосна.xlsx", sosna(tmp_path))  # «проверить»
+    page = client.get(base(f) + "/preapps").text
+    people = page.split('id="panel-people"')[1].split("</section>")[0]
+    badges = [unescape(h) for h in re.findall(r'<a class="badge [^"]*" href="([^"]+)"', people)]
+    assert len(badges) == 2
+    assert any("file=" + quote("Лесовики.xlsx") + "&only=error#issues" in h for h in badges)
+    assert any("file=" + quote("Сосна.xlsx") + "&only=warning#issues" in h for h in badges)
+    links = {unescape(h).split("#")[0] for h in re.findall(r'href="([^"]+)"', page)}
+    links = {h for h in links if h.startswith("/") and not h.startswith("/static/")}
+    assert len(links) > 10
+    for h in sorted(links):
+        r = client.get(h)
+        assert r.status_code == 200, h
 
 
 def test_check_marks_and_statuses(client, tmp_path, psr_card):
