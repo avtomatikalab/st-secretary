@@ -208,6 +208,30 @@ def test_extra_result_part_topography_like_speleo_championship(speleo):
     assert [r.inp.team for r in run.rows[:2]] == ["Сосна", "Кедр"]
 
 
+def test_percent_without_extra_part_like_sekretar_st(speleo):
+    """Правки, п. 48 (ЧК края 2021, группа спелео; ответ владельца — как СЕКРЕТАРЬ_ST, с настройкой): места — по
+    полному результату с «Топосъёмкой», а % от победителя — по умолчанию без неё: 0:22:37 / 0:18:05 = 125,07 %;
+    «с ней» — от полного результата: 0:31:02 / 0:28:44 = 108,00 %."""
+    z = speleo.zachety[0]
+    zdata = {"stages": STAGES, "expected": "25", "adds": [{"id": "a1", "name": "Топосъёмка", "kind": "time"}],
+             "teams": {"Кедр.xlsx": {"start": "10:00:00", "finish": "10:18:05", "add-a1": "10:39"},
+                       "Сосна.xlsx": {"start": "10:05:00", "finish": "10:27:37", "add-a1": "8:25"}}}
+    teams = [team("Кедр", 1), team("Сосна", 2)]
+    run = tr.compute(speleo, z, zdata, teams)
+    kedr, sosna = run.rows
+    assert (kedr.inp.team, tr.clock_text(kedr.total), sosna.inp.team, tr.clock_text(sosna.total)) == \
+        ("Кедр", "28:44", "Сосна", "31:02")
+    assert kedr.percent == 100 and round(float(sosna.percent), 2) == 125.07
+    assert tr.percent_note(run.adds) == "% от результата победителя посчитан без составляющей «Топосъёмка»."
+
+    zdata["adds"][0]["in_percent"] = True
+    run = tr.compute(speleo, z, zdata, teams)
+    assert round(float(run.rows[1].percent), 2) == 108.00 and run.rows[1].percent_base is None
+    assert tr.percent_note(run.adds) == ("% от результата победителя посчитан от полного результата (с составляющей "
+                                         "«Топосъёмка»).")
+    assert tr.percent_note([]) == ""
+
+
 def test_speleo_protocol_like_sekretar_st(speleo, tmp_path):
     """Правки, п. 33: протокол спелео — как у СЕКРЕТАРЬ_ST: № п/п, состав с разрядами, «п. N» — баллы по пунктам таблицы
     штрафов (только встречавшиеся, от судей), время прохождения, сумма баллов и штрафное время, результат, место,

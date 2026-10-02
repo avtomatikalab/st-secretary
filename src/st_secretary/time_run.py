@@ -175,13 +175,30 @@ def adds_of(zdata: dict) -> list[dict]:
     """Дополнительные составляющие результата (Правки, п. 32): [{"id", "name", "kind": time | points}] — например,
     «Топосъёмка» у группы спелео (ЧК края 2021: 0:18:05 + 0:10:39 = 0:28:44). Прибавляются к результату: время —
     как есть, баллы — × эквивалент балла (у горных: время — × баллы за минуту, баллы — как есть). Значение у команды —
-    поле «add-<id>» (вписывает секретарь или приходит с телефона судьи)."""
+    поле «add-<id>» (вписывает секретарь или приходит с телефона судьи). «in_percent» — учитывать ли её в % от
+    победителя: по умолчанию нет, как СЕКРЕТАРЬ_ST (Правки, п. 48: место — по полному результату, % — без неё)."""
     out = []
     for a in zdata.get("adds", []):
         name = " ".join(str(a.get("name", "")).split()) if isinstance(a, dict) else ""
         if name and str(a.get("id", "")).strip():
-            out.append({"id": str(a["id"]), "name": name, "kind": "points" if a.get("kind") == "points" else "time"})
+            out.append({"id": str(a["id"]), "name": name, "kind": "points" if a.get("kind") == "points" else "time",
+                        "in_percent": a.get("in_percent") is True})
     return out
+
+
+def percent_note(adds: list[dict]) -> str:
+    """Как считался % от победителя, если есть составляющие результата, — строка под таблицей протокола и на
+    странице результатов (Правки, п. 48)."""
+    if not adds:
+        return ""
+    out = [a["name"] for a in adds if not a["in_percent"]]
+    names = out or [a["name"] for a in adds]
+    word = "составляющих" if len(names) > 1 else "составляющей"
+    quoted = ", ".join(f"«{n}»" for n in names)
+    if out:
+        return f"% от результата победителя посчитан без {word} {quoted}."
+    word = "составляющими" if len(names) > 1 else "составляющей"
+    return f"% от результата победителя посчитан от полного результата (с {word} {quoted})."
 
 
 def add_stages(zdata: dict) -> list[Stage]:
@@ -319,13 +336,22 @@ def _pen_items(rows: list[TeamResult], stages, zdata: dict) -> None:
 
 
 def _score(r: TeamResult, cfg: dict) -> tuple[bool, Fraction | None, int]:
-    """Результат команды: (есть ли он, результат — секунды или баллы горных, «группа» для мест — число снятий)."""
-    kind, okv, adds = cfg["kind"], cfg["okv"], cfg["adds"]
+    """Результат команды: (есть ли он, результат — секунды или баллы горных, «группа» для мест — число снятий).
+    Если какие-то составляющие не учитываются в % от победителя — r.percent_base: результат без них (п. 48)."""
     ok = r.status is Status.FINISHED and r.distance_time is not None and \
         not any(b in ("start", "finish", "cutoffs", "pen_time", "declared", "points") or b.startswith("add-")
                 for b in r.bad)
     if not ok:
         return False, None, 0
+    adds = cfg["adds"]
+    if any(not a["in_percent"] for a in adds):
+        r.percent_base = _result(r, cfg, [a for a in adds if a["in_percent"]])
+    return True, _result(r, cfg, adds), r.removals if cfg["kind"] in ("speleo", "mountain") else 0
+
+
+def _result(r: TeamResult, cfg: dict, adds: list[dict]) -> Fraction:
+    """Результат с данными составляющими: время, баллы × эквивалент, штрафное время, ОКВ (у горных — баллы)."""
+    kind, okv = cfg["kind"], cfg["okv"]
     add_time = sum((r.extra.get(f"add-{a['id']}", Fraction(0)) for a in adds if a["kind"] == "time"), Fraction(0))
     add_points = sum((r.extra.get(f"add-{a['id']}", Fraction(0)) for a in adds if a["kind"] == "points"),
                      Fraction(0))
@@ -339,13 +365,13 @@ def _score(r: TeamResult, cfg: dict) -> tuple[bool, Fraction | None, int]:
         if declared:
             tactics += Fraction(2, 10) * math.floor(abs(r.distance_time - declared) / declared * 100)
         r.extra["tactics"] = tactics
-        return True, _hundredths((r.distance_time + add_time) / 60 * rate + points + tactics + add_points), r.removals
+        return _hundredths((r.distance_time + add_time) / 60 * rate + points + tactics + add_points)
     score = r.distance_time + (points + add_points) * cfg["spp"] + r.extra.get("pen_time", Fraction(0)) + add_time
     if kind == "pedestrian" and cfg["removal"] == "okv" and okv is not None:
         score += r.removals * okv  # ОКВ за каждое снятие с этапа (п. 6.2.8 б)
     if kind == "nordic" and r.red and okv is not None:
         score += okv  # красная карточка — штрафное время, равное ОКВ (п. 10.4.4 б)
-    return True, score, r.removals if kind == "speleo" else 0
+    return score
 
 
 def _places(rows: list[TeamResult], cfg: dict, zdata: dict) -> list[TeamResult]:
@@ -395,8 +421,13 @@ def _status_issues(ordered: list[TeamResult], rows: list[TeamResult], cfg: dict,
 
 def _percent_and_norms(run: ZachetRun, comp: Competition, z: Zachet, norms, rank, issues: list[Issue]) -> None:
     """Процент от победителя (по времени — от времени, у горных — методикой карточки) и выполненный разряд; со
-    снятиями с этапов разряд не присваивается."""
+    снятиями с этапов разряд не присваивается. Составляющие «не в %» не учитываются ни у команды, ни у победителя
+    (как СЕКРЕТАРЬ_ST: 0:22:37 / 0:18:05 = 125,07 %, хотя места — по полному результату; Правки, п. 48)."""
     placed = [r for r in run.rows if r.place is not None]
+
+    def base(r: TeamResult) -> Fraction:
+        return r.percent_base if r.percent_base is not None else r.total
+
     method = comp.percent_method if run.scoring == "points" else PercentMethod.TIME
     if run.scoring == "points" and method is None:
         issues.append(Issue(INFO, "в карточке не выбрана методика «% от победителя» — процент и нормативы не "
@@ -405,7 +436,7 @@ def _percent_and_norms(run: ZachetRun, comp: Competition, z: Zachet, norms, rank
         run.winner = placed[0].total
         for r in placed:
             try:
-                r.percent = percent_of_winner(r.total, run.winner, method)
+                r.percent = percent_of_winner(base(r), base(placed[0]), method)
             except ValueError as e:
                 issues.append(Issue(WARNING, f"процент не считается: {e}", source=z.key))
                 break

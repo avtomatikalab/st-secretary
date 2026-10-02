@@ -20,7 +20,7 @@ from openpyxl.utils import get_column_letter
 from st_secretary.competition import Competition
 from st_secretary.psr_run import ZachetRun, points_text, result_text
 from st_secretary.results import group_words
-from st_secretary.time_run import clock_text
+from st_secretary.time_run import clock_text, percent_note
 
 THIN = Side(style="thin", color="7F7F7F")
 BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
@@ -204,6 +204,8 @@ def _speleo(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, prot
         notes.append("Неофициальные соревнования: квалификационный ранг и разряды не определяются.")
     elif run.norms_why:
         notes.append(FEW if "менее" in run.norms_why else f"Разряды не присваиваются: {run.norms_why}.")
+    if norms and percent_note(run.adds):
+        notes.append(percent_note(run.adds))
     for text in notes:
         ws.cell(r, 1, text).font = Font(size=10, italic=True)
         r += 1
@@ -298,6 +300,8 @@ def _general(ws, comp: Competition, run: ZachetRun, kind: str, at: datetime, pro
         notes.append("Неофициальные соревнования: квалификационный ранг и разряды не определяются.")
     elif run.rank and run.rank.value is None and run.rank.reason:
         notes.append(f"Квалификационный ранг не определялся: {run.rank.reason}.")
+    if norms and percent_note(run.adds):
+        notes.append(percent_note(run.adds))
     for n in notes:
         ws.cell(r, 1, n).font = Font(size=10, italic=True)
         r += 1

@@ -1380,9 +1380,12 @@ def test_extra_result_part_column_protocol_and_judge_phone(client, tmp_path, psr
     q = "?" + urlencode({"z": "М/Ж_3"})
     client.post(base(f) + "/results/stages" + q, data={"st-0-name": "Колодец", "add-0-id": "", "add-0-name": "Топосъёмка",
                                                         "add-0-kind": "time", "add-1-id": "", "add-1-name": ""})
-    assert f.run_data()["zachety"]["М/Ж_3"]["adds"] == [{"id": "a1", "name": "Топосъёмка", "kind": "time"}]
+    assert f.run_data()["zachety"]["М/Ж_3"]["adds"] == [{"id": "a1", "name": "Топосъёмка", "kind": "time",
+                                                          "in_percent": False}]
     page = client.get(base(f) + "/results" + q).text
     assert '<th rowspan="2">Топосъёмка</th>' in page and 'name="p-0-add-a1"' in page
+    # % от победителя — по умолчанию без составляющей, как СЕКРЕТАРЬ_ST (Правки, п. 48)
+    assert "% от результата победителя посчитан без составляющей «Топосъёмка»." in page
 
     # с телефона судьи: ссылка на «Топосъёмку», время между «Прибыла» и «Убыла»
     client.post(base(f) + "/judges/link" + q, data={"stage": "add-a1"})
@@ -1402,6 +1405,14 @@ def test_extra_result_part_column_protocol_and_judge_phone(client, tmp_path, psr
     proto = next((f.path / "Протоколы").glob("Предварительный протокол*.xlsx"))
     cells = [str(c.value) for row in load_workbook(proto)["Протокол"].iter_rows() for c in row if c.value is not None]
     assert "Топосъёмка" in cells and "0:10:39" in cells and "0:28:44" in cells  # как у СЕКРЕТАРЬ_ST (п. 33)
+    assert "% от результата победителя посчитан без составляющей «Топосъёмка»." in cells  # под таблицей (п. 48)
+
+    # «с ней» — от полного результата: настройка сохраняется и видна на странице
+    page = client.post(base(f) + "/results/stages" + q, data={"st-0-id": "s1", "st-0-name": "Колодец", "add-0-id": "a1",
+                                                               "add-0-name": "Топосъёмка", "add-0-kind": "time",
+                                                               "add-0-pct": "in"}).text
+    assert f.run_data()["zachety"]["М/Ж_3"]["adds"][0]["in_percent"] is True
+    assert '<option value="in" selected>' in page and "посчитан от полного результата (с составляющей" in page
 
 
 def test_named_application_word_from_preapp(client, tmp_path, psr_card):

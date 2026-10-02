@@ -59,6 +59,7 @@ def register(app, cx) -> None:
                 "tod": tr.time_of_day_text,
                 "extra_fields": EXTRA_FIELDS.get(run.profile, ()) + tuple((f"add-{a['id']}", a["name"]) for a in run.adds),
                 "add_points": {f"add-{a['id']}" for a in run.adds if a["kind"] == "points"}, "add_kinds": tr.ADD_KINDS,
+                "percent_note": tr.percent_note,
                 "res": lambda r: pr.result_text(run, r), "is_time": run.kind == "time",
                 "from_phone": lambda sid, file: js.from_phone(zdata, sid, file, stage_by.get(sid)),
                 "stage_score": lambda s, file: js.stage_score_text(zdata, s, file),
@@ -155,7 +156,8 @@ def register(app, cx) -> None:
                         aid = f"a{n}"
                         taken.add(aid)
                     adds.append({"id": aid, "name": name,
-                                 "kind": "points" if form.get(f"add-{i}-kind") == "points" else "time"})
+                                 "kind": "points" if form.get(f"add-{i}-kind") == "points" else "time",
+                                 "in_percent": form.get(f"add-{i}-pct") == "in"})  # % от победителя (п. 48)
                 zdata["adds"] = adds
 
         bad_spp: list[str] = []

@@ -122,12 +122,16 @@
       <fieldset class="span-12 res-adds"><legend>Дополнительные составляющие результата</legend>
         <p class="hint">Например, «Топосъёмка» у группы спелео: её время прибавляется к результату. Баллы — × эквивалент
           балла. Своя колонка в таблице и в протоколе; вносить можно и с телефона судьи (ссылка — на странице «Телефоны
-          судей этапов»: судья отмечает «Прибыла» и «Убыла»). Убрать — сотрите название.</p>
-        {% for a in run.adds + [{"id": "", "name": "", "kind": "time"}] %}{% set i = loop.index0 %}
+          судей этапов»: судья отмечает «Прибыла» и «Убыла»). Убрать — сотрите название. Места — по полному результату;
+          % от победителя — как выбрано у составляющей (СЕКРЕТАРЬ_ST считает его без неё).</p>
+        {% for a in run.adds + [{"id": "", "name": "", "kind": "time", "in_percent": false}] %}{% set i = loop.index0 %}
         <div class="res-add"><input type="hidden" name="add-{{ i }}-id" value="{{ a.id }}">
           <input type="text" name="add-{{ i }}-name" value="{{ a.name }}" placeholder="{{ 'название, например Топосъёмка' if not a.id else '' }}" aria-label="Название составляющей">
-          <select name="add-{{ i }}-kind" aria-label="Вид">{% for k, v in add_kinds.items() %}<option value="{{ k }}"{% if a.kind == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+          <select name="add-{{ i }}-kind" aria-label="Вид">{% for k, v in add_kinds.items() %}<option value="{{ k }}"{% if a.kind == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+          <select name="add-{{ i }}-pct" aria-label="% от победителя{{ ': ' ~ a.name if a.name else '' }}"><option value="">% от победителя — без неё (как СЕКРЕТАРЬ_ST)</option>
+            <option value="in"{% if a.in_percent %} selected{% endif %}>% от победителя — с ней (от полного результата)</option></select></div>
         {% endfor %}
+        {% if run.adds %}<p class="hint">{{ percent_note(run.adds) }}</p>{% endif %}
       </fieldset>
       <div class="field span-6"><label for="f-wc">Ожидание очереди на этапе (телефон судьи)</label>
         <select id="f-wc" name="wait_cut"><option value="yes">вычитать из времени (как отсечку)</option>

@@ -67,7 +67,7 @@ def run_protocol(p: dict, spp_override: int | None = None):
                 d[f"add-{a['id']}"] = row["adds"][a["name"]]
         data[file] = d
     spp = spp_override or p.get("spp") or 30
-    zdata = {"stages": [{"id": "s1", "name": "Этапы"}], "spp": str(spp) if spp in (15, 30) else "30",
+    zdata = {"stages": [{"id": "s1", "name": "Этапы"}], "spp": str(spp),  # своё число секунд — п. 47
              "adds": adds, "teams": data}
     run = tr.compute(replace(comp, zachety=[z]), z, zdata, teams)
     by_file = {r.inp.file: r for r in run.rows}

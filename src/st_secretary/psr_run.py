@@ -145,6 +145,7 @@ class TeamResult:
     tours: dict[str, Fraction] = field(default_factory=dict)
     place: int | None = None
     percent: Fraction | None = None
+    percent_base: Fraction | None = None  # результат для % от победителя — без составляющих «не в %» (Правки, п. 48)
     norm: str = ""
     actual_class: int | None = None
     # дисциплины «по времени» (спелео, пешеходные в штрафной системе) — см. time_run.py
