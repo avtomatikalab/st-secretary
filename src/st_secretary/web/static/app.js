@@ -392,7 +392,11 @@
     if (only) { e.preventDefault(); onlyFilter(only.dataset.only); return; }
     var show = e.target.closest("a[data-show]");
     if (show && teamFilters.length) {
-      e.preventDefault(); filterTeams(show.dataset.show);
+      e.preventDefault();
+      // открыт другой раздел («Участники», «Файлы заявок») — сначала «Команды и замечания», как щелчок по вкладке (п. 52)
+      var tab = show.dataset.tab && document.getElementById(show.dataset.tab);
+      if (tab && tab.getAttribute("aria-selected") !== "true") tab.click();
+      filterTeams(show.dataset.show);
       var list = document.getElementById("teams"); if (list) list.scrollIntoView({ block: "start" });
       return;
     }

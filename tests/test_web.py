@@ -1477,6 +1477,12 @@ def test_check_badges_are_clickable(client, tmp_path, psr_card):
     # плитка прокручивает к списку команд (#teams) — метка должна быть на странице (сообщение пользователя, п. 51)
     hrefs = set(re.findall(r'class="tile [^"]*tile-link" href="[^"]*#([\w-]+)"', page))
     assert hrefs == {"teams"} and 'id="teams"' in page
+    # с раздела «Участники» / «Файлы заявок» плитка сначала открывает «Команды и замечания» (п. 52): её признак —
+    # вкладка, за которой список команд с фильтром
+    tabs = set(re.findall(r'class="tile [^"]*tile-link"[^>]*data-tab="([\w-]+)"', page))
+    assert tabs == {"tab-issues"}
+    panel = re.search(r'id="tab-issues"[^>]*aria-controls="([\w-]+)"', page).group(1)
+    assert "data-team-filter" in page.split(f'id="{panel}"')[1].split("</section>")[0]
     assert re.search(r'class="badge badge-(warning|error) badge-link" href="[^"]*preapps/team\?file=[^"]*&only=', page)
     card = client.get(b + "/preapps/team?file=" + quote("Лесовики.xlsx")).text
     assert "badge-link" in card and ("data-to-check" in card or "Исправить" in card)

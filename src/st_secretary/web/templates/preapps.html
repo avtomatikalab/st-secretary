@@ -42,8 +42,8 @@
 <div class="tiles">
   <div class="tile"><b>{{ result.teams|length }}</b><span>команд{% if result.teams|length != files|length %} (файлов {{ files|length }}){% endif %}</span></div>
   <div class="tile"><b>{{ result.entries|length }}</b><span>участников</span></div>
-  <a class="tile tile-error tile-link" href="?show={{ FIX }}#teams" data-show="{{ FIX }}" title="Показать заявки с ошибками"><b>{{ t[ERROR] }}</b><span>ошибок — исправить до комиссии</span></a>
-  <a class="tile tile-warning tile-link" href="?show={{ CHECK }}#teams" data-show="{{ CHECK }}" title="Показать заявки, которые нужно проверить"><b>{{ t[WARNING] }}</b><span>проверить — нужно решение</span></a>
+  <a class="tile tile-error tile-link" href="?show={{ FIX }}#teams" data-show="{{ FIX }}" data-tab="tab-issues" title="Показать заявки с ошибками"><b>{{ t[ERROR] }}</b><span>ошибок — исправить до комиссии</span></a>
+  <a class="tile tile-warning tile-link" href="?show={{ CHECK }}#teams" data-show="{{ CHECK }}" data-tab="tab-issues" title="Показать заявки, которые нужно проверить"><b>{{ t[WARNING] }}</b><span>проверить — нужно решение</span></a>
   <div class="tile tile-fixed"><b>{{ view.by_filter[DONE] }} из {{ files|length }}</b><span>заявок проверено</span></div>
 </div>
 
