@@ -8,6 +8,11 @@
   <p class="dz-busy">{{ icon("clock") }} Добавляю…</p>
   <noscript><button class="btn btn-small" type="submit">Добавить</button></noscript>
 </form>
+<form method="post" action="{{ base }}/docs/stubs" class="learn-only" data-confirm="Добавить заглушки документов этой команды? На каждом — «ОБРАЗЕЦ — НЕ ДОКУМЕНТ»; они лягут в папку команды рядом со сканами.">
+  <input type="hidden" name="file" value="{{ file }}"><input type="hidden" name="back" value="{{ back }}">
+  <button class="btn btn-small btn-example" type="submit">{{ icon("file", 16) }}Добавить заглушки документов</button>
+  <span class="hint">паспорт, полис, страховка, книжка на каждого и заявка с допуском врача — для пробы комиссии</span>
+</form>
 <p class="hint doc-where">{{ icon("laptop", 14) }} Хранятся только на этом компьютере, не в облаке: {{ docs_dir }}</p>
 {%- endmacro %}
 

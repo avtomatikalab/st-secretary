@@ -12,6 +12,8 @@
 {% endif %}
 
 <form method="post" action="/new" class="panel" data-guard>
+  <p class="learn-only"><button type="button" class="btn btn-small btn-example" data-example="/example/card">{{ icon("edit", 16) }}Заполнить примером</button>
+    <span class="hint">учебная карточка с выдуманными данными; сохранится, только если нажмёте «Создать»</span></p>
   {{ main_fields(form.main, errors, ch) }}
   <div class="form-actions">
     <button class="btn btn-primary btn-big" type="submit">Создать соревнование{{ icon("arrow") }}</button>

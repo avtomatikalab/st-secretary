@@ -195,6 +195,8 @@
     <span class="pts-legend">Синим</span> — пришло с <a href="{{ base }}/judges?{{ zq }}">телефона судьи этапа</a>; чтобы увидеть
     новое с телефонов, обновите страницу (F5).{% if not is_time %} <span class="pts-mark pts-mark-legend">снята ✕</span> под
     клеткой — команду сняли с этапа (или время сверх КВ), в клетке МШ; нажмите, чтобы снять отметку.{% endif %}</p>
+  <p class="learn-only"><button type="button" class="btn btn-small btn-example" data-example-points>{{ icon("edit", 16) }}Заполнить примером</button>
+    <span class="hint">случайные баллы{% if is_time %} и время{% endif %} в пустых клетках — сразу сохранятся, как при вводе</span></p>
   <form method="post" action="{{ base }}/results/points?{{ zq }}" data-points>
   <div class="table-wrap pts-wrap">
   <table class="tbl pts-grid">

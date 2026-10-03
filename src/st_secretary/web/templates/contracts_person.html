@@ -17,6 +17,8 @@
 {% endif %}
 
 <form method="post" action="{{ base }}/contracts/person" data-guard class="panel">
+  <p class="learn-only"><button type="button" class="btn btn-small btn-example" data-example="{{ base }}/example/person" data-example-confirm>{{ icon("edit", 16) }}Заполнить примером</button>
+    <span class="hint">выдуманные паспорт, ИНН, СНИЛС и счёт (контрольные цифры верные); сохранятся, только если нажмёте «Сохранить»</span></p>
   <input type="hidden" name="key" value="{{ p.key }}">
   {% if not p.from_card %}
   <h2>Должность</h2>

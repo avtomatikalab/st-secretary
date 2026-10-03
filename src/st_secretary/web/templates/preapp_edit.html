@@ -135,6 +135,8 @@
 </details>
 
 <form id="preappform" method="post" action="{{ base }}/preapps/save" data-guard>
+  <p class="learn-only"><button type="button" class="btn btn-small btn-example" data-example="{{ base }}/example/preapp"{% if file %} data-example-confirm{% endif %}>{{ icon("edit", 16) }}Заполнить примером</button>
+    <span class="hint">выдуманная команда под зачёт этой карточки; сохранится, только если нажмёте «Сохранить»</span></p>
   <input type="hidden" name="file" value="{{ file }}">
   <input type="hidden" name="version" value="{{ version }}">
   {% if reentry %}<input type="hidden" name="reentry" value="1">{% endif %}

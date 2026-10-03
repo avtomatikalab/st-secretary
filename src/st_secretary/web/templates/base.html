@@ -13,6 +13,7 @@
   {% if folder is defined and folder %}
   <div class="topbar-title" title="{{ comp.title if comp else folder.id }}">{{ comp.title if comp else folder.id }}</div>
   {% else %}<div class="topbar-title"></div>{% endif %}
+  <label class="learn-toggle" title="Учебный режим: у форм появится «Заполнить примером» — выдуманные данные для пробы, у документов команды — заглушки. Своё ничего не меняется, пока не нажмёте «Сохранить» или «Добавить заглушки»."><input type="checkbox" data-learn-toggle> <span>Учебный режим</span></label>
   <button type="button" class="btn btn-ghost btn-small topbar-fb" data-feedback title="Ошибка, неудобство или предложение — прямо с этой страницы, файлом для разработчика">{{ icon("alert", 18) }}<span>Сообщить</span></button>
   <div class="pill-local" title="Программа работает на этом ноутбуке. Интернет не нужен. Данные никуда не отправляются.">
     {{ icon("laptop", 18) }}<span>Работает без интернета</span>

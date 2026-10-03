@@ -15,6 +15,7 @@ from datetime import date, timedelta
 from st_secretary.competition import Competition, Official, Zachet
 from st_secretary.norms import PercentMethod
 from st_secretary.qualification import Qual
+from st_secretary.rank import INDIVIDUAL, PAIR
 from st_secretary.reference import Level, norm_editions
 
 TITLE = "Учебный чемпионат г. Энска по спортивному туризму"
@@ -136,6 +137,83 @@ def run_data() -> dict:
                              for i, n in enumerate(SPELEO_STAGES, start=1)],
                   "expected": "40", "kv": "90", "spp": "", "cutoff_pairs": ""},
     }}
+
+
+# ------------------------------------------------------------------ «Заполнить примером» (учебный режим, п. 53)
+
+EXAMPLE_TEAMS = ["Кедр", "Сосна", "Пихта", "Лиственница", "Бурундуки", "Ёлки-палки", "Перевал", "Горный ветер",
+                 "Сталактит", "Сталагмит", "Летучие мыши", "Карстовики", "Подземка", "Сталкер", "Азимут", "Меридиан"]
+
+
+def example_team(comp: Competition, taken: set[str], seed: int | None = None) -> tuple[dict, list[dict]]:
+    """Заявка-пример для формы заявки этого соревнования: команда, которой ещё нет (taken — названия заявленных),
+    четыре выдуманных участника под первый зачёт карточки — возраст, пол и состав по его требованиям."""
+    rng = random.Random(seed)
+    z = comp.zachety[0]
+    name = next((t for t in rng.sample(EXAMPLE_TEAMS, len(EXAMPLE_TEAMS)) if t not in taken),
+                f"Команда {rng.randint(10, 99)}")
+    lo = max(z.age_from or 18, 14 if z.age_from else 18)
+    hi = max(lo + 1, min(z.age_to or lo + 25, lo + 25))
+    size = 4 if not z.team_size else min(max(z.team_size, 2), 6)
+    women = max(z.min_women, 1 if size > 2 else 0)
+    sexes = [False] * women + [True] * (size - women)
+    rng.shuffle(sexes)
+    used: set[str] = set()
+    year = comp.date_from.year
+    fmt = z.rank_format
+    rows = []
+    for i, male in enumerate(sexes):
+        born = date(year - rng.randint(lo, hi), rng.randint(1, 12), rng.randint(1, 28))
+        rows.append({"fio": _fio(rng, male, used), "birth": born.strftime("%d.%m.%Y"),
+                     "qual": rng.choice(QUALS).label, "sex": "м" if male else "ж",
+                     "zachet": z.name or f"{z.group}_{z.distance_class}",
+                     "chip": "", "personal": "1" if fmt == INDIVIDUAL else "",
+                     "pair": ("см" if fmt == PAIR else ""), "pair_num": ("1" if fmt == PAIR and i < 2 else
+                                                                        "2" if fmt == PAIR else ""),
+                     "team_dist": "" if fmt in (INDIVIDUAL, PAIR) else "1"})
+    head = {"team": name, "territory": comp.host_territory or TOWN, "representative": rows[0]["fio"],
+            "contacts": "8 900 000-00-00, example@example.com", "declared": str(len(rows))}
+    return head, rows
+
+
+def _inn(rng: random.Random) -> str:
+    d = [rng.randint(0, 9) for _ in range(10)]
+    for weights in ((7, 2, 4, 10, 3, 5, 9, 4, 6, 8), (3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8)):
+        d.append(sum(w * x for w, x in zip(weights, d)) % 11 % 10)
+    return "".join(map(str, d))
+
+
+def _snils(rng: random.Random) -> str:
+    d = "".join(str(rng.randint(0, 9)) for _ in range(9))
+    s = sum(int(c) * (9 - i) for i, c in enumerate(d))
+    check = s if s < 100 else 0 if s in (100, 101) else s % 101 % 100
+    return f"{d[:3]}-{d[3:6]}-{d[6:]} {check:02d}"
+
+
+def _account(rng: random.Random, bik: str) -> str:
+    a = [rng.randint(0, 9) for _ in range(20)]
+    a[:5] = [4, 0, 8, 1, 7]  # счёт физического лица в рублях
+    for k in range(10):  # контрольный ключ — девятая цифра (как staff.account_ok)
+        a[8] = k
+        if sum(int(c) * (7, 1, 3)[i % 3] for i, c in enumerate(bik[-3:] + "".join(map(str, a)))) % 10 == 0:
+            break
+    return "".join(map(str, a))
+
+
+EXAMPLE_BIK = "049999999"  # выдуманный БИК — у примера и счёт выдуманный
+
+
+def example_person(seed: int | None = None) -> dict:
+    """Личные данные-пример для карточки человека (договоры): всё выдуманное, но с верными контрольными цифрами
+    ИНН, СНИЛС и счёта — чтобы проверка карточки не ругалась."""
+    rng = random.Random(seed)
+    born = date(rng.randint(1965, 1998), rng.randint(1, 12), rng.randint(1, 28))
+    issued = date(born.year + 20, rng.randint(1, 12), rng.randint(1, 28))
+    return {"birth": born.strftime("%d.%m.%Y"), "passport": f"04 99 {rng.randint(100000, 999999)}",
+            "issued_by": "ГУ МВД России по Учебному краю (пример)", "issued_on": issued.strftime("%d.%m.%Y"),
+            "dept_code": "999-999", "address": "660000, Учебный край, г. Энск, ул. Примерная, д. 1, кв. 1",
+            "inn": _inn(rng), "snils": _snils(rng), "account": _account(rng, EXAMPLE_BIK),
+            "bank": "Учебный банк (пример)", "bik": EXAMPLE_BIK, "phone": "+7 900 000-00-00", "judge_id": ""}
 
 
 def create(store, today: date):

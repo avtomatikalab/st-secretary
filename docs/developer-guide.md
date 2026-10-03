@@ -282,7 +282,8 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `practice.py` | судейская практика по всем соревнованиям, баллы по приказу № 1101 |
 | `verify.py` | сверка документов (Word, Excel, PDF) с карточкой и между собой |
 | `money.py`, `names.py` | суммы прописью; склонение ФИО и должностей |
-| `training.py` | учебное соревнование на выдуманных данных |
+| `training.py` | учебное соревнование на выдуманных данных; примеры для «Заполнить примером» (команда под зачёт карточки, личные данные с верными контрольными цифрами) |
+| `stub_docs.py` | заглушки документов команды в SVG («ОБРАЗЕЦ — НЕ ДОКУМЕНТ») — учебный режим и `tools/make_stub_docs.py` |
 | `feedback.py` | «Сообщить»: сообщения пользователей (.md + снимок) в «Правки и ошибки», zip для разработчика, `SUPPORT_EMAIL` |
 
 ### Справочники — `reference/`
@@ -350,6 +351,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `verify.py` | `/c/{cid}/verify` | `verify.html` |
 | `updates.py` | `/update…` | `update.html`, `_update_banner.html` |
 | `feedback.py` | `/feedback…` — «Сообщить» (приём с панели), «Мои сообщения», отправка, загрузка чужого файла | `feedback.html` |
+| `examples.py` | учебный режим: `/example/card`, `/c/{cid}/example/preapp`, `…/example/person` (JSON для «Заполнить примером»), `/c/{cid}/docs/stubs` (заглушки) | — (кнопки — в формах, галочка — в `base.html`) |
 
 Общие шаблоны (`web/app.py`): `base.html` — каркас с меню и кнопкой «Сообщить», `error.html` — «Что-то пошло не так»
 и «не найдено», `cannot_open.html` — файл не открылся; части для многих страниц: `_form.html` (поля форм, списки

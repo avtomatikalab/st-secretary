@@ -54,6 +54,83 @@
     if (row && window.confirm(rm.dataset.confirm || "Удалить?")) { row.remove(); markDirty(); }
   });
 
+  // --- Учебный режим (п. 53): галочка в шапке (запоминается в этом браузере) показывает «Заполнить примером» у форм
+  //     и «Добавить заглушки документов». Пример приходит с сервера и только заполняет форму — сохраняет человек.
+  var learnBoxes = Array.prototype.slice.call(document.querySelectorAll("[data-learn-toggle]"));
+  function setLearn(on) {
+    document.documentElement.classList.toggle("learn", on);
+    learnBoxes.forEach(function (b) { b.checked = on; });
+    try { if (on) localStorage.setItem("st-learn", "1"); else localStorage.removeItem("st-learn"); } catch (e) { /* без хранилища — до перезагрузки */ }
+  }
+  var learnOn = false;
+  try { learnOn = localStorage.getItem("st-learn") === "1"; } catch (e) { /* нет хранилища */ }
+  setLearn(learnOn);
+  learnBoxes.forEach(function (b) { b.addEventListener("change", function () { setLearn(b.checked); }); });
+
+  function fillExample(form, data) {
+    Object.keys(data.rows || {}).forEach(function (id) {  // строк меньше, чем в примере, — добавить кнопкой «Добавить…»
+      var box = document.getElementById(id), btn = document.querySelector('[data-add-row="' + id + '"]');
+      while (box && btn && box.querySelectorAll("[data-row]").length < data.rows[id]) btn.click();
+    });
+    (data.clear || []).forEach(function (prefix) {  // строки — с чистого листа (пустые при сохранении пропускаются)
+      Array.prototype.forEach.call(form.elements, function (el) {
+        if (!el.name || el.name.indexOf(prefix + "-") !== 0 || el.type === "hidden") return;
+        if (el.type === "checkbox") el.checked = false; else if (el.tagName !== "SELECT") el.value = "";
+      });
+    });
+    Object.keys(data.fields).forEach(function (name) {
+      var el = form.elements[name];
+      if (!el || el.type === "hidden") return;
+      var v = data.fields[name];
+      if (el.type === "checkbox") el.checked = !!v && v !== "0";
+      else el.value = v;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    markDirty();
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-example]");
+    if (!b) return;
+    var form = b.closest("form") || document.querySelector("form[data-guard]");
+    if (!form) return;
+    // данные уже есть (карточка, сохранённая заявка, человек) — спросить; пустую новую форму — просто заполнить
+    if (b.hasAttribute("data-example-confirm") &&
+        !window.confirm("Заменить то, что сейчас в форме, примером? Сохранится, только если нажмёте «Сохранить».")) return;
+    b.disabled = true;
+    fetch(b.dataset.example, { headers: { "Accept": "application/json" } })
+      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(function (data) { fillExample(form, data); })
+      .catch(function () { window.alert("Пример не получился — попробуйте ещё раз."); })
+      .then(function () { b.disabled = false; });
+  });
+  // таблица баллов: случайные баллы (и время у дисциплин по времени) только в пустых клетках, затем — как при вводе
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-example-points]");
+    if (!b) return;
+    var form = document.querySelector("form[data-points]");
+    if (!form) return;
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    function hms(s) { return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60); }
+    function rnd(list) { return list[Math.floor(Math.random() * list.length)]; }
+    var last = null;
+    form.querySelectorAll("tr[data-team]").forEach(function (row, i) {
+      var start = 10 * 3600 + i * 5 * 60;
+      row.querySelectorAll("input[data-stage]").forEach(function (inp) {
+        if (inp.value.trim()) return;
+        var s = inp.dataset.stage;
+        if (s === "start") inp.value = hms(start);
+        else if (s === "finish") inp.value = hms(start + 30 * 60 + Math.floor(Math.random() * 40 * 60));
+        else if (s === "cutoffs") inp.value = rnd(["2:00", "3:30", "4:00", "5:30"]);
+        else if (/^(pen_time|declared|red|no_tactics)$/.test(s) || inp.classList.contains("pts-flag")) return;
+        else if (/^add-/.test(s)) inp.value = pad(5 + Math.floor(Math.random() * 10)) + ":" + pad(Math.floor(Math.random() * 60));
+        else inp.value = rnd(form.querySelector('[name$="-start"]') ? ["", "", "0,3", "1", "2"] : ["0", "0", "5", "10", "20", "30"]);
+        last = inp;
+      });
+    });
+    if (last) last.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
   // --- Выбрал файл — сразу отправить (загрузка протокола).
   document.querySelectorAll("input[data-autosubmit]").forEach(function (input) {
     input.addEventListener("change", function () { if (input.files.length) input.form.submit(); });

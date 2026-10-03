@@ -89,8 +89,8 @@ CONTRACTS_DIR = "Договоры и табель"
 # папке — поэтому отдельно от данных соревнования (их часто держат на Google Диске или передают на флешке).
 DOCS_ROOT_NAME = "СТ-Секретарь — документы участников"
 DOC_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-             ".odt", ".rtf", ".txt"}
-IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}  # браузер показывает сам (HEIC — нет)
+             ".odt", ".rtf", ".txt", ".svg"}  # .svg — заглушки учебного режима (stub_docs), п. 53
+IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".svg"}  # браузер показывает сам (HEIC — нет)
 
 
 def default_docs_root() -> Path:

@@ -405,6 +405,13 @@ def register(app, cx) -> None:
 
     # ------------------------------------------------------------ документы команд
 
+    def doc_headers(doc: Path) -> dict:
+        """Скан с персональными данными — не в кэш браузера; SVG — без скриптов (заглушки учебного режима, п. 53)."""
+        h = {"Cache-Control": "no-store"}
+        if doc.suffix.lower() == ".svg":
+            h["Content-Security-Policy"] = "sandbox"
+        return h
+
     def docs_back(f: CompFolder, sent: str, file: str) -> str:
         return back_to(None, f, sent, team_url(f, file) + "#docs")
 
@@ -437,7 +444,7 @@ def register(app, cx) -> None:
         if doc is None:
             raise HTTPException(404)
         return FileResponse(doc, content_disposition_type="inline", filename=doc.name,
-                            headers={"Cache-Control": "no-store"})  # персональные данные — не оставлять в кэше
+                            headers=doc_headers(doc))  # персональные данные — не оставлять в кэше
 
     @app.post("/c/{cid}/docs/remove")
     async def docs_remove(request: Request, cid: str):
@@ -499,6 +506,5 @@ def register(app, cx) -> None:
         doc = d / Path(str(name).replace("\\", "/")).name
         if not name or not doc.is_file():
             raise HTTPException(404)
-        return FileResponse(doc, content_disposition_type="inline", filename=doc.name,
-                            headers={"Cache-Control": "no-store"})
+        return FileResponse(doc, content_disposition_type="inline", filename=doc.name, headers=doc_headers(doc))
 

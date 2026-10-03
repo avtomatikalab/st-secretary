@@ -79,6 +79,8 @@
 
     <section class="panel" id="main">
       <h2>Основные реквизиты</h2>
+      <p class="learn-only"><button type="button" class="btn btn-small btn-example" data-example="/example/card" data-example-confirm>{{ icon("edit", 16) }}Заполнить примером</button>
+        <span class="hint">учебная карточка с выдуманными данными — заменит то, что в форме; сохранится, только если нажмёте «Сохранить»</span></p>
       {{ main_fields(form.main, errors, ch) }}
       <label class="check card-unof"><input type="checkbox" name="unofficial" value="1"{% if form.main.unofficial %} checked{% endif %} data-unofficial>
         <span><b>Неофициальные соревнования</b> — клубные, учебные, слёт: зачёты со своими названиями, класс «без класса»,
