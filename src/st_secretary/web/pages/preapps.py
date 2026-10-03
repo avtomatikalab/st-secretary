@@ -16,14 +16,13 @@ from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException
 
 from st_secretary import commission as cm
-from st_secretary.importers.card_xlsx import CardError
 from st_secretary.importers.preapp_xlsx import read_preapplication
 from st_secretary.issues import CHECKED, ERROR, SEVERITY_ORDER, WARNING, Issue
 from st_secretary.qualification import Qual
 from st_secretary.web import preapp_form as pf
 from st_secretary.web.common import DOCX, XLSX, base_url, parse_dt, preapp_view, redirect, team_anchor, with_done
 from st_secretary.web.review import DONE, SAVE, STATUS_LABEL, is_clean, issue_key
-from st_secretary.web.shared import back_to, doc_list, need_comp, need_file, team_url
+from st_secretary.web.shared import GoFix, back_to, doc_list, need_comp, need_file, need_preapps, team_url
 from st_secretary.web.store import NAMED_TEMPLATE, SUMMARY, CompFolder, safe_name
 
 
@@ -38,14 +37,10 @@ def register(app, cx) -> None:
     # ------------------------------------------------------------ предзаявки
 
     def preapp_result(f: CompFolder):
-        try:
-            comp = f.load()
-        except CardError:
-            raise HTTPException(409, "Карточка соревнования заполнена с ошибками — откройте её и исправьте.") from None
-        if any(i.severity == ERROR for i in comp.check()):
-            raise HTTPException(409, "Сначала исправьте ошибки в карточке соревнования.")
-        if not f.preapp_files():
-            raise HTTPException(409, "Пока нет ни одной заявки — добавьте файлы на странице «Предварительные заявки».")
+        """Заявки соревнования, проверенные по карточке; карточка с ошибками или нет заявок — «Не получилось» с
+        кнопкой туда, где это исправить (п. 55)."""
+        comp = need_comp(f)
+        need_preapps(f)
         result, reviews = store.review(f, comp)
         return comp, result, {src: r.label for src, r in reviews.items()}
 
@@ -160,8 +155,9 @@ def register(app, cx) -> None:
         result, _ = store.review(f, comp)
         mine = [i for i in result.issues if i.source == path.name]
         if status == DONE and any(i.severity == ERROR for i in mine):
-            raise HTTPException(409, "В заявке есть ошибки — пока они не исправлены, отметить её «Проверено» нельзя. "
-                                     "Исправьте заявку или поставьте статус «Исправить».")
+            raise GoFix(409, "В заявке есть ошибки — пока они не исправлены, отметить её «Проверено» нельзя. "
+                             "Исправьте заявку или поставьте статус «Исправить».",
+                        f"{base_url(f)}/preapps/team?{urlencode({'file': path.name})}", "Открыть заявку")
         if status == DONE:  # проверена вся заявка — значит, и каждое «проверить» в ней
             f.set_checked(path.name, [issue_key(i) for i in mine if i.severity == WARNING])
         f.set_status(path.name, status)
@@ -300,7 +296,8 @@ def register(app, cx) -> None:
         result, _ = store.review(f, comp)
         team = next((t for t in result.teams if t.source == path.name), None)
         if team is None:
-            raise HTTPException(409, "Заявку не удалось прочитать — исправьте её, потом скачивайте именную заявку.")
+            raise GoFix(409, "Заявку не удалось прочитать — исправьте её, потом скачивайте именную заявку.",
+                        f"{base_url(f)}/preapps/edit?{urlencode({'file': path.name})}", "Исправить заявку")
         name = f"Именная заявка — {safe_name(team.team) or path.stem}.docx"
         tmp = Path(tempfile.mkdtemp(prefix="st-secretary-")) / name
         if named_template(f).is_file():

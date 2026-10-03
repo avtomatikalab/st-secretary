@@ -19,6 +19,7 @@ from st_secretary.competition import (
     Competition,
     Official,
     Zachet,
+    gsk_rows,
 )
 from st_secretary.norms import PercentMethod
 from st_secretary.qualification import Qual, parse_qual
@@ -95,15 +96,9 @@ def card_to_form(comp: Competition | None) -> dict:
 
 
 def official_rows(officials: list[Official]) -> list[dict]:
-    """Строки ГСК для формы: стандартные должности — всегда на своих местах, как в Excel, затем остальные."""
-    rest = list(officials)
-    out = []
-    for role in GSK_ROLES:
-        o = next((x for x in rest if x.role == role), None)
-        if o:
-            rest.remove(o)
-        out.append(_official_row(role, o))
-    return out + [_official_row(o.role, o) for o in rest]
+    """Строки ГСК для формы: стандартные должности — всегда на своих местах, как в Excel, затем остальные
+    (порядок — competition.gsk_rows, по нему же замечания карточки ведут к полю)."""
+    return [_official_row(o.role if o else GSK_ROLES[i], o) for i, o in enumerate(gsk_rows(officials))]
 
 
 def officials_from_rows(rows: list[dict], err: dict) -> list[Official]:

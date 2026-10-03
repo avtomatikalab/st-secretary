@@ -30,6 +30,7 @@ from st_secretary.web.shared import (
     festival_members,
     need_comp,
     need_file,
+    need_preapps,
     team_url,
 )
 from st_secretary.web.store import COMMISSION_REPORT, CompFolder
@@ -272,8 +273,7 @@ def register(app, cx) -> None:
 
     def commission_report(f: CompFolder, path: Path | None = None) -> Path:
         comp = need_comp(f)
-        if not f.preapp_files():
-            raise HTTPException(409, "Пока нет ни одной заявки — добавьте их на странице «Предварительные заявки».")
+        need_preapps(f)
         data, teams = commission(store, f, comp)
         gdata, gear = gear_ctx(f, comp)
         fest = f.festival()

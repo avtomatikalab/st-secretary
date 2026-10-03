@@ -459,6 +459,37 @@ def test_preapps_wait_for_card_without_errors(client, tmp_path, psr_card):
     assert client.get(preapp_url(f)).status_code == 409
 
 
+def test_card_issues_lead_to_field_and_go_fix_page(client, tmp_path, psr_card):
+    """Правки, п. 54–55: замечания карточки (на её странице и в плашке «Сначала исправьте карточку» на заявках) —
+    ссылки к полю в «Редактировании карточки»; «Не получилось» ведёт туда же, «На главную» — второй кнопкой."""
+    from html import unescape
+
+    officials = [replace(o, category="") if o.role == "Главный судья" else o for o in psr_card.officials]
+    comp = replace(psr_card, zachety=[], officials=officials)
+    f = client.app.state.store.create(comp)
+    f.add_preapp("Лесовики.xlsx", lesoviki(tmp_path))
+
+    view = client.get(base(f) + "/card").text.split("Проверка карточки")[1].split("</ul>")[0]
+    links = {unescape(h) for h in re.findall(r'class="badge [^"]*badge-link js-fix" href="([^"]+)"', view)}
+    assert base(f) + "/card/edit?focus=zachety" not in links  # раздел — якорем, поле — focus
+    assert base(f) + "/card/edit#zachety" in links  # «не задан ни один зачёт» — к разделу «Зачёты»
+    assert base(f) + "/card/edit?focus=g-0-category#gsk" in links  # главный судья без категории — к его категории
+    for h in links:
+        page = client.get(h)
+        assert page.status_code == 200
+        focus = re.search(r"focus=([\w-]+)", h)
+        if focus:  # поле, к которому ведёт ссылка, есть в форме
+            assert f'name="{focus.group(1)}"' in page.text or f'id="{focus.group(1)}"' in page.text
+
+    plaque = client.get(base(f) + "/preapps").text.split("Сначала исправьте карточку")[1].split("</ul>")[0]
+    assert "/card/edit#zachety" in plaque and "js-fix" in plaque
+
+    r = client.get(base(f) + "/start")
+    assert r.status_code == 409 and "Сначала исправьте ошибки в карточке" in r.text
+    assert f'href="{base(f)}/card/edit#zachety"' in r.text and "Открыть карточку" in r.text and 'href="/"' in r.text
+    assert client.get(base(f) + "/preapps/summary.xlsx").status_code == 409
+
+
 def test_overview_steps_and_errors(client, psr_card, opened):
     f = client.app.state.store.create(psr_card)
     r = client.get(base(f))

@@ -421,8 +421,9 @@ def fix_url(base: str, i) -> str:
         return at("/contracts/person", f"f-{fld}" if fld else "", key=key)
     if kind == "customer":
         return at("/contracts", "f-c-name", "customer")
-    if kind == "card":
-        return at("/card/edit", anchor=rest)
+    if kind == "card":  # поле формы карточки (f-…, g-<строка>-…, z-<зачёт>-…) или раздел (main, gsk, zachety)
+        section = {"f": "main", "g": "gsk", "z": "zachety"}.get(rest.split("-")[0]) if "-" in rest else None
+        return at("/card/edit", rest, section) if section else at("/card/edit", anchor=rest)
     if kind == "cell":
         file, _, fld = rest.rpartition(":")
         return at("/results", f"c-{team_anchor(file)}-{fld}", "points", **z)

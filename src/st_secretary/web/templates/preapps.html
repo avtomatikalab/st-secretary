@@ -14,7 +14,7 @@
 <div class="panel panel-err">
   <h2>{{ icon("error") }} Сначала исправьте карточку соревнования</h2>
   <p>Без неё заявки не с чем сверять: зачёты, возраст, разряды берутся из карточки.</p>
-  {{ issue_list(blocked or card_errors) }}
+  {{ issue_list(blocked or card_errors, base) }}
   <a class="btn btn-primary" href="{{ base }}/card">{{ icon("edit") }}Открыть карточку</a>
 </div>
 {% endif %}

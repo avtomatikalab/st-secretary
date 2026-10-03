@@ -13,6 +13,8 @@
   <script type="application/json" id="fb-error">{{ {"error": trace|default("")}|tojson }}</script>
   {% if journal_on %}<p><a class="btn" href="/journal.zip">{{ icon("download") }}Скачать журнал программы</a></p>{% endif %}
   {% endif %}
-  <a class="btn btn-primary" href="/">На главную</a>
+  {% if action_url %}<div class="actions actions-center"><a class="btn btn-primary" href="{{ action_url }}">{{ icon("edit") }}{{ action_label }}</a>
+    <a class="btn" href="/">На главную</a></div>
+  {% else %}<a class="btn btn-primary" href="/">На главную</a>{% endif %}
 </div>
 {% endblock %}

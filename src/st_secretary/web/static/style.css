@@ -123,6 +123,7 @@ code { background: var(--surface-2); border: 1px solid var(--line); border-radiu
 .empty .ico { color: var(--primary); }
 .empty h1, .empty h2 { justify-content: center; margin-top: 12px; }
 .empty p { max-width: 560px; margin: 8px auto 20px; color: var(--muted); }
+.empty .actions-center { justify-content: center; }  /* «Не получилось»: «Открыть карточку» и «На главную» (п. 55) */
 .section-title { margin-top: 32px; }
 
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 10px; border: 1px solid; border-radius: 999px; font-size: .78rem; font-weight: 700; white-space: nowrap; }

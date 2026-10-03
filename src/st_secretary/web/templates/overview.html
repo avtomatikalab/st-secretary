@@ -9,7 +9,7 @@
 <h1>{{ folder.id }}</h1>
 <div class="panel panel-err">
   <h2>{{ icon("error") }} Карточка соревнования не читается</h2>
-  {{ issue_list(card_errors) }}
+  {{ issue_list(card_errors, base) }}
   <form method="post" action="{{ base }}/open/card"><button class="btn btn-primary" type="submit">{{ icon("table") }}Открыть карточку в Excel</button></form>
 </div>
 {% endif %}

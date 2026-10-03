@@ -162,7 +162,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
             return page(request, "error.html", status_code=404, title="Страница не найдена",
                         text="Такого соревнования или страницы нет. Возможно, папку соревнования переименовали "
                              "или перенесли.")
-        return page(request, "error.html", status_code=exc.status_code, title="Не получилось", text=str(exc.detail))
+        return page(request, "error.html", status_code=exc.status_code, title="Не получилось", text=str(exc.detail),
+                    action_url=getattr(exc, "url", ""), action_label=getattr(exc, "label", ""))  # GoFix, п. 55
 
     @app.exception_handler(Exception)
     async def crash(request: Request, exc: Exception):

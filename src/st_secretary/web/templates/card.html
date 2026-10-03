@@ -43,7 +43,7 @@
 {% if card_errors and not form %}
 <div class="panel panel-err">
   <h2>{{ icon("error") }} Файл карточки заполнен с ошибками</h2>
-  {{ issue_list(card_errors) }}
+  {{ issue_list(card_errors, base) }}
   <p>Откройте карточку в Excel, исправьте, сохраните файл и обновите эту страницу (клавиша F5).</p>
   <form method="post" action="{{ base }}/open/card"><button class="btn btn-primary" type="submit">{{ icon("table") }}Открыть карточку в Excel</button></form>
 </div>
@@ -67,7 +67,7 @@
     {% if issues %}
     <div class="panel {% if issues|selectattr('severity', 'equalto', ERROR)|list %}panel-err{% else %}panel-warn{% endif %}">
       <h2>Проверка карточки</h2>
-      {{ issue_list(issues) }}
+      {{ issue_list(issues, base) }}
     </div>
     {% else %}
     <div class="flash flash-ok">{{ icon("check-circle") }}<div>Карточка заполнена, замечаний нет.</div></div>

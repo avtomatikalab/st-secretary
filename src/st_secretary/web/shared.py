@@ -27,9 +27,19 @@ from st_secretary import units as un
 from st_secretary.importers.card_xlsx import CardError
 from st_secretary.issues import ERROR
 from st_secretary.reference import norm_edition
-from st_secretary.web.common import base_url, key_of, parse_dt
+from st_secretary.web.common import base_url, fix_url, key_of, parse_dt
 from st_secretary.web.review import DONE
 from st_secretary.web.store import IMAGE_TYPES, CompFolder, Store
+
+
+class GoFix(HTTPException):
+    """«Сначала сделайте …» — страница «Не получилось» с кнопкой туда, где это делают (Правки, п. 55): главная кнопка
+    ведёт к форме (например, к первому полю с ошибкой в карточке), «На главную» — вторая."""
+
+    def __init__(self, status_code: int, detail: str, url: str, label: str):
+        super().__init__(status_code, detail)
+        self.url, self.label = url, label
+
 
 PROTEST_HOUR = timedelta(hours=1)  # Правила, раздел 3, п. 8.17 и 8.18: час на протесты после публикации
 
@@ -37,14 +47,26 @@ PROTEST_HOUR = timedelta(hours=1)  # Правила, раздел 3, п. 8.17 и
 
 
 def need_comp(f: CompFolder):
-    """Карточка соревнования без ошибок — иначе 409 с объяснением (заявки не с чем сверять)."""
+    """Карточка соревнования без ошибок — иначе 409 с объяснением (заявки не с чем сверять) и кнопкой «Открыть
+    карточку» — к первому полю с ошибкой (п. 55)."""
+    card = f"{base_url(f)}/card/edit"
     try:
         comp = f.load()
     except CardError:
-        raise HTTPException(409, "Карточка соревнования заполнена с ошибками — откройте её и исправьте.") from None
-    if any(i.severity == ERROR for i in comp.check()):
-        raise HTTPException(409, "Сначала исправьте ошибки в карточке соревнования: без неё заявку не с чем сверять.")
+        raise GoFix(409, "Карточка соревнования заполнена с ошибками — откройте её и исправьте.", card,
+                    "Открыть карточку") from None
+    errors = [i for i in comp.check() if i.severity == ERROR]
+    if errors:
+        raise GoFix(409, "Сначала исправьте ошибки в карточке соревнования: без неё заявку не с чем сверять.",
+                    fix_url(base_url(f), errors[0]) or card, "Открыть карточку")
     return comp
+
+
+def need_preapps(f: CompFolder) -> None:
+    """Есть хоть одна заявка — иначе 409 с кнопкой «Добавить заявки» (п. 55)."""
+    if not f.preapp_files():
+        raise GoFix(409, "Пока нет ни одной заявки — добавьте файлы на странице «Предварительные заявки».",
+                    f"{base_url(f)}/preapps", "Добавить заявки")
 
 
 def need_file(f: CompFolder, name: str) -> Path:

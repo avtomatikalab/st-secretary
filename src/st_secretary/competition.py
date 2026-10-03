@@ -200,76 +200,96 @@ class Competition:
         return (z.name, "") if z.name else (z.group, str(z.distance_class) if z.distance_class else "")
 
     def check(self) -> list[Issue]:
-        """Проверка самой карточки."""
+        """Проверка самой карточки. У замечания — куда вести исправлять (target «card:<поле>», web/common.fix_url):
+        поле формы «Редактирование карточки» — id «f-…» или имя «g-<строка ГСК>-…», «z-<зачёт>-…» (Правки, п. 54)."""
         out: list[Issue] = []
         src = "Карточка соревнования"
 
-        def err(text, fld=""):
-            out.append(Issue(ERROR, text, source=src, field=fld))
+        def err(text, fld="", to="main"):
+            out.append(Issue(ERROR, text, source=src, field=fld, target=f"card:{to}"))
 
-        def warn(text, fld=""):
-            out.append(Issue(WARNING, text, source=src, field=fld))
+        def warn(text, fld="", to="main"):
+            out.append(Issue(WARNING, text, source=src, field=fld, target=f"card:{to}"))
 
         if not self.title:
-            err("не указано наименование соревнований", "Наименование")
+            err("не указано наименование соревнований", "Наименование", "f-title")
         if self.kind not in KINDS:
-            err(f"вид соревнований «{self.kind}» не из списка: {', '.join(KINDS)}", "Вид")
+            err(f"вид соревнований «{self.kind}» не из списка: {', '.join(KINDS)}", "Вид", "f-kind")
         if self.date_to < self.date_from:
-            err("дата окончания раньше даты начала", "Даты")
+            err("дата окончания раньше даты начала", "Даты", "f-date_to")
         if self.preapp_deadline and self.preapp_deadline > self.date_from:
-            warn("приём предзаявок заканчивается позже начала соревнований", "Приём предзаявок до")
+            warn("приём предзаявок заканчивается позже начала соревнований", "Приём предзаявок до", "f-preapp_deadline")
         if self.norms_edition not in norm_editions():
-            err(f"нет редакции норм «{self.norms_edition}»", "Редакция норм")
+            err(f"нет редакции норм «{self.norms_edition}»", "Редакция норм", "f-norms_edition")
         else:
             n = norm_edition(self.norms_edition)
             span = n.edition.split("-")
             if not (int(span[0]) <= self.year <= int(span[-1])):
-                warn(f"соревнования {self.year} года, а выбрана редакция норм {n.edition}", "Редакция норм")
+                warn(f"соревнования {self.year} года, а выбрана редакция норм {n.edition}", "Редакция норм",
+                     "f-norms_edition")
+        rows = gsk_rows(self.officials)
         for role in ("Главный судья", "Главный секретарь"):
             o = self.official(role)
+            row = GSK_ROLES.index(role)
             if not o or not o.fio:
-                err(f"в составе ГСК не указан {role.lower()}", "ГСК")
+                err(f"в составе ГСК не указан {role.lower()}", "ГСК", f"g-{row}-fio")
             elif not o.category:
-                warn(f"{role}: не указана судейская категория (нужна для подписи протоколов)", "ГСК")
+                warn(f"{role}: не указана судейская категория (нужна для подписи протоколов)", "ГСК",
+                     f"g-{row}-category")
         for o in self.officials:
             if o.category and o.category not in JUDGE_CATEGORIES:
-                warn(f"{o.role}: категория «{o.category}» не из списка {', '.join(JUDGE_CATEGORIES)}", "ГСК")
+                warn(f"{o.role}: категория «{o.category}» не из списка {', '.join(JUDGE_CATEGORIES)}", "ГСК",
+                     f"g-{rows.index(o)}-category" if o in rows else "gsk")
         if not self.zachety:
-            err("не задан ни один зачёт (группа и класс дистанции)", "Зачёты")
+            err("не задан ни один зачёт (группа и класс дистанции)", "Зачёты", "zachety")
         keys = [z.key for z in self.zachety]
         for k in {k for k in keys if keys.count(k) > 1}:
-            err(f"зачёт {k} указан дважды", "Зачёты")
+            err(f"зачёт {k} указан дважды", "Зачёты", f"z-{keys.index(k, keys.index(k) + 1)}-group")
         titles = [z.title for z in self.zachety]
         for t in {t for t in titles if titles.count(t) > 1} - {k for k in keys if keys.count(k) > 1}:
-            err(f"два зачёта называются «{t}»", "Зачёты")
-        for z in self.zachety:
+            err(f"два зачёта называются «{t}»", "Зачёты", f"z-{titles.index(t, titles.index(t) + 1)}-name")
+        for i, z in enumerate(self.zachety):
             if z.is_custom:
                 if not self.unofficial:
                     err(f"зачёт {z.title}: своя дисциплина — только у неофициальных соревнований; выберите "
-                        "дисциплину из ВРВС", f"Зачёт {z.title}")
+                        "дисциплину из ВРВС", f"Зачёт {z.title}", f"z-{i}-discipline_text")
                 elif not z.discipline_text or z.result not in RESULT_KINDS or z.unit not in UNIT_KINDS:
                     err(f"зачёт {z.title}: у своей дисциплины нужны название, вид результата и состав",
-                        f"Зачёт {z.title}")
+                        f"Зачёт {z.title}", f"z-{i}-discipline_text")
             else:
                 try:
                     _ = z.discipline_name  # KeyError, если такого кода нет в ВРВС
                 except KeyError as e:
-                    err(str(e), f"Зачёт {z.key}")
+                    err(str(e), f"Зачёт {z.key}", f"z-{i}-discipline_code")
                     continue
             if not (0 if self.unofficial else 1) <= z.distance_class <= 6:
                 err(f"зачёт {z.title}: класс дистанции должен быть от 1 до 6"
-                    + (" или «без класса»" if self.unofficial else ""), f"Зачёт {z.title}")
+                    + (" или «без класса»" if self.unofficial else ""), f"Зачёт {z.title}", f"z-{i}-distance_class")
             if z.age_from and z.age_to and z.age_from > z.age_to:
-                err(f"зачёт {z.key}: «возраст от» больше «возраст до»", f"Зачёт {z.key}")
+                err(f"зачёт {z.key}: «возраст от» больше «возраст до»", f"Зачёт {z.key}", f"z-{i}-age_from")
             if z.team_size and z.min_men + z.min_women > z.team_size:
-                err(f"зачёт {z.key}: мужчин и женщин по минимуму больше, чем состав команды", f"Зачёт {z.key}")
+                err(f"зачёт {z.key}: мужчин и женщин по минимуму больше, чем состав команды", f"Зачёт {z.key}",
+                    f"z-{i}-min_men")
             if z.admission_profile is None and not self.unofficial:
                 out.append(Issue(INFO, f"зачёт {z.key}: для дисциплины «{z.discipline_name}» пока нет справочника "
                                        "допуска — проверяются только возраст и разряд из карточки", src))
             if z.discipline_code in POINTS_DISCIPLINES and self.percent_method is None and not self.unofficial:
                 warn(f"зачёт {z.key}: результат в баллах, а методика «% от победителя» не задана — "
-                     "нормативы не будут рассчитаны", "Методика %")
+                     "нормативы не будут рассчитаны", "Методика %", "f-percent_method")
         return out
+
+
+def gsk_rows(officials: list[Official]) -> list[Official | None]:
+    """ГСК в порядке строк формы карточки: стандартные должности — на своих местах (None — не заполнена), затем
+    остальные. По номеру строки замечание карточки ведёт к полю (п. 54); форму строит web/forms.official_rows."""
+    rest = list(officials)
+    out: list[Official | None] = []
+    for role in GSK_ROLES:
+        o = next((x for x in rest if x.role == role), None)
+        if o:
+            rest.remove(o)
+        out.append(o)
+    return out + rest
 
 
 MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября",

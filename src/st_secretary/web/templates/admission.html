@@ -12,7 +12,7 @@
 {% if blocked %}
 <div class="panel panel-err">
   <h2>{{ icon("error") }} Сначала исправьте карточку соревнования</h2>
-  {{ issue_list(blocked) }}
+  {{ issue_list(blocked, base) }}
   <a class="btn btn-primary" href="{{ base }}/card">{{ icon("edit") }}Открыть карточку</a>
 </div>
 {% elif not teams %}
