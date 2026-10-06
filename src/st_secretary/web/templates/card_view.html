@@ -79,7 +79,7 @@
       <tbody>
       {% for z in comp.zachety %}
         <tr>
-          <td><b>{{ z.title }}</b>{% if z.name %}<br><span class="muted">{{ z.group }}, {{ z.class_text }}</span>{% endif %}</td>
+          <td><a class="z-edit" href="{{ base }}/card/edit?focus=z-{{ loop.index0 }}-{{ 'name' if z.name else 'group' }}#zachety" title="Изменить зачёт"><b>{{ z.title }}</b></a>{% if z.name %}<br><span class="muted">{{ z.group }}, {{ z.class_text }}</span>{% endif %}</td>
           <td>{{ z.discipline_name }}<br><span class="muted">{% if z.is_custom %}своя: {{ result_kinds[z.result] }}, {{ unit_kinds[z.unit] }}{% else %}{{ z.discipline_code }}{% endif %}</span></td>
           <td>{% if z.age_from %}с {{ z.age_from|from_years }}{% endif %}{% if z.age_to %} до {{ z.age_to|from_years }}{% endif %}{% if not z.age_from and not z.age_to %}без ограничений{% endif %}
             {% if z.age_from_by_gsk %}<br><span class="muted">с {{ z.age_from_by_gsk|from_years }} — по решению ГСК</span>{% endif %}</td>

@@ -118,3 +118,19 @@ def test_percent_method_in_plain_words(client, psr_card, tmp_path):
     cells[0].value = "Баллы: (1 + (результат − победитель) / |победитель|) × 100"
     wb.save(path)
     assert load_card(path).percent_method is PercentMethod.POINTS_RELATIVE_TO_WINNER
+
+
+def test_zachet_in_card_view_links_to_its_edit(client, psr_card):
+    """П. 64: в просмотре карточки название зачёта — ссылка в редактирование сразу к этому зачёту (как замечания)."""
+    from html import unescape
+
+    f = client.app.state.store.create(psr_card)
+    view = client.get(base(f) + "/card").text
+    links = [unescape(h) for h in re.findall(r'<a class="z-edit" href="([^"]+)"', view)]
+    assert len(links) == len(psr_card.zachety) >= 1
+    for i, h in enumerate(links):
+        assert h == f"{base(f)}/card/edit?focus=z-{i}-group#zachety"
+        page = client.get(h)
+        assert page.status_code == 200 and f'name="z-{i}-group"' in page.text
+        field = re.search(rf'<input[^>]*name="z-{i}-group"[^>]*>', page.text).group(0)
+        assert f'value="{psr_card.zachety[i].group}"' in field  # тот самый зачёт
