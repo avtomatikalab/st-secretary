@@ -117,6 +117,7 @@ def register(app, cx) -> None:
         if comp is not None and not conflict:
             try:
                 f.save(comp)
+                store.keep_norms_copy(f, comp)  # своя редакция норм — копией в папку соревнования (п. 59)
                 store.remember_own(comp, GROUP_SUGGESTIONS)  # неофициальные: свои значения — в подсказки
                 return redirect(f"{base_url(f)}/card?done=saved")
             except PermissionError:

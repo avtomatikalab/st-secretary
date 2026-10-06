@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Разрядные нормы — СТ-Секретарь{% endblock %}
+{% block content %}
+{% if comp_folder %}<a class="back" href="{{ base }}/card">{{ icon("back", 18) }}Карточка соревнования</a>
+{% else %}<a class="back" href="/">{{ icon("back", 18) }}Все соревнования</a>{% endif %}
+<h1>Разрядные нормы</h1>
+<p class="lead">Таблица — так, как её читает программа: по ней считаются выполненные разряды. Рядом — документ, откуда она
+  взята: копия в программе открывается и без интернета.</p>
+
+<nav class="ed-chips" aria-label="Редакции норм">
+  {% for x in names %}<a class="ed-chip{% if x == edition %} is-active{% endif %}" href="{{ norms_url(x, cid) }}">{{ x }}</a>{% endfor %}
+</nav>
+
+<section class="panel">
+  <h2>{{ n.title }}</h2>
+  {% if n.source_note %}<p class="muted">{{ n.source_note }}</p>{% endif %}
+  {% if n.own %}<p class="muted">Своя редакция — хранится на этом компьютере (папка «Свои нормы» рядом с личными данными
+    судей); соревнование, где она выбрана, увозит её копию с собой в резервной копии.
+    {% if used %}Выбрана в: {% for f in used %}<a href="/c/{{ f.id|urlencode }}/card">{{ f.id }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}</p>{% endif %}
+  <div class="actions">
+    {% if n.source_doc %}<a class="btn" href="/norms/doc/{{ n.source_doc|urlencode }}"{% if n.source_doc.endswith(".pdf") %} target="_blank" rel="noopener"{% endif %}>{{ icon("file", 18) }}Документ ФСТР — копия в программе</a>{% endif %}
+    {% if n.source_url %}<a class="btn btn-ghost" href="{{ n.source_url }}" target="_blank" rel="noopener">{{ icon("arrow", 18) }}На сайте ФСТР</a>
+    {% elif not n.own %}<span class="muted">На сайте ФСТР этой редакции нет.</span>{% endif %}
+  </div>
+
+  <h3>Нормы: результат в % от результата победителя (не более)</h3>
+  <p class="muted">Строка — квалификационный ранг соревнований; пусто — разряд в этой строке не присваивается.
+    Столбцы классов: ✓ — строка относится к классу дистанции; ранг ниже первой строки класса — нормы не выполняются.</p>
+  <div class="table-wrap">
+  <table class="tbl norms-tbl">
+    <thead><tr><th>Ранг</th>{% for q in quals %}<th class="num">{{ q }}</th>{% endfor %}{% for c in classes %}<th class="num">{{ c }} кл</th>{% endfor %}</tr></thead>
+    <tbody>{% for r in rows %}<tr>
+      <td>{{ r.label }}</td>
+      {% for v in r.cells %}<td class="num">{{ v if v is not none else "" }}</td>{% endfor %}
+      {% for c in classes %}<td class="num">{{ "✓" if c in r.classes else "" }}</td>{% endfor %}
+    </tr>{% endfor %}</tbody>
+  </table>
+  </div>
+
+  <h3>Условия</h3>
+  <dl class="facts facts-wide">
+    <dt>Выполняются с</dt><dd>I — с {{ d.min_age.I }} лет, II — с {{ d.min_age.II }}, III — с {{ d.min_age.III }}, юношеские — с {{ d.min_age.junior }}</dd>
+    <dt>Статус соревнований</dt><dd>I — {{ status.get(d.status.I, d.status.I) }}; II — {{ status.get(d.status.II, d.status.II) }};
+      III — {{ status.get(d.status.III, d.status.III) }}; юношеские — {{ status.get(d.status.junior, d.status.junior) }}</dd>
+    <dt>Северная ходьба</dt><dd>I разряд {{ "присваивается" if n.nordic_i_allowed else "не присваивается" }}; разряды — с {{ n.nordic_min_age }} лет</dd>
+    {% if n.junior_iii_text %}<dt>III юношеский</dt><dd>{{ n.junior_iii_text }}</dd>{% endif %}
+    <dt>Баллы ранга</dt><dd>МС — {{ d.rank_points.MS }}, КМС — {{ d.rank_points.KMS }}, I — {{ d.rank_points.I }}, II — {{ d.rank_points.II }},
+      III — {{ d.rank_points.III }}, Iю — {{ d.rank_points.Y1 }}, IIю — {{ d.rank_points.Y2 }}, IIIю — {{ d.rank_points.Y3 }};
+      участников не меньше {{ n.rank_min_participants }}, за места с 1 по {{ n.rank_max_place }}</dd>
+    {% if d.valid_from %}<dt>Действует</dt><dd>с {{ d.valid_from }} по {{ d.valid_to }}</dd>{% endif %}
+  </dl>
+</section>
+
+<section class="panel" id="own">
+  <h2>Своя редакция</h2>
+  <p>Если в Положении нормы другие или вышла новая редакция, а программа ещё не обновилась, — сделайте свою:</p>
+  <ol class="steps-list">
+    <li><a class="btn btn-small" href="/norms/xlsx?e={{ edition|urlencode }}">{{ icon("download", 16) }}Скачать копию «{{ edition }}» в Excel</a></li>
+    <li>Поправьте жёлтые ячейки: название своей редакции, проценты, классы, условия на втором листе.</li>
+    <li>Сохраните и загрузите — программа проверит таблицу; в карточке соревнования появится «своя: …».</li>
+  </ol>
+  {% if errors %}
+  <div class="flash flash-err" role="alert">{{ icon("alert") }}<div><b>Своя редакция не загружена — поправьте в Excel:</b>
+    <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div>
+  {% endif %}
+  <form method="post" action="/norms/upload" enctype="multipart/form-data" class="fest-add">
+    <input type="hidden" name="e" value="{{ edition }}"><input type="hidden" name="c" value="{{ cid }}">
+    <label for="f-norms">Своя редакция (Excel)</label>
+    <input id="f-norms" type="file" name="file" accept=".xlsx" required>
+    <button class="btn btn-primary" type="submit">{{ icon("upload", 18) }}Загрузить</button>
+  </form>
+  {% if n.own %}
+  <form method="post" action="/norms/delete" data-confirm="Удалить свою редакцию «{{ edition }}» с этого компьютера?{% if used %} Она выбрана в соревнованиях: {{ used|length }} — там карточка покажет ошибку, пока не выберете другую.{% endif %}">
+    <input type="hidden" name="e" value="{{ edition }}"><input type="hidden" name="c" value="{{ cid }}">
+    <button class="btn btn-ghost btn-small" type="submit">Удалить эту свою редакцию</button></form>
+  {% endif %}
+</section>
+{% endblock %}

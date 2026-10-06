@@ -14,7 +14,7 @@ from st_secretary.issues import ERROR, INFO, WARNING, Issue
 from st_secretary.norms import PercentMethod
 from st_secretary.qualification import Qual
 from st_secretary.rank import GROUP, INDIVIDUAL, PAIR
-from st_secretary.reference import Level, discipline_by_code, norm_edition, norm_editions
+from st_secretary.reference import OWN_PREFIX, Level, all_norm_editions, discipline_by_code, norm_edition
 
 KINDS = ("Чемпионат", "Первенство", "Кубок", "Другие соревнования", "Физкультурное мероприятие")
 
@@ -220,8 +220,10 @@ class Competition:
             err("дата окончания раньше даты начала", "Даты", "f-date_to")
         if self.preapp_deadline and self.preapp_deadline > self.date_from:
             warn("приём предзаявок заканчивается позже начала соревнований", "Приём предзаявок до", "f-preapp_deadline")
-        if self.norms_edition not in norm_editions():
-            err(f"нет редакции норм «{self.norms_edition}»", "Редакция норм", "f-norms_edition")
+        if self.norms_edition not in all_norm_editions():
+            err(f"своей редакции норм «{self.norms_edition.removeprefix(OWN_PREFIX)}» нет на этом компьютере — "
+                "загрузите её на странице «Разрядные нормы»" if self.norms_edition.startswith(OWN_PREFIX)
+                else f"нет редакции норм «{self.norms_edition}»", "Редакция норм", "f-norms_edition")
         else:
             n = norm_edition(self.norms_edition)
             span = n.edition.split("-")

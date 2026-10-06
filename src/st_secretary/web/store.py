@@ -20,6 +20,7 @@
         Договоры_и_табель.json       ← бригада, дни, ставки, заказчик (без паспортов)
         Шаблон договора.docx         ← свой шаблон договора и акта, если есть (иначе — встроенный)
         Именная заявка — бланк соревнования.docx ← свой бланк именной заявки, если есть (п. 36)
+        Своя редакция норм.json      ← своя редакция разрядных норм, если выбрана, — едет с копией (п. 59)
     Рядом с «данными»: «Журнал» (журнал программы), «Резервные копии», «Правки и ошибки» (кнопка «Сообщить»).
 
 Папку можно открыть в Проводнике, скопировать на флешку, передать коллеге. Персональные данные
@@ -33,6 +34,7 @@
       Свои формы заявок.json, Формы заявок — образцы/ ← свои формы предзаявок (п. 37)
       Документы комиссии.json                 ← свои документы комиссии и последний набор (п. 30)
       Свои значения (неофициальные).json      ← свои группы, дисциплины, названия зачётов (решение 038)
+      Свои нормы/                             ← свои редакции разрядных норм (п. 59, решение 048)
       <папка соревнования>/
         <заявка команды>/                     ← сканы и фото документов команды
         Договоры и табель/                    ← договоры с актами, табель-наряд
@@ -55,6 +57,7 @@ from st_secretary.exporters.preapp_xlsx import write_preapp_report
 from st_secretary.importers.card_xlsx import load_card, write_card
 from st_secretary.importers.preapp_xlsx import read_preapplication, write_preapplication
 from st_secretary.preapp import PreappResult, process
+from st_secretary.reference import OWN_PREFIX, edition_from_dict, norm_edition, own_norm_files
 from st_secretary.textclean import alpha_key, name_key
 from st_secretary.web.review import HAND, STATUSES, Review, apply_marks
 
@@ -82,6 +85,10 @@ FESTIVALS = "Фестивали.json"
 # Свои формы предзаявок (Правки, п. 37) — на этом компьютере, рядом с личными данными судей
 FORMS = "Свои формы заявок.json"
 NAMED_TEMPLATE = "Именная заявка — бланк соревнования.docx"  # свой бланк именной заявки (Word) соревнования, п. 36
+# Свои редакции разрядных норм (Правки, п. 59) — на этом компьютере; выбранная в карточке — копией в папке
+# соревнования, чтобы ехала с резервной копией и на другом компьютере ставилась сама (adopt_own_norms)
+OWN_NORMS = "Свои нормы"
+OWN_NORMS_COPY = "Своя редакция норм.json"
 DOC_SET = "Документы комиссии.json"  # свои документы комиссии и последний набор — на этом компьютере (Правки, п. 30)
 DELEGATION_SOURCES = "Заявки делегаций (исходные)"
 CONTRACTS_DIR = "Договоры и табель"
@@ -841,6 +848,59 @@ class Store:
     def _save_own(self, data: dict) -> None:
         self.docs_root.mkdir(parents=True, exist_ok=True)
         save_json(self.own_values_path, data)
+
+    # --- свои редакции разрядных норм (Правки, п. 59, решение 048)
+
+    @property
+    def own_norms_dir(self) -> Path:
+        return self.docs_root / OWN_NORMS
+
+    def save_own_norms(self, d: dict) -> Path:
+        """Своя редакция (словарь из importers/norms_xlsx) — на этот компьютер; та же редакция — заменяется, и её
+        копии в папках соревнований тоже."""
+        path = own_norm_files().get(d["name"])
+        if path is None:
+            stem = re.sub(r"[^\w\- .]+", "_", d["name"].removeprefix(OWN_PREFIX)).strip(" .") or "редакция"
+            path, n = self.own_norms_dir / f"{stem}.json", 2
+            while path.exists():
+                path, n = self.own_norms_dir / f"{stem} ({n}).json", n + 1
+        save_json(path, d)
+        norm_edition.cache_clear()
+        for f in self.all():
+            if load_json(f.path / OWN_NORMS_COPY).get("name") == d["name"]:
+                save_json(f.path / OWN_NORMS_COPY, d)
+        return path
+
+    def delete_own_norms(self, name: str) -> None:
+        path = own_norm_files().get(name)
+        if path is not None:
+            path.unlink(missing_ok=True)
+            norm_edition.cache_clear()
+
+    def keep_norms_copy(self, f: CompFolder, comp: Competition) -> None:
+        """Карточку сохранили: своя редакция норм — копией в папку соревнования (едет с резервной копией)."""
+        copy = f.path / OWN_NORMS_COPY
+        own = own_norm_files().get(comp.norms_edition)
+        if own is not None:
+            save_json(copy, load_json(own))
+        elif copy.exists():
+            copy.unlink()
+
+    def adopt_own_norms(self) -> list[str]:
+        """Соревнование приехало копией со своей редакцией норм, которой на этом компьютере нет, — поставить её."""
+        have, added = own_norm_files(), []
+        for f in self.all():
+            d = load_json(f.path / OWN_NORMS_COPY)
+            name = d.get("name")
+            if isinstance(name, str) and name.startswith(OWN_PREFIX) and name not in have:
+                try:
+                    edition_from_dict(d, name, own=True)
+                except (KeyError, ValueError, TypeError):
+                    continue
+                self.save_own_norms(d)
+                have[name] = self.own_norms_dir
+                added.append(name)
+        return added
 
     def remember_own(self, comp: Competition, known_groups=()) -> None:
         """Карточку неофициальных соревнований сохранили — запомнить свои группы, названия зачётов, дисциплины."""

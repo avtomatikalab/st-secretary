@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException
 
-from st_secretary import __version__, system, updates, version_label
+from st_secretary import __version__, reference, system, updates, version_label
 from st_secretary.competition import LEVEL_LABELS, RESULT_KINDS, UNIT_KINDS
 from st_secretary.importers.card_xlsx import CardError
 from st_secretary.importers.preapp_xlsx import row_place
@@ -48,6 +48,7 @@ from st_secretary.web.pages import (
     feedback,
     forms,
     home,
+    norms,
     preapps,
     results,
     start,
@@ -65,6 +66,8 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     docs_dir — где хранить сканы документов участников (по умолчанию — папка в профиле, не в облаке).
     board_host — где слушает табло (все адреса ноутбука; в тестах — только 127.0.0.1)."""
     store = Store(data_dir, docs_dir)
+    reference.use_own_norms(store.own_norms_dir)  # свои редакции разрядных норм (п. 59)
+    store.adopt_own_norms()  # приехали с копией соревнования — поставить
     app = FastAPI(title="СТ-Секретарь", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.shutdown = shutdown
     app.state.store = store
@@ -129,7 +132,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
               board_host=board_host)
     # страницы по шагам работы (pages/); общие помощники страниц — в cx, их берут и другие страницы
     for module in (home, competition, preapps, forms, admission, awards, contracts, results, start, board, verify,
-                   examples,
+                   examples, norms,
                    update_pages, feedback):
         module.register(app, cx)
 

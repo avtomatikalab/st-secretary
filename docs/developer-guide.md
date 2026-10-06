@@ -289,11 +289,15 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 ### Справочники — `reference/`
 
 `reference/__init__.py` загружает файлы из `reference/data/`; у каждого файла в начале указан первоисточник.
+Копии документов, из которых взяты нормы, — в `reference/docs/` (открываются со страницы «Разрядные нормы» без
+интернета; в `.gitignore` для них исключение). Свои редакции норм секретаря (п. 59, решение 048) — JSON того же
+устройства, что TOML, в папке «Свои нормы» на этом компьютере: `use_own_norms` (задаёт `web/app.py`),
+`all_norm_editions`, `norm_edition("своя: …")`.
 
 | Файл | Что внутри |
 |---|---|
 | `vrvs.toml` | дисциплины ВРВС: код, название, формат ранга (`individual`, `pair`, `group`, `crew`) |
-| `norms/2022-2025.toml`, `norms/2026-2029.toml` | разрядные нормы: баллы ранга за разряды, таблицы процентов по классам |
+| `norms/2022-2025.toml`, `norms/2026-2029.toml` | разрядные нормы: баллы ранга за разряды, таблицы процентов по классам; `[source]` — документ ФСТР (копия в `reference/docs/`, адрес на сайте) |
 | `admission.toml` | возраст, возрастные группы, минимальный разряд по классам — по профилям дисциплин |
 | `penalties/pedestrian.toml`, `penalties/speleo.toml` | таблицы штрафов из Правил |
 | `judge_points_1101.json` | баллы судейской практики (приказ № 1101); делается `tools/import_1101.py` |
@@ -303,6 +307,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | Файл | Что делает |
 |---|---|
 | `importers/card_xlsx.py` | шаблон карточки с выпадающими списками; чтение карточки (строки ищутся по тексту) |
+| `importers/norms_xlsx.py` | своя редакция разрядных норм: копия редакции в Excel (`write_norms`) и чтение с проверкой (`read_norms`) |
 | `importers/preapp_xlsx.py` | бланк предзаявки: чтение всех листов (`RawApplication`), запись в раскладку бланка |
 | `importers/sekretar_xls.py` | книги СЕКРЕТАРЬ_ST: протокол группы, итоговый протокол |
 | `importers/si_reader.py` | файл SPORTident Reader: чипы, станции, отсечки |
@@ -352,6 +357,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `updates.py` | `/update…` | `update.html`, `_update_banner.html` |
 | `feedback.py` | `/feedback…` — «Сообщить» (приём с панели), «Мои сообщения», отправка, загрузка чужого файла | `feedback.html` |
 | `examples.py` | учебный режим: `/example/card`, `/c/{cid}/example/preapp`, `…/example/person` (JSON для «Заполнить примером»), `/c/{cid}/docs/stubs` (заглушки) | — (кнопки — в формах, галочка — в `base.html`) |
+| `norms.py` | `/norms` — разрядные нормы: таблица редакции, документ ФСТР (`/norms/doc/…`), своя редакция (`/norms/xlsx`, `/norms/upload`, `/norms/delete`) | `norms.html` |
 
 Общие шаблоны (`web/app.py`): `base.html` — каркас с меню и кнопкой «Сообщить», `error.html` — «Что-то пошло не так»
 и «не найдено», `cannot_open.html` — файл не открылся; части для многих страниц: `_form.html` (поля форм, списки

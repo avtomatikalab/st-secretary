@@ -23,7 +23,7 @@ from st_secretary.competition import (
 )
 from st_secretary.norms import PercentMethod
 from st_secretary.qualification import Qual, parse_qual
-from st_secretary.reference import Level, disciplines, norm_editions
+from st_secretary.reference import Level, all_norm_editions, disciplines, norm_editions
 from st_secretary.textclean import clean_spaces
 
 MAIN_FIELDS = ["title", "kind", "level", "date_from", "date_to", "place", "host_territory", "organizers",
@@ -46,7 +46,7 @@ def choices() -> dict:
     return {
         "kinds": [(k, k) for k in KINDS],
         "levels": [(lv.name, label) for lv, label in LEVEL_LABELS.items()],
-        "norms": [(n, n) for n in norm_editions()],
+        "norms": [(n, n) for n in all_norm_editions()],
         "percent": [("" if m is None else m.name, label) for m, label in PERCENT_LABELS.items()],
         "disciplines": [(d.code, d.name) for d in disciplines() if d.group != "маршрут"],
         "categories": [(c, c) for c in JUDGE_CATEGORIES],
@@ -169,7 +169,7 @@ def form_to_card(form: dict) -> tuple[Competition | None, dict[str, str]]:
             dates[k] = None
     if dates["date_from"] and dates["date_to"] and dates["date_to"] < dates["date_from"]:
         err["date_to"] = "дата окончания раньше даты начала"
-    if m["norms_edition"] and m["norms_edition"] not in norm_editions():
+    if m["norms_edition"] and m["norms_edition"] not in all_norm_editions():
         err["norms_edition"] = "выберите из списка"
     percent = None
     if m["percent_method"]:

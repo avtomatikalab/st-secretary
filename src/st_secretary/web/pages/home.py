@@ -164,10 +164,12 @@ def register(app, cx) -> None:
             if bk.is_festival(data):  # копия фестиваля — все его соревнования и сам фестиваль
                 rec, names = bk.restore_festival(data, store.root, app.state.clock())
                 fid = store.set_festival(None, rec["title"], names, data=rec)
+                store.adopt_own_norms()  # своя редакция норм приехала с копией — поставить (п. 59)
                 return redirect(f"/festival/{quote(fid, safe='')}?done=restored")
             name = bk.restore(data, store.root, app.state.clock())
         except bk.BackupError as e:
             return redirect(with_done("/", "restore_bad", why=str(e)))
+        store.adopt_own_norms()
         return redirect(f"/c/{quote(name, safe='')}?done=restored")
 
     # ------------------------------------------------------------ фестиваль (решение 039, неспорная часть)

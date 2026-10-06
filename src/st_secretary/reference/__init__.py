@@ -7,12 +7,14 @@
 
 from __future__ import annotations
 
+import json
 import tomllib
 from dataclasses import dataclass
 from enum import IntEnum
 from fractions import Fraction
 from functools import cache
 from importlib.resources import files
+from pathlib import Path
 
 from st_secretary.qualification import Qual
 
@@ -113,7 +115,7 @@ class NormRow:
 
 @dataclass(frozen=True)
 class NormEdition:
-    edition: str
+    edition: str  # годы действия: «2026-2029» (у своей редакции — годы редакции, на которой она основана)
     title: str
     rows: tuple[NormRow, ...]
     class_rows: dict[int, tuple[Fraction, Fraction]]  # класс → (min первой строки, min последней)
@@ -125,22 +127,73 @@ class NormEdition:
     rank_points: dict[Qual, Fraction]  # баллы ранга для личных дисциплин
     rank_min_participants: int
     rank_max_place: int
+    name: str = ""  # как редакция записана в карточке: «2026-2029» или «своя: …»
+    source_doc: str = ""  # копия документа в программе (reference/docs) — открывается без интернета
+    source_url: str = ""  # документ на сайте ФСТР
+    source_note: str = ""  # откуда взята и чем подтверждена
+    own: bool = False  # своя редакция секретаря (Правки, п. 59)
+
+
+# Свои редакции норм (Правки, п. 59): секретарь правит копию в Excel и загружает — хранятся на этом компьютере
+# (папку задаёт программа: use_own_norms), в карточке — «своя: <название>».
+OWN_PREFIX = "своя: "
+_OWN: dict[str, Path | None] = {"dir": None}
+DOCS = files("st_secretary.reference") / "docs"  # копии документов ФСТР — без интернета
+
+
+def use_own_norms(folder: str | Path | None) -> None:
+    """Где лежат свои редакции норм (папка на этом компьютере); None — только встроенные."""
+    _OWN["dir"] = Path(folder) if folder else None
+    norm_edition.cache_clear()
+
+
+def own_norms_dir() -> Path | None:
+    return _OWN["dir"]
+
+
+def own_norm_files() -> dict[str, Path]:
+    """Свои редакции: имя («своя: …») → файл."""
+    folder = _OWN["dir"]
+    if folder is None or not folder.is_dir():
+        return {}
+    out = {}
+    for p in sorted(folder.glob("*.json")):
+        try:
+            name = json.loads(p.read_text(encoding="utf-8"))["name"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if isinstance(name, str) and name.startswith(OWN_PREFIX):
+            out[name] = p
+    return out
 
 
 def norm_editions() -> tuple[str, ...]:
+    """Встроенные редакции (справочник программы)."""
     return tuple(sorted(p.name.removesuffix(".toml") for p in (_DATA / "norms").iterdir()
                         if p.name.endswith(".toml")))
 
 
+def all_norm_editions() -> tuple[str, ...]:
+    """Встроенные и свои редакции на этом компьютере — для выбора в карточке."""
+    return norm_editions() + tuple(own_norm_files())
+
+
 @cache
 def norm_edition(edition: str) -> NormEdition:
-    """Редакция разрядных норм из справочника: баллы ранга и таблицы процентов по классам и рангам."""
-    if edition not in norm_editions():
-        raise KeyError(f"Нет редакции норм {edition!r}; есть: {', '.join(norm_editions())}")
-    d = _load(f"norms/{edition}.toml")
+    """Редакция разрядных норм из справочника (или своя): баллы ранга и таблицы процентов по классам и рангам."""
+    if edition in norm_editions():
+        return edition_from_dict(_load(f"norms/{edition}.toml"), edition)
+    own = own_norm_files().get(edition)
+    if own is None:
+        raise KeyError(f"Нет редакции норм {edition!r}; есть: {', '.join(all_norm_editions())}")
+    return edition_from_dict(json.loads(own.read_text(encoding="utf-8")), edition, own=True)
+
+
+def edition_from_dict(d: dict, name: str = "", own: bool = False) -> NormEdition:
+    """Редакция из словаря справочника (TOML встроенной или JSON своей — одинакового устройства)."""
     rows = tuple(
         NormRow(
-            min_rank=Fraction(r["min"]),
+            min_rank=Fraction(str(r["min"])),
             label=r["label"],
             thresholds={q: int(r[k]) for k, q in _THRESHOLD_KEYS.items() if k in r},
             y3_condition=bool(r.get("Y3_condition", False)),
@@ -149,7 +202,7 @@ def norm_edition(edition: str) -> NormEdition:
     )
     mins = [r.min_rank for r in rows]
     if mins != sorted(mins) or len(set(mins)) != len(mins):
-        raise ValueError(f"Нормы {edition}: строки должны идти по возрастанию ранга без повторов")
+        raise ValueError(f"Нормы {name or d['edition']}: строки должны идти по возрастанию ранга без повторов")
     nw = d["nordic_walking"]
     status = d["status"]
     min_level = {Qual.I: _LEVEL_BY_NAME[status["I"]], Qual.II: _LEVEL_BY_NAME[status["II"]],
@@ -157,11 +210,12 @@ def norm_edition(edition: str) -> NormEdition:
     for q in (Qual.Y1, Qual.Y2, Qual.Y3):
         min_level[q] = _LEVEL_BY_NAME[status["junior"]]
     rp = d["rank_points"]
+    src = d.get("source", {})
     return NormEdition(
         edition=d["edition"],
         title=d["title"],
         rows=rows,
-        class_rows={int(k): (Fraction(v[0]), Fraction(v[1])) for k, v in d["class_rows"].items()},
+        class_rows={int(k): (Fraction(str(v[0])), Fraction(str(v[1]))) for k, v in d["class_rows"].items()},
         min_age=dict(d["min_age"]),
         min_level=min_level,
         nordic_i_allowed=bool(nw["I_allowed"]),
@@ -170,7 +224,19 @@ def norm_edition(edition: str) -> NormEdition:
         rank_points={q: Fraction(str(rp[k])) for k, q in _POINT_KEYS.items()} | {Qual.BR: Fraction(0)},
         rank_min_participants=int(rp["min_participants"]),
         rank_max_place=int(rp["max_place"]),
+        name=name or d["edition"],
+        source_doc=str(src.get("doc", "")),
+        source_url=str(src.get("url", "")),
+        source_note=str(src.get("note", "")),
+        own=own,
     )
+
+
+def edition_dict(edition: str) -> dict:
+    """Редакция как словарь справочника — основа своей копии (Правки, п. 59)."""
+    if edition in norm_editions():
+        return _load(f"norms/{edition}.toml")
+    return json.loads(own_norm_files()[edition].read_text(encoding="utf-8"))
 
 
 # --------------------------------------------------------------------------- Баллы практики судейства
@@ -180,8 +246,6 @@ def norm_edition(edition: str) -> NormEdition:
 def judge_points() -> dict:
     """Квалификационные требования к спортивным судьям (приказ № 1101): баллы по должностям и статусам
     соревнований, условия присвоения и подтверждения (tools/import_1101.py)."""
-    import json
-
     return json.loads((_DATA / "judge_points_1101.json").read_text(encoding="utf-8"))
 
 

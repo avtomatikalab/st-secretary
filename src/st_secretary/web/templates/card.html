@@ -82,6 +82,8 @@
       <p class="learn-only"><button type="button" class="btn btn-small btn-example" data-example="/example/card" data-example-confirm>{{ icon("edit", 16) }}Заполнить примером</button>
         <span class="hint">учебная карточка с выдуманными данными — заменит то, что в форме; сохранится, только если нажмёте «Сохранить»</span></p>
       {{ main_fields(form.main, errors, ch) }}
+      <p class="hint">Редакция норм: <a href="/norms?e={{ form.main.norms_edition|urlencode }}&amp;c={{ folder.id|urlencode }}">посмотреть таблицу и документ ФСТР</a>
+        · <a href="/norms?e={{ form.main.norms_edition|urlencode }}&amp;c={{ folder.id|urlencode }}#own">сделать свою редакцию</a></p>
       <label class="check card-unof"><input type="checkbox" name="unofficial" value="1"{% if form.main.unofficial %} checked{% endif %} data-unofficial>
         <span><b>Неофициальные соревнования</b> — клубные, учебные, слёт: зачёты со своими названиями, класс «без класса»,
         своя дисциплина; квалификационный ранг, % от победителя и разряды не считаются, допуск по Правилам (класс,

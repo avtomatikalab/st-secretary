@@ -45,7 +45,8 @@
       <dt>Территория организаторов</dt><dd>{{ comp.host_territory }}</dd>
       <dt>Проводящие организации</dt><dd>{% for o in comp.organizers %}{{ o }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</dd>
       <dt>Номер в календарном плане</dt><dd>{{ comp.calendar_number or "—" }}</dd>
-      <dt>Редакция разрядных норм</dt><dd>{{ comp.norms_edition }}</dd>
+      <dt>Редакция разрядных норм</dt><dd><a href="/norms?e={{ comp.norms_edition|urlencode }}&amp;c={{ folder.id|urlencode }}">{{ comp.norms_edition }}</a>
+        <span class="muted">— таблица и документ ФСТР</span></dd>
       <dt>Методика «% от победителя»</dt><dd>{{ percent_labels.get(comp.percent_method.name if comp.percent_method else "", "—") }}</dd>
       <dt>Один человек — только в одном классе</dt><dd>{% if comp.one_class %}да <span class="muted">(нельзя сразу во 2 и 3 кл. — проверка заявок покажет ошибку)</span>{% else %}нет <span class="muted">(можно в нескольких классах)</span>{% endif %}</dd>
     </dl>

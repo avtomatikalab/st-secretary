@@ -26,7 +26,7 @@ from st_secretary.competition import (
 )
 from st_secretary.issues import ERROR, Issue
 from st_secretary.qualification import parse_qual
-from st_secretary.reference import discipline_by_name, disciplines, norm_editions
+from st_secretary.reference import all_norm_editions, discipline_by_name, disciplines
 from st_secretary.textclean import clean_spaces
 
 INPUT_FILL = PatternFill("solid", fgColor="FFF2CC")  # жёлтые ячейки — для ввода, как в СЕКРЕТАРЬ_ST
@@ -89,7 +89,7 @@ def _list_sheet(wb: Workbook) -> dict[str, str]:
     lists = {
         "kind": list(KINDS),
         "level": list(LEVEL_LABELS.values()),
-        "norms": list(norm_editions()),
+        "norms": list(all_norm_editions()),
         "percent": list(PERCENT_LABELS.values()),
         "disc": [d.name for d in disciplines() if d.group != "маршрут"],
         "cat": list(JUDGE_CATEGORIES),
