@@ -36,7 +36,8 @@ REQUIRED = {"title": "Наименование", "kind": "Вид", "level": "У�
 OFFICIAL_FIELDS = ["role", "fio", "category", "territory", "own"]  # own — «своя» у соревнования фестиваля
 ZACHET_FIELDS = ["group", "distance_class", "discipline_code", "age_from", "age_to", "age_from_by_gsk",
                  "min_qual", "team_size", "min_men", "min_women", "fee", "fee_per",
-                 "name", "zid", "discipline_text", "result", "unit"]  # последние — неофициальные (решение 038)
+                 "name", "zid", "discipline_text", "result", "unit",  # неофициальные (решение 038)
+                 "description"]  # описание зачёта (Правки, п. 65)
 QUAL_LABELS = [q.label for q in Qual]
 FEE_PER = ("команду", "участника")
 GROUP_SUGGESTIONS = ("М/Ж", "МУЖЧИНЫ", "ЖЕНЩИНЫ", "ЮНИОРЫ", "ЮНИОРКИ", "ЮНОШИ", "ДЕВУШКИ", "МАЛЬЧИКИ",
@@ -97,6 +98,7 @@ def card_to_form(comp: Competition | None) -> dict:
         "min_qual": z.min_qual.label, "team_size": _s(z.team_size), "min_men": _s(z.min_men or ""),
         "min_women": _s(z.min_women or ""), "fee": _s(z.fee), "fee_per": z.fee_per,
         "name": z.name, "zid": z.key, "discipline_text": z.discipline_text, "result": z.result, "unit": z.unit,
+        "description": z.description,
     } for z in comp.zachety] or [empty_zachet()]
     return {"main": main, "officials": officials, "zachety": zachety}
 
@@ -225,7 +227,7 @@ def form_to_card(form: dict) -> tuple[Competition | None, dict[str, str]]:
                                   team_size=nums["team_size"], min_men=nums["min_men"] or 0,
                                   min_women=nums["min_women"] or 0, fee=fee, fee_per=row["fee_per"] or "команду",
                                   name=name, zid=zid, discipline_text=own, result=row["result"] if own else "",
-                                  unit=row["unit"] if own else ""))
+                                  unit=row["unit"] if own else "", description=row["description"].strip()[:2000]))
     if err:
         return None, err
     organizers = [clean_spaces(x) for x in m["organizers"].replace(";", "\n").split("\n") if clean_spaces(x)]

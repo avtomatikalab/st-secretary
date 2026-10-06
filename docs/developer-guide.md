@@ -349,7 +349,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `forms.py` | `/c/{cid}/forms…` — свои формы предзаявок, свой бланк именной заявки | `forms.html`, `form_edit.html` |
 | `admission.py` | `/c/{cid}/admission…`, **а также** `/equipment…` (снаряжение) и `/docs…` (сканы) | `admission.html`, `admission_check.html`, `equipment.html`, `_admission_team.html`, `_admission_tiles.html`, `_equipment_team.html`, `_equipment_tiles.html`, `_docs.html` |
 | `start.py` | `/c/{cid}/start…`, `/c/{cid}/schedule` (расписание стартов) | `start.html`, `schedule.html` |
-| `results.py` | `/c/{cid}/results…` — этапы, баллы, SI, протесты, протоколы | `results.html`, `_results_table.html` |
+| `results.py` | `/c/{cid}/results…` — этапы (с описанием), баллы, SI, протесты, протоколы; схема дистанции зачёта (`/results/scheme`, `/c/{cid}/scheme/{файл}`, п. 65) | `results.html`, `_results_table.html` |
 | `board.py` | `/c/{cid}/judges…` (телефоны судей), `/penalties…`, `/c/{cid}/board…` (табло) | `judges.html`, `judges_print.html`, `penalties_print.html`, `board_admin.html`, `judge.html`, `board.html` |
 | `awards.py` | `/c/{cid}/awards…` | `awards.html` |
 | `contracts.py` | `/c/{cid}/contracts…` | `contracts.html`, `contracts_person.html`, `_contracts_tabel.html`, `_contracts_tiles.html` |
@@ -363,7 +363,8 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 и «не найдено», `cannot_open.html` — файл не открылся; части для многих страниц: `_form.html` (поля форм, списки
 замечаний), `_icons.html` (значки).
 
-Сервер табло (`web/board.py`): `/` и `/c/{cid}` — табло, `/j/{код}` и `/j/{код}/sync` — страница судьи.
+Сервер табло (`web/board.py`): `/` и `/c/{cid}` — табло, `/j/{код}` и `/j/{код}/sync` — страница судьи,
+`/j/{код}/scheme/{файл}` — схема дистанции зачёта (п. 65; `scheme_response`: SVG — с `Content-Security-Policy: sandbox`).
 
 ### Остальное
 

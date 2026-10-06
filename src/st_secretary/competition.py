@@ -116,6 +116,7 @@ class Zachet:
     discipline_text: str = ""  # своя дисциплина (нет в ВРВС)
     result: str = ""  # своя дисциплина: points, time, time_points (RESULT_KINDS)
     unit: str = ""  # своя дисциплина: person, pair, team (UNIT_KINDS)
+    description: str = ""  # описание зачёта (Правки, п. 65): видят секретарь и судьи этапов
 
     @property
     def base_key(self) -> str:

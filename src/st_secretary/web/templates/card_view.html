@@ -75,7 +75,7 @@
     {% if comp.zachety %}
     <div class="table-wrap">
     <table class="tbl">
-      <thead><tr><th>Зачёт</th><th>Дисциплина</th><th>Возраст</th><th>Разряд не ниже</th><th>Состав команды</th><th>Взнос</th></tr></thead>
+      <thead><tr><th>Зачёт</th><th>Дисциплина</th><th>Возраст</th><th>Разряд не ниже</th><th>Состав команды</th><th>Взнос</th><th>Этапы и схема</th></tr></thead>
       <tbody>
       {% for z in comp.zachety %}
         <tr>
@@ -86,7 +86,14 @@
           <td>{{ z.min_qual.label }}</td>
           <td>{% if z.team_size %}{{ z.team_size }} чел.{% else %}—{% endif %}{% if z.min_men or z.min_women %}<br><span class="muted">мужчин от {{ z.min_men }}, женщин от {{ z.min_women }}</span>{% endif %}</td>
           <td>{% if z.fee %}{{ z.fee }} ₽ за {{ z.fee_per }}{% else %}—{% endif %}</td>
+          <td>{% set n = stage_counts.get(z.key, 0) %}{% set rq = "z=" ~ (z.key|urlencode) %}
+            {% if n %}Этапы: {{ n }} — <a href="{{ base }}/results?{{ rq }}#stages">изменить</a>
+            {% else %}Этапы не заданы — <a href="{{ base }}/results?{{ rq }}#stages">задать</a>{% endif %}
+            {% set sch = folder.schemes(z.key) %}
+            {% if sch %}<div class="scheme-thumbs">{% for p in sch %}<a href="{{ base }}/scheme/{{ p.name|urlencode }}?{{ rq }}" target="_blank" rel="noopener" title="Схема дистанции: {{ p.name }}">{% if p.suffix|lower == ".pdf" %}{{ icon("file", 16) }}{{ p.name }}{% else %}<img src="{{ base }}/scheme/{{ p.name|urlencode }}?{{ rq }}" alt="Схема дистанции: {{ p.name }}" loading="lazy">{% endif %}</a>{% endfor %}</div>
+            {% else %}<br><span class="muted">схемы нет — <a href="{{ base }}/results?{{ rq }}#scheme">загрузить</a></span>{% endif %}</td>
         </tr>
+        {% if z.description %}<tr class="z-desc-row"><td colspan="7" class="muted z-desc">{{ z.description }}</td></tr>{% endif %}
       {% endfor %}
       </tbody>
     </table>

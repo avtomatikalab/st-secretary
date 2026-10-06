@@ -12,6 +12,10 @@
   .card svg { width: 55mm; height: 55mm; }
   .link { font-family: Consolas, monospace; font-size: 12px; word-break: break-all; margin: 6px 0 0; }
   .how { font-size: 12px; color: #333; margin: 8px 0 0; text-align: left; }
+  .desc { white-space: pre-line; text-align: left; font-size: 12px; margin: 6px 0 0; }
+  .list-h { font-size: 16px; margin: 14mm 0 4px; }
+  .stages { border-collapse: collapse; width: 100%; } .stages th, .stages td { border: 1px solid #999; padding: 4px 6px; text-align: left; vertical-align: top; }
+  .schemes { break-before: page; } .scheme { display: block; max-width: 100%; margin: 0 0 8mm; break-inside: avoid; }
   .noprint { margin: 0 0 12px; }
   @media print { .noprint { display: none; } body { margin: 0; } }
 </style>
@@ -31,12 +35,25 @@
   <div class="card">
     <h2>{{ c.s.name }}</h2>
     <p class="tour">{{ c.s.tour }}{% if c.s.kv_minutes %} · КВ {{ c.s.kv_minutes }} мин{% endif %}</p>
+    {% if c.s.desc %}<p class="desc">{{ c.s.desc }}</p>{% endif %}
     {{ c.qr|safe }}
     <p class="link">{{ c.link }}</p>
     <p class="how">Вкладку не закрывать до конца работы этапа. Без связи записи хранятся в телефоне и уходят на ноутбук,
       когда телефон снова в Wi-Fi.</p>
   </div>
   {% endfor %}
+</div>
+{% endif %}
+{% if stages %}
+<h2 class="list-h">Этапы дистанции — зачёт {{ z.title }}</h2>
+{% if z.description %}<p class="desc">{{ z.description }}</p>{% endif %}
+<table class="stages"><thead><tr><th>Тур</th><th>Этап</th><th>КВ, мин</th><th>Описание</th></tr></thead>
+  <tbody>{% for s in stages %}<tr><td>{{ s.tour }}</td><td>{{ s.name }}</td><td>{{ s.kv_minutes or "" }}</td><td class="desc">{{ s.desc }}</td></tr>{% endfor %}</tbody></table>
+{% endif %}
+{% if schemes %}
+<div class="schemes"><h2 class="list-h">Схема дистанции — зачёт {{ z.title }}</h2>
+  {% for p in schemes %}{% if p.suffix|lower == ".pdf" %}<p>«{{ p.name }}» — PDF: <a href="{{ base }}/scheme/{{ p.name|urlencode }}?{{ zq }}" target="_blank" rel="noopener">откройте и распечатайте отдельно</a>.</p>
+  {% else %}<img class="scheme" src="{{ base }}/scheme/{{ p.name|urlencode }}?{{ zq }}" alt="Схема дистанции: {{ p.name }}">{% endif %}{% endfor %}
 </div>
 {% endif %}
 </body>

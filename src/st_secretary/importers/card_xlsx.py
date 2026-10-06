@@ -79,6 +79,7 @@ ZACHET_COLUMNS = [
     ("Своя дисциплина", "неофициальные: если нет в ВРВС (тогда «Дисциплина (ВРВС)» пусто)"),
     ("Результат", "у своей дисциплины: баллы / время / время + баллы"),
     ("Состав", "у своей дисциплины: личный / связка / команда"),
+    ("Описание", "что за зачёт, особенности дистанции — видят секретарь и судьи этапов"),
 ]
 
 GSK_COLUMNS = ["Должность", "ФИО полностью", "Категория", "Территория"]
@@ -162,8 +163,8 @@ def write_card(path: str | Path, comp: Competition | None = None) -> Path:
         z.append([zz.group, zz.distance_class, None if zz.is_custom else zz.discipline_name, zz.age_from, zz.age_to,
                   zz.age_from_by_gsk, zz.min_qual.label, zz.team_size, zz.min_men or None, zz.min_women or None,
                   zz.fee, zz.fee_per, zz.name or None, zz.zid or None, zz.discipline_text or None,
-                  RESULT_WORDS.get(zz.result), UNIT_WORDS.get(zz.unit)])
-    _style_table(z, [12, 8, 42, 11, 11, 14, 12, 12, 12, 12, 10, 12, 22, 16, 28, 14, 12], input_from_row=3, rows=20)
+                  RESULT_WORDS.get(zz.result), UNIT_WORDS.get(zz.unit), zz.description or None])
+    _style_table(z, [12, 8, 42, 11, 11, 14, 12, 12, 12, 12, 10, 12, 22, 16, 28, 14, 12, 40], input_from_row=3, rows=20)
     _dropdown(z, ranges["disc"], "C3:C30")
     _dropdown(z, ranges["qual"], "G3:G30")
     _dropdown(z, ranges["fee"], "L3:L30")
@@ -309,6 +310,7 @@ def load_card(path: str | Path) -> Competition:
                 name=clean_spaces(cell("Название зачёта")), zid=clean_spaces(cell("Код зачёта")),
                 discipline_text=own if not code else "", result=result if not code else "",
                 unit=unit if not code else "",
+                description=str(cell("Описание") or "").strip()[:2000],
             ))
         except (KeyError, ValueError) as e:
             problems.append(Issue(ERROR, f"{where}: {e}", source=src, field="Зачёты"))

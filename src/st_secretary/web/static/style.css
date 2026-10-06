@@ -536,6 +536,7 @@ a.chip { text-decoration: none; } a.chip::before { display: none; }  /* зачё
 .res-stages-psr { min-width: 912px; }
 .res-stages .c-tour { width: 100px; } .res-stages .c-name { width: auto; }
 .res-stages .c-max { width: 70px; } .res-stages .c-act { width: 46px; } .res-stages .c-rule { width: 136px; }
+.res-stages .c-desc { width: 240px; } .res-stages .st-desc { width: 100%; min-width: 200px; resize: vertical; }
 .res-stages .st-fix1, .res-stages .st-fix2 { position: sticky; z-index: 1; background: var(--surface); }
 .res-stages textarea.st-name { resize: none; overflow: hidden; min-height: 0; line-height: 1.3; }
 .res-stages .st-fix1 { left: 0; } .res-stages .st-fix2 { left: 100px; box-shadow: 6px 0 6px -6px rgba(0, 0, 0, .25); }
@@ -839,3 +840,11 @@ body.fb-picking, body.fb-picking * { cursor: crosshair !important; }
 /* «Таблица штрафов»: чем отличаются варианты — под списком (п. 63) */
 .pen-help { flex-basis: 100%; margin: 0; padding-left: 18px; }
 .pen-help li { margin: 2px 0; }
+
+/* Схема дистанции зачёта (п. 65) */
+.scheme-box { margin: 8px 0 16px; }
+.scheme-list { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 6px; }
+.scheme-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.scheme-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 0; }
+.scheme-thumbs img { max-height: 120px; max-width: 200px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.z-desc { white-space: pre-line; }

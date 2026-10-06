@@ -20,7 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException
 
@@ -54,13 +54,26 @@ def qr_svg(text: str) -> str:
     return segno.make(text, error="m").svg_inline(scale=6, dark="#1a2027", light="#ffffff")
 
 
+SCHEME_MEDIA = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+                ".gif": "image/gif", ".svg": "image/svg+xml", ".pdf": "application/pdf"}
+
+
+def scheme_response(path: Path) -> FileResponse:
+    """Файл схемы дистанции (Правки, п. 65) — открывается в браузере; SVG — без скриптов (как заглушки документов)."""
+    headers = {"Content-Security-Policy": "sandbox"} if path.suffix.lower() == ".svg" else {}
+    return FileResponse(path, media_type=SCHEME_MEDIA.get(path.suffix.lower(), "application/octet-stream"),
+                        filename=path.name, content_disposition_type="inline", headers=headers)
+
+
 def create_board_app(boards: Callable[[], list[dict]], board: Callable[[str], dict | None],
                      judge_page: Callable[[str], dict | None] | None = None,
-                     judge_sync: Callable[[str, dict], dict | None] | None = None) -> FastAPI:
+                     judge_sync: Callable[[str, dict], dict | None] | None = None,
+                     judge_scheme: Callable[[str, str], Path | None] | None = None) -> FastAPI:
     """boards() — соревнования с включённым табло: [{"id", "title", "dates"}];
     board(id) — {"title", "dates", "place", "zachety": [{"z", "run", "state", "label"}], …} или None;
     judge_page(код) — данные страницы судьи этапа или None (нет такой ссылки);
-    judge_sync(код, присланное) — принять записи с телефона, {"saved": [...], "time": "..."} или None."""
+    judge_sync(код, присланное) — принять записи с телефона, {"saved": [...], "time": "..."} или None;
+    judge_scheme(код, имя файла) — файл схемы дистанции зачёта этой ссылки или None (п. 65)."""
     app = FastAPI(title="СТ-Секретарь — табло", docs_url=None, redoc_url=None, openapi_url=None)
     templates = Jinja2Templates(directory=HERE / "templates")
 
@@ -85,6 +98,13 @@ def create_board_app(boards: Callable[[], list[dict]], board: Callable[[str], di
             return JSONResponse({"ok": False, "error": "ссылка больше не действует — попросите новую у секретаря"},
                                 status_code=404)
         return JSONResponse({"ok": True, **res})
+
+    @app.get("/j/{token}/scheme/{name}")
+    def judge_scheme_file(token: str, name: str):
+        path = judge_scheme(token, name) if judge_scheme else None
+        if path is None:
+            raise HTTPException(404)
+        return scheme_response(path)
 
     def render(request: Request, **ctx) -> HTMLResponse:
         return templates.TemplateResponse(request, "board.html", {"refresh": REFRESH_SECONDS, "prefix": "", **ctx})

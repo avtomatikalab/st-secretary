@@ -29,6 +29,7 @@ from st_secretary.web.shared import (
     protocol_state,
     run_ctx,
     save_zachet,
+    scheme_response,
     zachet_inputs,
 )
 from st_secretary.web.store import CompFolder, safe_name
@@ -112,6 +113,9 @@ def register(app, cx) -> None:
                     v = str(form.get(f"st-{i}-{k}", "")).strip()
                     if v:
                         row[k] = v
+                desc = str(form.get(f"st-{i}-desc", "")).strip()[:2000]
+                if desc:  # описание этапа (Правки, п. 65)
+                    row["desc"] = desc
                 stages.append(row)
             zdata["stages"] = stages
             if "vsh_round" in form:
@@ -164,6 +168,33 @@ def register(app, cx) -> None:
         save_zachet(run_lock, f, zz.key, update)
         done = "run_spp_bad" if bad_spp else "run_stages"
         return redirect(f"{base_url(f)}/results?{urlencode({'z': zz.key, 'done': done})}#stages")
+
+    # --- схема дистанции зачёта (Правки, п. 65): видна в карточке, в «Этапах дистанции», судье на телефоне, в печати
+
+    @app.post("/c/{cid}/results/scheme")
+    async def results_scheme(request: Request, cid: str, z: str = ""):
+        """Загрузить файлы схемы (картинки, PDF) или убрать один."""
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        form = await request.form()
+        if form.get("do") == "remove":
+            if p := f.scheme(zz.key, str(form.get("name", ""))):
+                p.unlink()
+            done = "scheme_removed"
+        else:
+            ups = [u for u in form.getlist("files") if getattr(u, "filename", "")]
+            added = [p for u in ups if (p := f.add_scheme(zz.key, u.filename, await u.read()))]
+            done = "scheme_added" if added and len(added) == len(ups) else "scheme_bad"
+        return redirect(f"{base_url(f)}/results?{urlencode({'z': zz.key, 'done': done})}#scheme")
+
+    @app.get("/c/{cid}/scheme/{name}")
+    def scheme_file(cid: str, name: str, z: str = ""):
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        path = f.scheme(zz.key, name)
+        if path is None:
+            raise HTTPException(404)
+        return scheme_response(path)
 
     @app.post("/c/{cid}/results/import")
     async def results_import(request: Request, cid: str, z: str = ""):

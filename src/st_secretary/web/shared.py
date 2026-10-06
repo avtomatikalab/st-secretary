@@ -27,6 +27,7 @@ from st_secretary import units as un
 from st_secretary.importers.card_xlsx import CardError
 from st_secretary.issues import ERROR
 from st_secretary.reference import norm_edition
+from st_secretary.web.board import scheme_response  # noqa: F401 — страницы берут отсюда
 from st_secretary.web.common import base_url, fix_url, key_of, parse_dt
 from st_secretary.web.review import DONE
 from st_secretary.web.store import IMAGE_TYPES, CompFolder, Store

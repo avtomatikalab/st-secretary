@@ -71,6 +71,7 @@ class Stage:
     time_max: Fraction | None = None  # ВШ — наибольший временной штраф
     vsh_points: Fraction = Fraction(1)
     vsh_step: int = 30
+    desc: str = ""  # описание этапа (Правки, п. 65): судье этого этапа на телефоне и в печати для судей
 
     @property
     def title(self) -> str:
@@ -102,7 +103,7 @@ def stages_of(zdata: dict) -> list[Stage]:
                          int(kv) if kv.isdigit() and int(kv) > 0 else None,
                          nv if nv is not None and nv >= 0 else None, tsh, vsh,
                          n if n is not None and n > 0 else Fraction(1),
-                         int(step) if step.isdigit() and int(step) > 0 else 30))
+                         int(step) if step.isdigit() and int(step) > 0 else 30, str(s.get("desc", "")).strip()))
     return out
 
 

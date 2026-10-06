@@ -15,6 +15,9 @@
   body { margin: 0; background: var(--bg); color: var(--text); font: 18px/1.4 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
   header { background: var(--surface); border-bottom: 1px solid var(--line); padding: 12px 14px; }
   h1 { font-size: 1.2rem; margin: 0; } .sub { color: var(--muted); font-size: .88rem; }
+  .about { margin: 8px 12px 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .about summary { font-weight: 600; cursor: pointer; }
+  .about-text { white-space: pre-line; margin: 6px 0; } .about-links { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 6px 0; }
   #status { position: sticky; top: 0; z-index: 5; padding: 10px 14px; font-weight: 600; font-size: .95rem; border-bottom: 1px solid var(--line); }
   #status.ok { background: var(--ok-bg); color: var(--ok); } #status.wait { background: var(--warn-bg); color: var(--warn); }
   #status.err { background: var(--err-bg); color: var(--err); }
@@ -115,6 +118,14 @@
   <h1>{{ info.stage.title }}</h1>
   <div class="sub">{{ info.title }} · зачёт {{ info.zachet }}{% if info.stage.nv %} · НВ {{ info.stage.nv }} мин{% endif %}{% if info.stage.kv %} · КВ этапа {{ info.stage.kv }} мин{% endif %}</div>
 </header>
+{% if info.stage.desc or info.zdesc or info.schemes %}
+<details class="about"{% if info.stage.desc %} open{% endif %}><summary>Об этапе{% if info.schemes %} и схема дистанции{% endif %}</summary>
+  {% if info.stage.desc %}<p class="about-text">{{ info.stage.desc }}</p>{% endif %}
+  {% if info.zdesc %}<p class="about-text note">Зачёт {{ info.zachet }}: {{ info.zdesc }}</p>{% endif %}
+  {% if info.schemes %}<p class="about-links">{% for x in info.schemes %}<a href="{{ x.url }}" target="_blank" rel="noopener">Схема: {{ x.name }}</a>{% endfor %}</p>
+  <p class="note">Схема открывается, когда телефон в Wi-Fi ноутбука.</p>{% endif %}
+</details>
+{% endif %}
 <div id="me" class="me"></div>
 {% if info.payload.penalties %}<div class="penbar"><button type="button" id="pen-open">Таблица штрафов</button></div>
 <div id="pen" class="pen" hidden role="dialog" aria-label="Таблица штрафов">

@@ -17,6 +17,7 @@
         Документы по итогам/         ← дипломы, наклейки, справки, выписки на разряды, отчёт
         Результаты_дистанции.json    ← этапы, баллы команд по этапам, статусы, протесты
         Протоколы/                   ← предварительные и официальные протоколы результатов
+        Схемы дистанций/<зачёт>/     ← схема дистанции зачёта: картинки, PDF (п. 65)
         Договоры_и_табель.json       ← бригада, дни, ставки, заказчик (без паспортов)
         Шаблон договора.docx         ← свой шаблон договора и акта, если есть (иначе — встроенный)
         Именная заявка — бланк соревнования.docx ← свой бланк именной заявки, если есть (п. 36)
@@ -98,6 +99,10 @@ DOCS_ROOT_NAME = "СТ-Секретарь — документы участни�
 DOC_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
              ".odt", ".rtf", ".txt", ".svg"}  # .svg — заглушки учебного режима (stub_docs), п. 53
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".svg"}  # браузер показывает сам (HEIC — нет)
+# Схема дистанции зачёта (Правки, п. 65): картинка или PDF, несколько — по листам; в папке соревнования
+SCHEMES_DIR = "Схемы дистанций"
+SCHEME_TYPES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".pdf"}
+MAX_SCHEME = 25 * 2**20
 
 
 def default_docs_root() -> Path:
@@ -453,6 +458,35 @@ class CompFolder:
 
     def save_run_data(self, data: dict) -> None:
         self.write_json(RUN, data)
+
+    # --- схема дистанции зачёта (Правки, п. 65): картинки и PDF в папке соревнования — едут с резервной копией
+
+    def scheme_dir(self, zkey: str) -> Path:
+        return self.path / SCHEMES_DIR / (re.sub(r'[\\/:*?"<>|]+', "-", zkey).strip(" .") or "зачёт")
+
+    def schemes(self, zkey: str) -> list[Path]:
+        d = self.scheme_dir(zkey)
+        if not d.is_dir():
+            return []
+        return sorted((p for p in d.iterdir() if p.is_file() and p.suffix.lower() in SCHEME_TYPES),
+                      key=lambda p: alpha_key(p.name))
+
+    def scheme(self, zkey: str, name: str) -> Path | None:
+        return next((p for p in self.schemes(zkey) if p.name == name), None)
+
+    def add_scheme(self, zkey: str, name: str, data: bytes) -> Path | None:
+        """Файл схемы (несколько — по листам, по имени файла); не картинка и не PDF или слишком большой — None."""
+        suffix = Path(name).suffix.lower()
+        if suffix not in SCHEME_TYPES or not data or len(data) > MAX_SCHEME:
+            return None
+        stem = re.sub(r'[\\/:*?"<>|]+', "_", Path(name).stem).strip(" .")[:80] or "схема"
+        d = self.scheme_dir(zkey)
+        d.mkdir(parents=True, exist_ok=True)
+        path, n = d / f"{stem}{suffix}", 2
+        while path.exists():
+            path, n = d / f"{stem} ({n}){suffix}", n + 1
+        path.write_bytes(data)
+        return path
 
     @property
     def protocols_dir(self) -> Path:

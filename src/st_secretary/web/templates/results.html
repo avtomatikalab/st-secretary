@@ -18,6 +18,7 @@
   <td class="res-rule"><input type="text" inputmode="decimal" name="st-{{ i }}-vsh_n" value="{{ s.vsh_n or '' }}" placeholder="1" aria-label="ВШ: баллов">
     <span>за</span><input type="text" inputmode="numeric" name="st-{{ i }}-vsh_m" value="{{ s.vsh_m or '' }}" placeholder="30" aria-label="ВШ: за каждые секунд сверх НВ"><span>с</span></td>
   {% endif %}
+  <td class="st-desc-cell"><textarea name="st-{{ i }}-desc" rows="1" class="st-desc" data-autosize placeholder="что на этапе, судьи, ориентиры" aria-label="Описание этапа">{{ s.desc or '' }}</textarea></td>
   <td class="cell-action"><button type="button" class="icon-btn" data-remove-row data-confirm="Убрать этап? Внесённые по нему баллы перестанут учитываться." title="Убрать" aria-label="Убрать">×</button></td>
 </tr>
 {%- endmacro %}
@@ -59,6 +60,23 @@
     добавляет ВШ — по правилу «баллов за каждые … с сверх НВ» (по умолчанию 1 балл за 30 с), не больше ВШ. Сверх КВ
     или снята с этапа — МШ (по умолчанию ТШ + ВШ). Итог, вписанный в таблицу вручную (протест), программа не
     затирает. Правила, дистанции комбинированные, п. 1.5; формула ВШ — из Условий.{% endif %}</p>
+  {% set sch = folder.schemes(z.key) %}
+  <div class="scheme-box" id="scheme">
+    <h3>Схема дистанции</h3>
+    {% if sch %}<ul class="scheme-list">{% for p in sch %}<li>
+      <a href="{{ base }}/scheme/{{ p.name|urlencode }}?{{ zq }}" target="_blank" rel="noopener">{{ icon("file", 16) }}{{ p.name }}</a>
+      <form method="post" action="{{ base }}/results/scheme?{{ zq }}" data-confirm="Убрать «{{ p.name }}» из схемы?"><input type="hidden" name="do" value="remove">
+        <input type="hidden" name="name" value="{{ p.name }}"><button class="btn btn-ghost btn-small" type="submit">Убрать</button></form>
+    </li>{% endfor %}</ul>
+    {% else %}<p class="muted">Схемы нет. Если она нужна (по Условиям или судьям так проще) — загрузите картинку или PDF;
+      несколько листов — несколькими файлами.</p>{% endif %}
+    <form method="post" action="{{ base }}/results/scheme?{{ zq }}" enctype="multipart/form-data" class="res-inline">
+      <label class="btn btn-ghost">{{ icon("upload", 18) }}Загрузить схему (картинка или PDF)
+        <input type="file" name="files" accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.pdf" multiple class="visually-hidden" data-autosubmit></label>
+    </form>
+    <p class="hint">Схему видно в карточке соревнования, судьям этапов на телефоне (открывается, когда телефон в Wi-Fi
+      ноутбука) и в печати карточек для судей. Описание этапа — колонка «Описание» в таблице ниже.</p>
+  </div>
   <form method="post" action="{{ base }}/results/import?{{ zq }}" enctype="multipart/form-data" class="res-import"{% if run.stages %} data-confirm="Заменить этапы и баллы зачёта {{ z.title }} данными из рабочей книги?"{% endif %}>
     <label class="btn">{{ icon("upload", 18) }}Загрузить этапы и баллы из СЕКРЕТАРЬ_ST (.xls)
       <input type="file" name="book" accept=".xls" class="visually-hidden" data-autosubmit></label>
@@ -68,14 +86,15 @@
     <div class="table-wrap">
     <table class="tbl form-tbl res-stages{% if not is_time %} res-stages-psr{% endif %}">
       {% if is_time %}
-      <colgroup><col class="c-tour"><col class="c-name"><col class="c-max"><col class="c-max"><col class="c-act"></colgroup>
-      <thead><tr><th class="st-fix1">Тур</th><th class="st-fix2">Этап</th><th>КВ, мин</th><th>МШ</th><th></th></tr></thead>
+      <colgroup><col class="c-tour"><col class="c-name"><col class="c-max"><col class="c-max"><col class="c-desc"><col class="c-act"></colgroup>
+      <thead><tr><th class="st-fix1">Тур</th><th class="st-fix2">Этап</th><th>КВ, мин</th><th>МШ</th><th title="Видит судья этого этапа на телефоне и в печати для судей">Описание</th><th></th></tr></thead>
       {% else %}
-      <colgroup><col class="c-tour"><col class="c-name"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-rule"><col class="c-act"></colgroup>
+      <colgroup><col class="c-tour"><col class="c-name"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-max"><col class="c-rule"><col class="c-desc"><col class="c-act"></colgroup>
       <thead><tr><th class="st-fix1">Тур</th><th class="st-fix2">Этап</th><th title="Нормативное время: до него временного штрафа нет">НВ, мин</th>
         <th title="Контрольное время: сверх него — снятие с этапа, МШ">КВ, мин</th><th title="Наибольший технический штраф">ТШ</th>
         <th title="Наибольший временной штраф">ВШ</th><th title="Максимальный штраф этапа; пусто — ТШ + ВШ">МШ</th>
-        <th title="Временной штраф: сколько баллов за каждые сколько секунд сверх НВ">ВШ: балл за … с</th><th></th></tr></thead>
+        <th title="Временной штраф: сколько баллов за каждые сколько секунд сверх НВ">ВШ: балл за … с</th>
+        <th title="Видит судья этого этапа на телефоне и в печати для судей">Описание</th><th></th></tr></thead>
       {% endif %}
       <tbody id="res-stages" data-next="{{ zdata.get('stages', [])|length }}">
         {% for s in zdata.get("stages", []) %}{{ stage_row(loop.index0, s, not is_time) }}{% endfor %}

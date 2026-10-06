@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
-{% from "_form.html" import main_fields, input, select, issue_list, official_row %}
+{% from "_form.html" import main_fields, input, select, textarea, issue_list, official_row %}
 
 {% macro zachet_block(i, z, errors, ch) -%}
 {% set p = "z-" ~ i ~ "-" %}
@@ -29,6 +29,8 @@
     {{ input(p ~ "min_women", "Женщин не менее", z.min_women, errors, type="number", cls="span-2") }}
     {{ input(p ~ "fee", "Взнос, ₽", z.fee, errors, type="number", cls="span-3") }}
     {{ select(p ~ "fee_per", "Взнос за", z.fee_per, ch.fee_per, errors, cls="span-2") }}
+    {{ textarea(p ~ "description", "Описание зачёта", z.description, errors, rows=2,
+                hint="что за зачёт, особенности дистанции — видят секретарь и судьи этапов на телефоне; этапы и схема дистанции — на «Протоколах этапов»") }}
   </div>
 </div>
 {%- endmacro %}

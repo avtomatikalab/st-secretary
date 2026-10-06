@@ -169,7 +169,9 @@ def register(app, cx) -> None:
         return {"title": comp.title, "zachet": z.key,
                 "stage": {"title": stage.title, "kv": stage.kv_minutes,
                           "nv": pr.points_text(stage.nv_minutes) if stage.auto else "",
-                          "wait_cut": stt.subtract_wait(zdata)},
+                          "wait_cut": stt.subtract_wait(zdata), "desc": getattr(stage, "desc", "")},
+                "zdesc": z.description,  # описание зачёта и схема дистанции (п. 65)
+                "schemes": [{"name": p.name, "url": f"/j/{token}/scheme/{quote(p.name)}"} for p in f.schemes(z.key)],
                 "payload": {"token": token, "sync_url": f"/j/{token}/sync", "teams": teams, "zachet": z.key,
                             "judges": judge_people(f, comp), "contacts": contacts(f, comp), "stage_id": stage.id,
                             "penalties": {**penalty.payload(), "jargon": pen.jargon(zdata)} if penalty else None,
@@ -204,7 +206,13 @@ def register(app, cx) -> None:
         return {"saved": out.get("saved", []), "misses": out.get("misses", 0), "time": f"{now:%H:%M:%S}",
                 "contacts": contacts(f, comp)}
 
-    app.state.board = BoardServer(create_board_app(board_list, board_data, judge_page, judge_receive), host=board_host)
+    def judge_scheme(token: str, name: str):
+        """Схема дистанции зачёта ссылки судьи (п. 65) — телефон берёт её с ноутбука по Wi-Fi."""
+        found = judge_link(token)
+        return found[0].scheme(found[2].key, name) if found else None
+
+    app.state.board = BoardServer(create_board_app(board_list, board_data, judge_page, judge_receive, judge_scheme),
+                                  host=board_host)
 
     @app.get("/c/{cid}/judges")
     def judges_page(request: Request, cid: str, z: str = ""):
@@ -380,6 +388,9 @@ def register(app, cx) -> None:
         info = judge_page(token)
         if info is not None:
             info["payload"]["sync_url"] = f"{base_url(folder(cid))}/judges/phone/{token}/sync"
+            zq = urlencode({"z": info["zachet"]})  # схема — с самой программы, без Wi-Fi
+            info["schemes"] = [{**x, "url": f"{base_url(folder(cid))}/scheme/{quote(x['name'])}?{zq}"}
+                               for x in info["schemes"]]
         return templates.TemplateResponse(request, "judge.html", {"info": info}, status_code=200 if info else 404,
                                           headers={"Cache-Control": "no-store"})
 
@@ -411,8 +422,10 @@ def register(app, cx) -> None:
             if t and urls:
                 link = f"{urls[0]}j/{t}"
                 cards.append({"s": s, "link": link, "qr": qr_svg(link)})
-        return templates.TemplateResponse(request, "judges_print.html", {"comp": comp, "z": zz, "cards": cards,
-                                                                         "running": bool(urls)})
+        # этапы с описаниями и схема дистанции — в печать для судей (п. 65)
+        return templates.TemplateResponse(request, "judges_print.html", {
+            "comp": comp, "z": zz, "cards": cards, "running": bool(urls), "stages": run.stages,
+            "schemes": f.schemes(zz.key), "base": base_url(f), "zq": urlencode({"z": zz.key})})
 
     @app.get("/c/{cid}/board")
     def board_page(request: Request, cid: str):

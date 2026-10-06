@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException
 
 from st_secretary import backup as bk
 from st_secretary import festival as fv
+from st_secretary import psr_run as pr
 from st_secretary.issues import ERROR, FIXED, WARNING
 from st_secretary.web.common import base_url, redirect, with_done
 from st_secretary.web.forms import GROUP_SUGGESTIONS, card_to_form, choices, form_from_data, form_to_card
@@ -79,7 +80,10 @@ def register(app, cx) -> None:
         ctx = comp_ctx(f)
         comp = ctx["comp"]
         ch = choices()
+        zd = f.run_data().get("zachety", {})  # у зачёта — сколько этапов (правятся на «Протоколах этапов», п. 65)
+        stage_counts = {z.key: len(pr.stages_of(zd.get(z.key, {}))) for z in comp.zachety} if comp else {}
         return page(request, "card_view.html", active="card", issues=comp.check() if comp else [],
+                    stage_counts=stage_counts,
                     percent_labels=dict(ch["percent"]), percent_notes=ch["percent_notes"],
                     percent_tip=ch["percent_tip"], **ctx)
 
