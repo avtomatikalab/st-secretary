@@ -4,7 +4,8 @@
 {% block title %}Своя форма заявки — СТ-Секретарь{% endblock %}
 {% block content %}
 <a class="back" href="{{ base }}/forms">← Свои формы заявок</a>
-<h1>{% if saved %}Форма «{{ saved.name }}»{% else %}Новая форма заявки{% endif %}</h1>
+<h1>{% if copy_of %}Копия формы «{{ copy_of }}»{% elif saved %}Форма «{{ saved.name }}»{% else %}Новая форма заявки{% endif %}</h1>
+{% if copy_of %}<p class="lead">Новая форма с той же настройкой: дайте ей своё название и поправьте, что нужно. «{{ copy_of }}» останется как была.</p>{% endif %}
 <p class="lead">{% if file %}Образец: «{{ file }}». {% endif %}Программа угадала, где что, — проверьте и поправьте, если
   нужно. Внизу — как она прочитает файл. Сохраните форму, и заявки с такой же шапкой будут читаться по ней сами.</p>
 
@@ -27,9 +28,10 @@
 
 {% if errors %}<div class="flash flash-err" role="alert">{{ icon("alert") }}<div>Форма не сохранена: {{ errors|join("; ") }}.</div></div>{% endif %}
 
-<form method="post" action="{{ base }}/forms/edit" class="form-edit">
+<form id="formedit" method="post" action="{{ base }}/forms/edit" class="form-edit">
   <input type="hidden" name="sample" value="{{ token }}"><input type="hidden" name="file" value="{{ file }}">
-  <input type="hidden" name="old_name" value="{{ saved.name if saved else '' }}">
+  <input type="hidden" name="old_name" value="{{ '' if copy_of else (saved.name if saved else '') }}">
+  <input type="hidden" name="copy_of" value="{{ copy_of }}">
   <input type="hidden" name="sheet_was" value="{{ state.sheet }}"><input type="hidden" name="row_was" value="{{ state.row + 1 }}">
 
   <section class="panel">

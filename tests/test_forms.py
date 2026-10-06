@@ -242,3 +242,41 @@ def test_offer_saved_forms_on_sample_upload(client, tmp_path, psr_card):
     result, _ = store.review(f, f.load())
     assert [e.name.full for t in result.teams for e in t.entries] == ["Сводов Артём Игоревич",
                                                                     "Гротова Вера Олеговна"]
+
+
+def test_program_blank_in_list_and_form_copy(client, tmp_path, psr_card):
+    """Правки, п. 61: «Бланк программы» — первой строкой списка (удалить нельзя), на его основе — новая форма; у своей
+    формы — «Копия для правки»: новое название, та же настройка, исходная не меняется; занятое название не затирает."""
+    store = client.app.state.store
+    f = store.create(psr_card)
+    page = client.get(base(f) + "/forms").text
+    assert "Бланк программы" in page and "Сделать свою на его основе" in page and "общие для всех соревнований" in page
+    assert 'class="form-default"' in page and "Удалить форму «Бланк" not in page
+    r = client.post(base(f) + "/forms/base", data={"name": ""}, follow_redirects=False)
+    q = parse_qs(urlsplit(r.headers["location"]).query)
+    assert r.status_code == 303 and q["file"] == ["Бланк программы.xlsx"] and q["sample"]
+    edit = client.get(r.headers["location"]).text
+    assert "Новая форма заявки" in edit
+    data = FormFields(edit, "formedit").fields | {"name": "Бланк с футболками", "action": "save"}
+    r = client.post(base(f) + "/forms/edit", data=data, follow_redirects=False)
+    assert r.status_code == 303 and [x["name"] for x in store.forms()] == ["Бланк с футболками"]
+    assert "fio" in store.forms()[0]["columns"]
+
+    form = {"name": "Форма А", "headers": OWN_HEAD, "signature": fm.signature(OWN_HEAD),
+            "columns": fm.guess_columns(OWN_HEAD), "team_in": "head", "head": {"team": "B2"}, "sheets": [],
+            "values": {"sex": {"муж": "м"}}}
+    store.save_form(form)
+    assert "copy=1" in client.get(base(f) + "/forms").text
+    r = client.post(base(f) + "/forms/base", data={"name": "Форма А"}, follow_redirects=False)
+    edit = client.get(r.headers["location"]).text
+    assert "Копия формы «Форма А»" in edit and 'value="Форма А — копия"' in edit
+    data = FormFields(edit, "formedit").fields | {"action": "save"}
+    r = client.post(base(f) + "/forms/edit", data=data, follow_redirects=False)
+    assert r.status_code == 303
+    by_name = {x["name"]: x for x in store.forms()}
+    assert set(by_name) == {"Бланк с футболками", "Форма А", "Форма А — копия"}
+    assert by_name["Форма А — копия"]["columns"] == form["columns"] and by_name["Форма А"] == form
+    # название уже занято — ошибка, а не замена
+    data = FormFields(client.get(base(f) + "/forms/edit?name=Форма А&copy=1").text, "formedit").fields
+    r = client.post(base(f) + "/forms/edit", data=data | {"name": "Форма А", "action": "save"})
+    assert r.status_code == 422 and "уже есть" in r.text and by_name["Форма А"] in store.forms()

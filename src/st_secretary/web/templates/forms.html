@@ -8,7 +8,8 @@
   ФИО в трёх колонках, год вместо даты, заявка делегации — команда в каждой строке, листы по классам), покажите эту
   форму программе один раз: загрузите образец, проверьте, что программа угадала, и сохраните. Файлы с такой же шапкой
   она дальше читает сама.</p>
-<p class="hint" title="{{ forms_path }}">{{ icon("laptop", 16) }} Формы хранятся на этом компьютере (папка «{{ forms_path.parent.name }}»).
+<p class="hint" title="{{ forms_path }}">{{ icon("laptop", 16) }} Формы общие для всех соревнований на этом компьютере
+  (папка «{{ forms_path.parent.name }}»): сохранённую здесь можно править, копировать и удалять из любого соревнования.
   Передать форму другому секретарю — «Скачать файлом», у него — «Загрузить форму из файла».</p>
 
 <section class="panel">
@@ -22,6 +23,14 @@
       <optgroup label="Изменить сохранённую">{% for x in forms %}<option value="{{ x.name }}">{{ x.name }}</option>{% endfor %}</optgroup>
     </select>{% endif %}
     <button class="btn btn-primary" type="submit">{{ icon("upload", 18) }}Показать программе</button>
+  </form>
+  <form method="post" action="{{ base }}/forms/base" class="fest-add">
+    <label for="f-base">или взять за основу</label>
+    <select id="f-base" name="name">
+      <option value="">бланк программы</option>
+      {% for x in forms %}<option value="{{ x.name }}">{{ x.name }}</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">{{ icon("edit", 18) }}Сделать новую форму</button>
   </form>
   <p class="hint">Образец нужен только чтобы настроить форму: после сохранения он удаляется (через сутки — сам, если форму
     не сохранили).{% if forms %} Форма поменялась (добавили колонку, переименовали) — выберите её в списке: образец
@@ -49,22 +58,30 @@
 
 <section class="panel">
   <h2>Сохранённые формы: {{ forms|length }}</h2>
-  {% if forms %}
   <div class="table-wrap"><table class="tbl">
     <thead><tr><th>Форма</th><th>Колонки</th><th>Команда</th><th></th></tr></thead>
-    <tbody>{% for x in forms %}<tr>
+    <tbody><tr class="form-default">
+      <td><b>Бланк программы</b><span class="adm-sub">по умолчанию — удалить нельзя</span></td>
+      <td class="muted">{{ blank_columns|join(", ") }}</td>
+      <td>в шапке</td>
+      <td class="actions">
+        <form method="post" action="{{ base }}/forms/base"><input type="hidden" name="name" value="">
+          <button class="btn btn-small" type="submit">{{ icon("edit", 16) }}Сделать свою на его основе</button></form>
+      </td></tr>
+    {% for x in forms %}<tr>
       <td><b>{{ x.name }}</b>{% if x.sheets %}<span class="adm-sub">листы: {{ x.sheets|join(", ") }}</span>{% endif %}</td>
       <td class="muted">{% for c in x.columns if c not in ("own", "skip") %}{{ labels[c] }}{% if not loop.last %}, {% endif %}{% endfor %}
         {% set own_n = x.columns|select("equalto", "own")|list|length %}{% if own_n %} · своих колонок: {{ own_n }}{% endif %}</td>
       <td>{{ "в каждой строке (делегация)" if x.team_in == "row" else "в шапке" }}</td>
       <td class="actions">
         <a class="btn btn-small" href="{{ base }}/forms/edit?name={{ x.name|urlencode }}">{{ icon("edit", 16) }}Изменить</a>
+        <a class="btn btn-ghost btn-small" href="{{ base }}/forms/edit?name={{ x.name|urlencode }}&amp;copy=1">Копия для правки</a>
         <a class="btn btn-ghost btn-small" href="{{ base }}/forms/file?name={{ x.name|urlencode }}">{{ icon("download", 16) }}Скачать файлом</a>
         <form method="post" action="{{ base }}/forms/delete" data-confirm="Удалить форму «{{ x.name }}»? Заявки по ней перестанут читаться, пока форму не добавят снова.">
           <input type="hidden" name="name" value="{{ x.name }}"><button class="btn btn-ghost btn-small" type="submit">Удалить</button></form>
       </td></tr>{% endfor %}</tbody>
   </table></div>
-  {% else %}<p class="muted">Пока нет — заявки читаются по бланку программы.</p>{% endif %}
+  {% if not forms %}<p class="muted">Своих форм пока нет — заявки читаются по бланку программы.</p>{% endif %}
   <form method="post" action="{{ base }}/forms/import" enctype="multipart/form-data" class="fest-add">
     <label for="f-form">Загрузить форму из файла</label>
     <input id="f-form" type="file" name="form" accept=".json" required>

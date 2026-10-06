@@ -16,7 +16,7 @@ from fastapi.responses import Response
 from starlette.exceptions import HTTPException
 
 from st_secretary import forms as fm
-from st_secretary.importers.preapp_xlsx import _grids
+from st_secretary.importers.preapp_xlsx import TABLE_LABELS, _grids, write_preapplication
 from st_secretary.preapp import process
 from st_secretary.textclean import clean_spaces
 from st_secretary.web.common import base_url, redirect
@@ -61,6 +61,7 @@ def register(app, cx) -> None:
         f = folder(cid)
         clean_samples()
         return page(request, "forms.html", active="preapps", forms=store.forms(), labels=fm.FIELD_LABEL,
+                    blank_columns=TABLE_LABELS,
                     forms_path=store.forms_path, named=(f.path / NAMED_TEMPLATE).is_file(),
                     **comp_ctx(f))
 
@@ -166,7 +167,7 @@ def register(app, cx) -> None:
         return state
 
     def render(request: Request, f: CompFolder, token: str, file: str, grids, state: dict, saved: dict | None,
-               errors: list[str] | None = None, show_preview: bool = True, status_code: int = 200):
+               errors: list[str] | None = None, show_preview: bool = True, status_code: int = 200, copy_of: str = ""):
         """Страница редактора формы: сетка образца, колонки, значения, предпросмотр прочитанного."""
         form = build(grids, state, saved)
         values_rows = {}
@@ -197,13 +198,20 @@ def register(app, cx) -> None:
                     known=known,
                     own=fm.OWN, skip=fm.SKIP, head_fields=fm.HEAD_FIELDS, values_rows=values_rows,
                     missing=fm.check(form), preview=preview, issues=issues, parts=parts, errors=errors or [],
-                    cell_ref=fm.cell_ref, **comp_ctx(f))
+                    cell_ref=fm.cell_ref, copy_of=copy_of, **comp_ctx(f))
 
     def saved_form(name: str) -> dict | None:
         return next((x for x in store.forms() if x["name"] == name), None) if name else None
 
+    def copy_name(name: str) -> str:
+        names, n = {x["name"] for x in store.forms()}, 2
+        out = f"{name} — копия"
+        while out in names:
+            out, n = f"{name} — копия {n}", n + 1
+        return out
+
     @app.get("/c/{cid}/forms/edit")
-    def forms_edit(request: Request, cid: str, sample: str = "", name: str = "", file: str = ""):
+    def forms_edit(request: Request, cid: str, sample: str = "", name: str = "", file: str = "", copy: str = ""):
         f = folder(cid)
         saved = saved_form(name)
         grids = read_grids(sample) if sample else None
@@ -211,7 +219,31 @@ def register(app, cx) -> None:
             return redirect(f"{base_url(f)}/forms?done=form_bad_sample")
         if not grids and saved is None:
             raise HTTPException(404)
-        return render(request, f, sample, file, grids, initial(grids, saved), saved)
+        state = initial(grids, saved)
+        copy_of = saved["name"] if copy and saved else ""  # «Копия для правки» (п. 61): своя форма остаётся как была
+        if copy_of:
+            state["name"] = copy_name(copy_of)
+        return render(request, f, sample, file, grids, state, saved, copy_of=copy_of)
+
+    def blank_sample() -> str:
+        """Бланк программы — образцом новой формы («Сделать свою на его основе», п. 61)."""
+        token = secrets.token_hex(8)
+        store.samples_dir.mkdir(parents=True, exist_ok=True)
+        write_preapplication(store.samples_dir / f"{token}.xlsx", {}, [])
+        return token
+
+    @app.post("/c/{cid}/forms/base")
+    async def forms_base(request: Request, cid: str):
+        """«Взять за основу» (п. 61): бланк программы — образцом новой формы; своя — копией с новым названием."""
+        f = folder(cid)
+        name = str((await request.form()).get("name", ""))
+        if not name:
+            q = {"sample": blank_sample(), "file": "Бланк программы.xlsx"}
+        elif saved_form(name):
+            q = {"name": name, "copy": "1"}
+        else:
+            raise HTTPException(404)
+        return redirect(f"{base_url(f)}/forms/edit?{urlencode(q)}")
 
     @app.post("/c/{cid}/forms/edit")
     async def forms_save(request: Request, cid: str):
@@ -219,23 +251,27 @@ def register(app, cx) -> None:
         f = folder(cid)
         data = await request.form()
         token, file = str(data.get("sample", "")), str(data.get("file", ""))
-        saved = saved_form(str(data.get("old_name", "")))
+        old = saved_form(str(data.get("old_name", "")))
+        copy_of = "" if old else str(data.get("copy_of", ""))
+        saved = old or saved_form(copy_of)  # копия (п. 61): настройка — исходной формы, сохраняется новой
         grids = read_grids(token) if token else None
         if token and grids is None:
             return redirect(f"{base_url(f)}/forms?done=form_bad_sample")
         state = from_post(data, grids, saved)
         if data.get("action") != "save":
-            return render(request, f, token, file, grids, state, saved)
+            return render(request, f, token, file, grids, state, saved, copy_of=copy_of)
         form = build(grids, state, saved)
         errors = []
         if not form["name"]:
             errors.append("впишите название формы — по нему её узнают в списке")
+        elif form["name"] != (old or {}).get("name") and saved_form(form["name"]):
+            errors.append(f"форма «{form['name']}» уже есть — назовите эту иначе")
         if not form["signature"]:
             errors.append("не выбрана строка заголовков таблицы участников")
         errors += [f"не указано: {x}" for x in fm.check(form)]
         if errors:
-            return render(request, f, token, file, grids, state, saved, errors, status_code=422)
-        store.save_form(form, saved["name"] if saved else "")
+            return render(request, f, token, file, grids, state, saved, errors, status_code=422, copy_of=copy_of)
+        store.save_form(form, old["name"] if old else "")
         if (p := sample_path(token)) is not None:
             p.unlink(missing_ok=True)  # образец больше не нужен
         return redirect(f"{base_url(f)}/forms?{urlencode({'done': 'form_saved', 'name': form['name']})}")
