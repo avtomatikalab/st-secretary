@@ -95,7 +95,7 @@ def register(app, cx) -> None:
             return redirect(f"{base_url(f)}/card")
         return page(request, "card.html", active="card", form=card_to_form(ctx["comp"]), errors={}, ch=choices(),
                     issues=ctx["comp"].check(), card_version=f.version(), own=store.own_values(),
-                    fest_gsk=fest_gsk(f), **ctx)
+                    fest_gsk=fest_gsk(f), territories=store.territories(ctx["comp"], f.id), **ctx)
 
     @app.post("/c/{cid}/card/edit")
     async def card_save(request: Request, cid: str):
@@ -125,7 +125,8 @@ def register(app, cx) -> None:
         ctx = comp_ctx(f)
         return page(request, "card.html", status_code=422 if errors else 409, active="card", form=form,
                     errors=errors, ch=choices(), issues=[], card_version=sent_version, conflict=conflict,
-                    save_error=save_error, own=store.own_values(), fest_gsk=fest_gsk(f), **ctx)
+                    save_error=save_error, own=store.own_values(), fest_gsk=fest_gsk(f),
+                    territories=store.territories(comp or ctx["comp"], f.id), **ctx)
 
     @app.post("/c/{cid}/card/forget")
     async def card_forget(request: Request, cid: str):

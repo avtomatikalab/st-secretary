@@ -57,6 +57,7 @@
     </div>
   </form>
   <datalist id="dl-roles">{% for r in ch.roles %}<option value="{{ r }}">{% endfor %}</datalist>
+  <datalist id="dl-terr">{% for t in territories or [] %}<option value="{{ t }}">{% endfor %}</datalist>
   <template id="tpl-official">{{ official_row("__i__", {"role": "", "fio": "", "category": "", "territory": ""}, {}, ch) }}</template>
 </section>
 

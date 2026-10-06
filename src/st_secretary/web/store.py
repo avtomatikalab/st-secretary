@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path
 
 from st_secretary import festival as fv
-from st_secretary.competition import Competition
+from st_secretary.competition import Competition, territory_suggestions
 from st_secretary.exporters.preapp_xlsx import write_preapp_report
 from st_secretary.importers.card_xlsx import load_card, write_card
 from st_secretary.importers.preapp_xlsx import read_preapplication, write_preapplication
@@ -458,12 +458,33 @@ class Store:
         self.docs_root = Path(docs_root) if docs_root else default_docs_root()
         self._preapp_cache: dict[str, tuple[tuple, PreappResult]] = {}
         self._hash_cache: dict[tuple, str] = {}
+        self._terr_cache: dict[str, tuple[int, list[str]]] = {}
 
     def all(self) -> list[CompFolder]:
         if not self.root.is_dir():
             return []
         found = [CompFolder(p) for p in self.root.iterdir() if p.is_dir() and (p / CARD).is_file()]
         return sorted(found, key=lambda f: f.id, reverse=True)  # новые сверху
+
+    def territories(self, here: Competition | None, skip: str = "") -> list[str]:
+        """Подсказки «Территории» в ГСК (Правки, п. 58): территория организаторов и судей этого соревнования, затем
+        других соревнований на этом компьютере. Карточку читаем, только если её файл менялся (кэш по времени)."""
+        before: list[str] = []
+        for f in self.all():
+            if f.id == skip:
+                continue
+            try:
+                stamp = f.card_path.stat().st_mtime_ns
+                hit = self._terr_cache.get(f.id)
+                if hit is None or hit[0] != stamp:
+                    c = f.load()
+                    hit = (stamp, [c.host_territory] + [o.territory for o in c.officials])
+                    self._terr_cache[f.id] = hit
+            except Exception:  # noqa: BLE001 — карточка с ошибкой: без её подсказок
+                continue
+            before += hit[1]
+        own = [here.host_territory] + [o.territory for o in here.officials] if here else []
+        return territory_suggestions(own, before)
 
     def get(self, cid: str) -> CompFolder | None:
         if not cid or cid in (".", "..") or cid != Path(cid).name or _BAD_CHARS.search(cid):

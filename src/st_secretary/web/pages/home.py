@@ -224,7 +224,8 @@ def register(app, cx) -> None:
         fees = fv.fee_rows(x, groups) if modes["fee"] == "festival" else []
         return page(request, "festival.html", fest=x, items=items, others=others,
                     people=festival_people([f for f in folders if f]), gsk_rows=official_rows(fv.officials(x)),
-                    ch=choices(), errors={}, modes=modes, mode_labels=fv.MODES, fee_per=fv.FEE_PER, fees=fees,
+                    territories=store.territories(None), ch=choices(), errors={}, modes=modes, mode_labels=fv.MODES,
+                    fee_per=fv.FEE_PER, fees=fees,
                     fee_methods=cm.FEE_METHODS, number_notes=fv.number_problems(groups) if groups else [],
                     fee_total={"due": sum(r["due"] for r in fees), "paid": sum(r["paid"] for r in fees)})
 

@@ -1,5 +1,6 @@
 """Страницы карточки соревнования: подписи, примеры, подсказки, ссылки (Правки, п. 56–65). Данные — выдуманные."""
 
+import re
 from dataclasses import replace
 
 import pytest
@@ -8,6 +9,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from test_web import base
 
+from st_secretary.competition import Official, territory_suggestions
 from st_secretary.issues import ERROR
 from st_secretary.web.app import create_app
 from st_secretary.web.forms import card_to_form, form_from_data, form_to_card
@@ -70,3 +72,23 @@ def test_section_examples_gsk_and_zachet(client, psr_card):
         comp, errors = form_to_card(form_from_data(data | form["main"]))
         assert not errors, (r, errors)
         assert len(comp.zachety) == len(rows) + 1 and not [i for i in comp.check() if i.severity == ERROR], r
+
+
+def test_territory_suggestions_merge_spellings():
+    """П. 58: «г. Красноярск» и «Красноярск» — одна территория; сначала — как в этом соревновании, потом частые."""
+    got = territory_suggestions(["Энск", "", "г. Энск"], ["Красноярск", "г. Красноярск", "г. Красноярск", "г Ачинск",
+                                                         "энск", "Город Ачинск", "Дивногорск"])
+    assert got == ["Энск", "г. Красноярск", "г Ачинск", "Дивногорск"]
+
+
+def test_territory_list_in_gsk(client, psr_card):
+    """П. 58: у «Территории» в ГСК — список с вводом (datalist): территории этого и прошлых соревнований на компьютере."""
+    store = client.app.state.store
+    store.create(replace(psr_card, title="Прошлые соревнования", host_territory="Дивногорск",
+                         officials=[Official("Главный судья", "Петров Пётр Петрович", "СС1К", "г. Ачинск")]))
+    f = store.create(replace(psr_card, host_territory="Красноярск",
+                             officials=[Official("Главный судья", "Сидоров Иван Иванович", "СС1К", "г. Красноярск")]))
+    page = client.get(base(f) + "/card/edit").text
+    assert 'list="dl-terr"' in page
+    terr = re.search(r'<datalist id="dl-terr">(.*?)</datalist>', page).group(1)
+    assert re.findall(r'value="([^"]+)"', terr) == ["Красноярск", "г. Ачинск", "Дивногорск"]

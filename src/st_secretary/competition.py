@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -277,6 +278,28 @@ class Competition:
                 warn(f"зачёт {z.key}: результат в баллах, а методика «% от победителя» не задана — "
                      "нормативы не будут рассчитаны", "Методика %", "f-percent_method")
         return out
+
+
+def territory_key(t: str) -> str:
+    """«г. Красноярск», «Красноярск», «г Красноярск» — одна территория (подсказки ГСК, Правки, п. 58)."""
+    s = re.sub(r"\s+", " ", t.replace("ё", "е").replace("Ё", "Е")).strip().lower()
+    return re.sub(r"^(г\.|г |город )\s*", "", s)
+
+
+def territory_suggestions(here: list[str], before: list[str]) -> list[str]:
+    """Подсказки «Территории» в ГСК: сначала из этого соревнования (как там написано), затем из прошлых на этом
+    компьютере — чаще встречающиеся выше; одна территория — один раз."""
+    seen: dict[str, str] = {}
+    for t in here:
+        if t.strip() and territory_key(t) not in seen:
+            seen[territory_key(t)] = t.strip()
+    counts: dict[str, dict[str, int]] = {}
+    for t in before:
+        if t.strip():
+            variants = counts.setdefault(territory_key(t), {})
+            variants[t.strip()] = variants.get(t.strip(), 0) + 1
+    rest = sorted((k for k in counts if k not in seen), key=lambda k: (-sum(counts[k].values()), k))
+    return list(seen.values()) + [max(counts[k], key=lambda v: (counts[k][v], v.startswith("г."))) for k in rest]
 
 
 def gsk_rows(officials: list[Official]) -> list[Official | None]:

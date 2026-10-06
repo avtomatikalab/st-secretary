@@ -139,6 +139,7 @@
   <form id="open-card-form" method="post" action="{{ base }}/open/card"></form>
 
   <datalist id="dl-roles">{% for r in ch.roles %}<option value="{{ r }}">{% endfor %}</datalist>
+  <datalist id="dl-terr">{% for t in territories or [] %}<option value="{{ t }}">{% endfor %}</datalist>
   <datalist id="dl-groups">{% for g in ch.groups %}<option value="{{ g }}">{% endfor %}{% for g in own.groups if own %}<option value="{{ g }}" label="своя группа (неофициальные)">{% endfor %}</datalist>
   <datalist id="dl-znames">{% for n in own.names if own %}<option value="{{ n }}">{% endfor %}</datalist>
   <datalist id="dl-disc">{% for d in own.disciplines if own %}<option value="{{ d.name }}" data-result="{{ d.result }}" data-unit="{{ d.unit }}" label="{{ result_kinds.get(d.result, '') }}, {{ unit_kinds.get(d.unit, '') }}">{% endfor %}</datalist>
