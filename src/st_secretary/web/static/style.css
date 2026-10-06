@@ -835,3 +835,7 @@ body.fb-picking, body.fb-picking * { cursor: crosshair !important; }
 /* Значок «?» — пояснение во всплывающей подсказке (формула «% от победителя», п. 60) */
 .tip { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1px solid var(--line-strong); border-radius: 50%; font-size: .75rem; font-weight: 600; color: var(--muted); cursor: help; vertical-align: middle; }
 .tip:hover, .tip:focus { border-color: var(--primary); color: var(--primary); outline: none; }
+
+/* «Таблица штрафов»: чем отличаются варианты — под списком (п. 63) */
+.pen-help { flex-basis: 100%; margin: 0; padding-left: 18px; }
+.pen-help li { margin: 2px 0; }

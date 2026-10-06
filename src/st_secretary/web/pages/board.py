@@ -240,7 +240,7 @@ def register(app, cx) -> None:
         return page(request, "judges.html", active="judges", zachet=zz, zachety=comp.zachety, stages=stages,
                     running=srv.running, urls=urls, error=srv.error, zq=urlencode({"z": zz.key}), run=run,
                     penalty_table=pen.table_for(zz, zdata), penalty_choice=pen.choice(zdata),
-                    penalty_default=pen.default_key(zz), penalty_choices=pen.CHOICES,
+                    penalty_default=pen.default_key(zz), penalty_choices=pen.CHOICES, penalty_help=pen.choices_help(),
                     penalty_custom=zdata.get("penalty_custom"), pen_text=js.pen_text,
                     protocol_codes=bool(zdata.get("protocol_codes")), pen_jargon=zdata.get("pen_jargon", ""),
                     jargon_builtin=pen.JARGON, misses=[m | {"stages": [titles.get(x, x) for x in m["stages"]]}

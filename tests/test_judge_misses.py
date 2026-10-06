@@ -68,3 +68,15 @@ def test_phone_misses_reach_secretary_jargon_and_feedback(client, tmp_path, psr_
     phone.post(f"/j/{token}/sync", json={"device": "т-1", "records": [], "misses": [{"q": "каска", "n": 1}]})
     client.post(base(f) + "/judges/misses" + q, data={"q": "каска", "do": "forget"})
     assert f.run_data()["zachety"]["М/Ж_3"]["pen_misses"] == {}
+
+
+def test_penalty_choices_explained_under_list(client, psr_card):
+    """Правки, п. 63: под списком «Таблица штрафов» — чем отличаются варианты; числа пунктов — из справочника."""
+    from st_secretary import penalties as pen
+
+    f = client.app.state.store.create(psr_card)
+    page = client.get(base(f) + "/judges?z=М/Ж_3").text
+    assert 'class="hint pen-help"' in page and "программа выберет сама" in page
+    for key in pen.BUILTIN:
+        assert f"{len(pen.builtin(key).rows)} пунктов" in page
+    assert "две системы оценки" in page and "кнопки «Таблица штрафов» на телефоне судьи не будет" in page

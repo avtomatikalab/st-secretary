@@ -106,6 +106,7 @@
       <option value="{{ k }}"{% if k == penalty_choice %} selected{% endif %}>{% if k == "auto" %}по дисциплине — {{ penalty_choices[penalty_default] if penalty_default else "в Правилах нет (ПСР, горные: таблица в Условиях)" }}{% elif k == "custom" %}своя: {{ penalty_custom.source }}{% else %}{{ label }}{% endif %}</option>
       {% endif %}{% endfor %}
     </select>
+    <ul class="hint pen-help">{% for what, text in penalty_help %}<li><b>{{ what }}</b> — {{ text }}</li>{% endfor %}</ul>
     <label class="check"><input type="checkbox" name="protocol_codes" value="1"{% if protocol_codes %} checked{% endif %}>
       в протоколе результатов (лист «По этапам») — номера пунктов у баллов</label>
     <details class="pen-jargon"><summary>Слова судей для поиска («не замуфтован» → «защёлка карабина»)</summary>
