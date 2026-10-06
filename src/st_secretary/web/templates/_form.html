@@ -33,16 +33,17 @@
 </div>
 {%- endmacro %}
 
-{% macro select(name, label, value, options, errors, hint="", required=False, cls="span-6", empty=None) -%}
+{% macro select(name, label, value, options, errors, hint="", required=False, cls="span-6", empty=None, notes=None, tip="") -%}
 <div class="field {{ cls }}{% if errors.get(name) %} has-error{% endif %}">
-  <label for="f-{{ name }}">{{ label }}{% if required %}<span class="req" title="обязательное поле">*</span>{% endif %}</label>
-  <select id="f-{{ name }}" name="{{ name }}">
+  <label for="f-{{ name }}">{{ label }}{% if required %}<span class="req" title="обязательное поле">*</span>{% endif %}{% if tip %} <span class="tip" title="{{ tip }}" aria-label="{{ tip }}" tabindex="0">?</span>{% endif %}</label>
+  <select id="f-{{ name }}" name="{{ name }}"{% if notes %} data-notes='{{ notes|tojson }}'{% endif %}>
     {% if empty is not none %}<option value="">{{ empty }}</option>{% endif %}
     {# значение не из списка (например, вписано в Excel) не теряем молча — показываем как есть #}
     {% if value and value not in options|map("first")|list %}<option value="{{ value }}" selected>{{ value }} (не из списка)</option>{% endif %}
     {% for v, text in options %}<option value="{{ v }}"{% if v == value %} selected{% endif %}>{{ text }}</option>{% endfor %}
   </select>
   {% if errors.get(name) %}<p class="field-error">{{ errors[name] }}</p>{% endif %}
+  {% if notes %}<p class="hint" data-note>{{ notes.get(value or "", "") }}</p>{% endif %}
   {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
 </div>
 {%- endmacro %}
@@ -77,7 +78,7 @@
            hint="ЕКП или календарь субъекта/МО, если есть") }}
   {{ select("norms_edition", "Редакция разрядных норм", m.norms_edition, ch.norms, errors, required=True, cls="span-3") }}
   {{ select("percent_method", "Методика «% от победителя»", m.percent_method, ch.percent, errors, cls="span-5",
-            hint="Для балльных дисциплин (ПСР, горные). «Не задана» — нормативы не считаются") }}
+            notes=ch.percent_notes, tip=ch.percent_tip) }}
 </div>
 {%- endmacro %}
 

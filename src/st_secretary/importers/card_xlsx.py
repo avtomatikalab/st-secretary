@@ -19,6 +19,7 @@ from st_secretary.competition import (
     KINDS,
     LEVEL_LABELS,
     PERCENT_LABELS,
+    PERCENT_OLD_LABELS,
     UNIT_KINDS,
     Competition,
     Official,
@@ -253,7 +254,8 @@ def load_card(path: str | Path) -> Competition:
     level = {v: k for k, v in LEVEL_LABELS.items()}.get(clean_spaces(raw["level"]))
     if raw["level"] and level is None:
         problems.append(Issue(ERROR, f"уровень «{raw['level']}» не из списка", source=src, field="Уровень"))
-    percent = {v: k for k, v in PERCENT_LABELS.items()}.get(clean_spaces(raw["percent_method"] or "Не задана"), "?")
+    percent = ({v: k for k, v in PERCENT_LABELS.items()} | PERCENT_OLD_LABELS).get(
+        clean_spaces(raw["percent_method"] or "Не задана"), "?")
     if percent == "?":
         problems.append(Issue(ERROR, f"методика «{raw['percent_method']}» не из списка", source=src, field="Методика"))
         percent = None

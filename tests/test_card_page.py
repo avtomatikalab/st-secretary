@@ -7,10 +7,13 @@ import pytest
 
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from test_web import base
 
 from st_secretary.competition import Official, territory_suggestions
+from st_secretary.importers.card_xlsx import load_card, write_card
 from st_secretary.issues import ERROR
+from st_secretary.norms import PercentMethod, percent_of_winner
 from st_secretary.web.app import create_app
 from st_secretary.web.forms import card_to_form, form_from_data, form_to_card
 
@@ -92,3 +95,26 @@ def test_territory_list_in_gsk(client, psr_card):
     assert 'list="dl-terr"' in page
     terr = re.search(r'<datalist id="dl-terr">(.*?)</datalist>', page).group(1)
     assert re.findall(r'value="([^"]+)"', terr) == ["Красноярск", "г. Ачинск", "Дивногорск"]
+
+
+def test_percent_method_in_plain_words(client, psr_card, tmp_path):
+    """П. 60: способ «% от победителя» — подпись словами, пример серым, формула — в подсказке «?»; расчёт тот же;
+    карточка Excel с прежней подписью (формулой) читается."""
+    comp = replace(psr_card, percent_method=PercentMethod.POINTS_RELATIVE_TO_WINNER)
+    f = client.app.state.store.create(comp)
+    view = client.get(base(f) + "/card").text
+    assert "Баллы: отставание от победителя в процентах (как в ПСР)" in view
+    assert "Победитель 200, команда 250 → 125 %" in view and 'class="tip" title="Как считается:' in view
+    assert "(1 + (результат − победитель) / |победитель|) × 100" in view  # формула — в подсказке
+    edit = client.get(base(f) + "/card/edit").text
+    assert "data-notes=" in edit and "data-note>Победитель 200, команда 250 → 125 %" in edit
+    assert percent_of_winner(250, 200, PercentMethod.POINTS_RELATIVE_TO_WINNER) == 125
+    # старая карточка Excel: в ячейке — прежняя подпись-формула
+    path = write_card(tmp_path / "Карточка.xlsx", comp)
+    wb = load_workbook(path)
+    cells = [c for row in wb["Карточка"].iter_rows() for c in row
+             if c.value == "Баллы: отставание от победителя в процентах (как в ПСР)"]
+    assert len(cells) == 1
+    cells[0].value = "Баллы: (1 + (результат − победитель) / |победитель|) × 100"
+    wb.save(path)
+    assert load_card(path).percent_method is PercentMethod.POINTS_RELATIVE_TO_WINNER

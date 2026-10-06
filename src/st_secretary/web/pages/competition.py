@@ -80,7 +80,8 @@ def register(app, cx) -> None:
         comp = ctx["comp"]
         ch = choices()
         return page(request, "card_view.html", active="card", issues=comp.check() if comp else [],
-                    percent_labels=dict(ch["percent"]), **ctx)
+                    percent_labels=dict(ch["percent"]), percent_notes=ch["percent_notes"],
+                    percent_tip=ch["percent_tip"], **ctx)
 
     def fest_gsk(f) -> dict | None:
         """Соревнование фестиваля: какие должности ГСК у него свои (Правки, п. 19)."""

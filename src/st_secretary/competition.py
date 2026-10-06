@@ -28,8 +28,20 @@ LEVEL_LABELS = {
 PERCENT_LABELS = {
     None: "Не задана",
     PercentMethod.TIME: "По времени",
-    PercentMethod.POINTS_RELATIVE_TO_WINNER: "Баллы: (1 + (результат − победитель) / |победитель|) × 100",
+    PercentMethod.POINTS_RELATIVE_TO_WINNER: "Баллы: отставание от победителя в процентах (как в ПСР)",
 }
+# Понятным языком (Правки, п. 60): пример — серым под подписью, формула — во всплывающей подсказке «?»
+PERCENT_EXAMPLES = {
+    PercentMethod.TIME: "Победитель 10:00, команда 12:00 → 120 %",
+    PercentMethod.POINTS_RELATIVE_TO_WINNER: "Победитель 200, команда 250 → 125 %. Учитывает и минусовые баллы победителя",
+}
+PERCENT_FORMULAS = {
+    PercentMethod.TIME: "время команды ÷ время победителя × 100",
+    PercentMethod.POINTS_RELATIVE_TO_WINNER: "(1 + (результат − победитель) / |победитель|) × 100",
+}
+# прежние подписи — так они записаны в карточках Excel до 0.5.1; читаются как раньше
+PERCENT_OLD_LABELS = {"Баллы: (1 + (результат − победитель) / |победитель|) × 100":
+                      PercentMethod.POINTS_RELATIVE_TO_WINNER}
 
 JUDGE_CATEGORIES = ("ССВК", "СС1К", "СС2К", "СС3К", "ЮС", "б/к")
 

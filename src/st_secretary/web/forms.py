@@ -13,6 +13,8 @@ from st_secretary.competition import (
     JUDGE_CATEGORIES,
     KINDS,
     LEVEL_LABELS,
+    PERCENT_EXAMPLES,
+    PERCENT_FORMULAS,
     PERCENT_LABELS,
     RESULT_KINDS,
     UNIT_KINDS,
@@ -48,6 +50,10 @@ def choices() -> dict:
         "levels": [(lv.name, label) for lv, label in LEVEL_LABELS.items()],
         "norms": [(n, n) for n in all_norm_editions()],
         "percent": [("" if m is None else m.name, label) for m, label in PERCENT_LABELS.items()],
+        # пример под списком меняется с выбором (app.js, data-notes); формулы — в подсказке «?» (Правки, п. 60)
+        "percent_notes": {"": "Нормативы не считаются. Для балльных дисциплин (ПСР, горные) выберите способ."}
+        | {m.name: text for m, text in PERCENT_EXAMPLES.items()},
+        "percent_tip": "Как считается: " + "; ".join(f"{PERCENT_LABELS[m]} — {f}" for m, f in PERCENT_FORMULAS.items()),
         "disciplines": [(d.code, d.name) for d in disciplines() if d.group != "маршрут"],
         "categories": [(c, c) for c in JUDGE_CATEGORIES],
         "quals": [(q, q) for q in QUAL_LABELS],

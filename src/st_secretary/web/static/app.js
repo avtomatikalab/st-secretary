@@ -54,6 +54,12 @@
     if (row && window.confirm(rm.dataset.confirm || "Удалить?")) { row.remove(); markDirty(); }
   });
 
+  // --- Пояснение под списком меняется с выбором (data-notes: значение → текст; «% от победителя», п. 60)
+  document.querySelectorAll("select[data-notes]").forEach(function (sel) {
+    var notes = JSON.parse(sel.dataset.notes), out = sel.parentNode.querySelector("[data-note]");
+    sel.addEventListener("change", function () { if (out) out.textContent = notes[sel.value] || ""; });
+  });
+
   // --- Учебный режим (п. 53): галочка в шапке (запоминается в этом браузере) показывает «Заполнить примером» у форм
   //     и «Добавить заглушки документов». Пример приходит с сервера и только заполняет форму — сохраняет человек.
   var learnBoxes = Array.prototype.slice.call(document.querySelectorAll("[data-learn-toggle]"));

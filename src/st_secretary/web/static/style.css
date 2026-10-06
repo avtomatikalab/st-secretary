@@ -831,3 +831,7 @@ body.fb-picking, body.fb-picking * { cursor: crosshair !important; }
 .ed-chip.is-active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
 .norms-tbl th.num, .norms-tbl td.num { text-align: center; white-space: nowrap; }
 .steps-list li { margin: 6px 0; }
+
+/* Значок «?» — пояснение во всплывающей подсказке (формула «% от победителя», п. 60) */
+.tip { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1px solid var(--line-strong); border-radius: 50%; font-size: .75rem; font-weight: 600; color: var(--muted); cursor: help; vertical-align: middle; }
+.tip:hover, .tip:focus { border-color: var(--primary); color: var(--primary); outline: none; }
