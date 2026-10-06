@@ -87,15 +87,55 @@
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
     });
+    if (data.append) appendExample(form, data.append);
     markDirty();
+  }
+  // «Заполнить примером» в разделе, куда строки добавляют (п. 57, «Зачёты»): первая строка примера, которой ещё нет в
+  // форме (по ключу — группа и класс), ложится в пустую строку раздела или в новую; остальные строки не трогаются.
+  function appendExample(form, a) {
+    var box = document.getElementById(a.box), btn = document.querySelector('[data-add-row="' + a.box + '"]');
+    if (!box || !btn) return;
+    function val(i, k) { var el = form.elements[a.prefix + "-" + i + "-" + k]; return el && el.value ? el.value.trim() : ""; }
+    function rowIndexes() {
+      return Array.prototype.map.call(box.querySelectorAll("[data-row]"), function (row) {
+        var el = row.querySelector('[name^="' + a.prefix + '-"]');
+        return el ? el.name.split("-")[1] : null;
+      }).filter(function (i) { return i !== null; });
+    }
+    function key(get) { return a.key.map(get).join("|"); }
+    var rows = rowIndexes();
+    var taken = rows.map(function (i) { return key(function (k) { return val(i, k); }); });
+    var pick = a.rows.filter(function (r) { return taken.indexOf(key(function (k) { return r[k]; })) < 0; })[0];
+    if (!pick) { window.alert(a.none); return; }
+    var at = rows.filter(function (i) { return !Object.keys(pick).some(function (k) { return val(i, k) && k !== "min_qual" && k !== "fee_per"; }); })[0];
+    if (at === undefined) { btn.click(); at = rowIndexes().pop(); }
+    Object.keys(pick).forEach(function (k) {
+      var el = form.elements[a.prefix + "-" + at + "-" + k];
+      if (!el || el.type === "hidden") return;
+      if (el.type === "checkbox") el.checked = !!pick[k] && pick[k] !== "0"; else el.value = pick[k];
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    var first = form.elements[a.prefix + "-" + at + "-" + a.key[0]];
+    if (first && first.scrollIntoView) first.scrollIntoView({ block: "center" });
+  }
+  // data-example-confirm="g-fio" — спросить, только если в разделе уже есть данные (непустое поле g-N-fio);
+  // пустой атрибут — спросить всегда (карточка, сохранённая заявка, человек)
+  function exampleFilled(form, spec) {
+    var p = spec.split("-");
+    return Array.prototype.some.call(form.elements, function (el) {
+      var n = el.name ? el.name.split("-") : [];
+      return n.length === 3 && n[0] === p[0] && n[2] === p[1] && el.value && el.value.trim();
+    });
   }
   document.addEventListener("click", function (e) {
     var b = e.target.closest("[data-example]");
     if (!b) return;
     var form = b.closest("form") || document.querySelector("form[data-guard]");
     if (!form) return;
-    // данные уже есть (карточка, сохранённая заявка, человек) — спросить; пустую новую форму — просто заполнить
-    if (b.hasAttribute("data-example-confirm") &&
+    // данные уже есть — спросить; пустую новую форму (или пустой раздел) — просто заполнить
+    var spec = b.getAttribute("data-example-confirm");
+    if (spec !== null && (spec === "" || exampleFilled(form, spec)) &&
         !window.confirm("Заменить то, что сейчас в форме, примером? Сохранится, только если нажмёте «Сохранить».")) return;
     b.disabled = true;
     fetch(b.dataset.example, { headers: { "Accept": "application/json" } })

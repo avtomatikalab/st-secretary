@@ -130,6 +130,7 @@ code { background: var(--surface-2); border: 1px solid var(--line); border-radiu
 html.learn .learn-toggle { color: var(--primary); font-weight: 600; }
 .learn-only { display: none; }
 html.learn .learn-only { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+html.learn .check.learn-only { flex-wrap: nowrap; }
 @media (max-width: 720px) { .learn-toggle span { display: none; } }  /* «Не получилось»: «Открыть карточку» и «На главную» (п. 55) */
 .section-title { margin-top: 32px; }
 

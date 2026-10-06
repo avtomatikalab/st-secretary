@@ -95,6 +95,8 @@
     <section class="panel" id="gsk">
       <h2>Главная судейская коллегия</h2>
       <p class="muted">Подписи протоколов берутся отсюда: «И.О. Фамилия, категория, территория». Пустые строки не сохраняются.</p>
+      <p class="learn-only"><button type="button" class="btn btn-small btn-example" data-example="/example/card?part=gsk" data-example-confirm="g-fio">{{ icon("edit", 16) }}Заполнить примером</button>
+        <span class="hint">выдуманные судьи на стандартные должности — только этот раздел</span></p>
       {% if fest_gsk %}
       <p class="gsk-fest-note">{{ icon("info", 18) }} <span>Соревнование входит в фестиваль <a href="/festival/{{ festival.id|urlencode }}#gsk">«{{ festival.title }}»</a>:
         ГСК — общая для его соревнований, менять её — на странице фестиваля. Если в этом соревновании у должности
@@ -119,6 +121,8 @@
       <h2>Зачёты</h2>
       <p class="muted">Зачёт — группа участников на дистанции определённого класса. Название как в СЕКРЕТАРЬ_ST: группа_класс, например «М/Ж_3».
         <span class="z-unof-note">У неофициальных соревнований — любое своё название, класс «без класса», своя дисциплина.</span></p>
+      <p class="learn-only"><button type="button" class="btn btn-small btn-example" data-example="/example/card?part=zachet">{{ icon("edit", 16) }}Заполнить примером</button>
+        <span class="hint">добавит учебный зачёт, которого ещё нет; ваши зачёты не меняются</span></p>
       <div id="z-rows" data-next="{{ form.zachety|length }}">
         {% for z in form.zachety %}{{ zachet_block(loop.index0, z, errors, ch) }}{% endfor %}
       </div>

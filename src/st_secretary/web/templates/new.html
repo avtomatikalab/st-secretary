@@ -14,6 +14,9 @@
 <form method="post" action="/new" class="panel" data-guard>
   <p class="learn-only"><button type="button" class="btn btn-small btn-example" data-example="/example/card">{{ icon("edit", 16) }}Заполнить примером</button>
     <span class="hint">учебная карточка с выдуманными данными; сохранится, только если нажмёте «Создать»</span></p>
+  <label class="check learn-only"><input type="checkbox" name="learn_full" value="1"{% if form.learn_full %} checked{% endif %}>
+    <span>создать с судейской коллегией и зачётами учебного соревнования <span class="muted">(отмечается само, когда
+    заполняете примером)</span></span></label>
   {{ main_fields(form.main, errors, ch) }}
   <div class="form-actions">
     <button class="btn btn-primary btn-big" type="submit">Создать соревнование{{ icon("arrow") }}</button>

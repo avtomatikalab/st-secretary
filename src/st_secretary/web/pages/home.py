@@ -103,7 +103,12 @@ def register(app, cx) -> None:
 
     @app.post("/new")
     async def new_create(request: Request):
-        form = form_from_data(await request.form())
+        data = await request.form()
+        form = form_from_data(data)
+        if data.get("learn_full") == "1":  # учебный режим: карточка целиком — ГСК и зачёты учебного соревнования (п. 57)
+            full = card_to_form(training.card(app.state.clock().date()))
+            form |= {"officials": full["officials"], "zachety": [z | {"zid": ""} for z in full["zachety"]],
+                     "learn_full": "1"}
         comp, errors = form_to_card(form)
         if errors:
             return page(request, "new.html", status_code=422, form=form, errors=errors, ch=choices())
