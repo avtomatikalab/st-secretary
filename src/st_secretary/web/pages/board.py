@@ -192,10 +192,17 @@ def register(app, cx) -> None:
         now = app.state.clock()
         out = {}
         mark = "с" if tr.is_time_discipline(z) else ""  # спелео: снятие с этапа — «с» в клетке этапа
-        save_zachet(run_lock, f, z.key, lambda zdata: out.update(js.merge(
-            zdata, stage.id, records, files, device, now.isoformat(timespec="seconds"), mark, stage=stage,
-            distance_cutoffs=tr.is_time_discipline(z), judge=payload.get("judge"), add_kind=add_kind(zdata, stage.id))))
-        return {"saved": out.get("saved", []), "time": f"{now:%H:%M:%S}", "contacts": contacts(f, comp)}
+        stamp = now.isoformat(timespec="seconds")
+
+        def update(zdata):
+            out.update(js.merge(zdata, stage.id, records, files, device, stamp, mark, stage=stage,
+                                distance_cutoffs=tr.is_time_discipline(z), judge=payload.get("judge"),
+                                add_kind=add_kind(zdata, stage.id)))
+            out["misses"] = js.add_misses(zdata, stage.id, payload.get("misses"), stamp)  # поиск без результата, п. 62
+
+        save_zachet(run_lock, f, z.key, update)
+        return {"saved": out.get("saved", []), "misses": out.get("misses", 0), "time": f"{now:%H:%M:%S}",
+                "contacts": contacts(f, comp)}
 
     app.state.board = BoardServer(create_board_app(board_list, board_data, judge_page, judge_receive), host=board_host)
 
@@ -211,6 +218,7 @@ def register(app, cx) -> None:
         srv = app.state.board
         urls = srv.urls() if srv.running else []
         stages = []
+        titles = {s.id: s.title for s in run.stages + (tr.add_stages(zdata) if run.kind == "time" else [])}
         staff_keys = {p.key for p in sf.people(comp, f.contracts())}
         personal = store.personal()
         names = {r.inp.file: r.inp.team for r in run.rows}
@@ -235,7 +243,8 @@ def register(app, cx) -> None:
                     penalty_default=pen.default_key(zz), penalty_choices=pen.CHOICES,
                     penalty_custom=zdata.get("penalty_custom"), pen_text=js.pen_text,
                     protocol_codes=bool(zdata.get("protocol_codes")), pen_jargon=zdata.get("pen_jargon", ""),
-                    jargon_builtin=pen.JARGON,
+                    jargon_builtin=pen.JARGON, misses=[m | {"stages": [titles.get(x, x) for x in m["stages"]]}
+                                                       for m in js.misses(zdata)],
                     now_day=app.state.clock().date().isoformat(),
                     **comp_ctx(f))
 
@@ -260,6 +269,25 @@ def register(app, cx) -> None:
             f.save_run_data(data)
         done = "judge_revoked" if do == "revoke" else "judge_issued"
         return redirect(f"{base_url(f)}/judges?{urlencode({'z': zz.key, 'done': done})}")
+
+    @app.post("/c/{cid}/judges/misses")
+    async def judges_misses(request: Request, cid: str, z: str = ""):
+        """Судьи искали и не нашли (п. 62): добавить в слова судей зачёта («как искали = слова таблицы») или убрать."""
+        f = folder(cid)
+        zz = need_zachet(need_comp(f), z)
+        form = await request.form()
+        q, to = js.miss_key(form.get("q")), " ".join(str(form.get("to", "")).replace("=", " ").split())[:80]
+        add = form.get("do") == "add" and bool(to)
+
+        def update(zd):
+            zd.get("pen_misses", {}).pop(q, None)
+            if add:
+                lines = [x for x in str(zd.get("pen_jargon", "")).splitlines() if x.strip()]
+                zd["pen_jargon"] = "\n".join(lines + [f"{q} = {to}"])[:5000]
+
+        save_zachet(run_lock, f, zz.key, update)
+        back = f"{base_url(f)}/judges?{urlencode({'z': zz.key})}#penalties"
+        return redirect(with_done(back, "miss_added" if add else "miss_forgotten", q=q))
 
     @app.post("/c/{cid}/judges/penalties")
     async def judges_penalties(request: Request, cid: str, z: str = ""):

@@ -127,6 +127,24 @@
   <p class="hint">Колонки своей таблицы: №, Нарушение, Штраф (баллы), Разъяснение. В ПСР общей таблицы в Правилах нет —
     таблица штрафов этапов в Условиях соревнования: загрузите её или возьмите за основу пешеходную — выберите
     «Пешеходные», скачайте в Excel, поправьте под Условия и загрузите.</p>
+  {% if misses %}
+  <h3 id="misses">Судьи искали и не нашли</h3>
+  <p class="hint">Так судьи искали пункт на телефоне — и таблица ничего не показала. Впишите, какими словами это названо в
+    таблице, — фраза попадёт в «слова судей», и в следующий раз поиск найдёт. Список приходит и разработчику с кнопкой
+    «Сообщить» — чтобы пополнить словарь программы.</p>
+  <div class="table-wrap"><table class="tbl">
+    <thead><tr><th>Что искали</th><th>Этап</th><th class="num">Раз</th><th>Слова из таблицы</th><th></th></tr></thead>
+    <tbody>{% for m in misses %}<tr>
+      <td><b>{{ m.q }}</b></td><td class="muted">{{ m.stages|join(", ") }}</td><td class="num">{{ m.n }}</td>
+      <td><form method="post" action="{{ base }}/judges/misses?{{ zq }}" class="res-inline">
+        <input type="hidden" name="q" value="{{ m.q }}"><input type="hidden" name="do" value="add">
+        <input type="text" name="to" placeholder="например, защёлка карабина" required aria-label="Слова из таблицы для «{{ m.q }}»">
+        <button class="btn btn-small" type="submit">Добавить в слова судей</button></form></td>
+      <td><form method="post" action="{{ base }}/judges/misses?{{ zq }}"><input type="hidden" name="q" value="{{ m.q }}">
+        <input type="hidden" name="do" value="forget"><button class="btn btn-ghost btn-small" type="submit">Убрать</button></form></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
 </section>
 
 <details class="panel howto">

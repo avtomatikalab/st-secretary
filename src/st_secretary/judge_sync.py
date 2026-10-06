@@ -27,6 +27,10 @@
 баллы этапа складываются сами; запись хранит расшифровку («п. 1 ×2 = 2, п. 3 = 1 → 3»). Штраф своими словами без
 пункта — «пункт не выбран»: секретарь или главный судья сопоставляет пункт на ноутбуке (pen_map, по коду штрафа —
 переживает повторные присылки). Итог, вписанный судьёй руками поверх пунктов, — «без расшифровки».
+
+Поиск без результата (Правки, п. 62): судья искал пункт таблицы штрафов своими словами и ничего не нашёл — телефон
+запоминает запрос (только сам текст поиска) и отдаёт его ноутбуку вместе с записями (без связи — копит). У зачёта
+(`pen_misses`): что искали, на каких этапах, сколько раз; секретарь добавляет слова в «слова судей» зачёта или убирает.
 """
 
 from __future__ import annotations
@@ -190,6 +194,44 @@ def map_pen(zdata: dict, sid: str, file: str, pen_id: str, row) -> None:
         m.pop(pen_id, None)
     else:
         m[pen_id] = {"code": row.code, "title": row.title, "v": row.value, "pts": row.points}
+
+
+MISSES_MAX = 200  # ненайденных запросов на зачёт — старые уходят
+
+
+def miss_key(q) -> str:
+    """Запрос поиска как ключ: строчными, «ё» = «е», пробелы схлопнуты, не длиннее 60 знаков."""
+    return " ".join(str(q or "").lower().replace("ё", "е").split())[:60]
+
+
+def add_misses(zdata: dict, sid: str, misses, now: str) -> int:
+    """Принять с телефона ненайденные запросы этапа sid: [{"q": текст, "n": сколько раз}]. Возвращает, сколько принято."""
+    box = zdata.setdefault("pen_misses", {})
+    got = 0
+    for m in (misses if isinstance(misses, list) else [])[:50]:
+        if not isinstance(m, dict) or len(q := miss_key(m.get("q"))) < 2 or q.replace(".", "").isdigit():
+            continue
+        try:
+            n = max(1, min(int(m.get("n", 1)), 100))
+        except (TypeError, ValueError):
+            n = 1
+        rec = box.setdefault(q, {"n": 0, "stages": [], "last": ""})
+        rec["n"] += n
+        if sid not in rec["stages"]:
+            rec["stages"].append(sid)
+        rec["last"] = now
+        got += 1
+    if len(box) > MISSES_MAX:
+        for q in sorted(box, key=lambda k: box[k].get("last", ""))[:len(box) - MISSES_MAX]:
+            del box[q]
+    return got
+
+
+def misses(zdata: dict) -> list[dict]:
+    """Судьи искали и не нашли: [{"q", "n", "stages", "last"}] — чаще встречающиеся выше."""
+    box = zdata.get("pen_misses", {})
+    return sorted(({"q": q, **v} for q, v in box.items() if isinstance(v, dict)),
+                  key=lambda x: (-int(x.get("n", 0)), x["q"]))
 
 
 def phone_same(a: str, b: str) -> bool:

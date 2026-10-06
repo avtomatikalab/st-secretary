@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException
 
 from st_secretary import feedback as fb
 from st_secretary import journal, updates, version_label
+from st_secretary import judge_sync as js
 from st_secretary.web.common import redirect
 
 MAX_IMAGE = 15 * 1024 * 1024  # снимок экрана с пометками — не больше 15 МБ
@@ -27,6 +28,16 @@ def _lines(items, limit: int = 10) -> list[str]:
 def register(app, cx) -> None:
     """«Сообщить» и «Мои сообщения» (/feedback…)."""
     store = cx.store
+
+    def judge_misses(cid: str) -> str:
+        """Судьи искали пункт штрафа на телефоне и не нашли (п. 62) — к сообщению, чтобы пополнить словарь программы."""
+        f = store.get(cid) if cid else None
+        if f is None:
+            return ""
+        lines = []
+        for key, zdata in f.run_data().get("zachety", {}).items():
+            lines += [f"«{m['q']}» — {m['n']} раз (зачёт {key})" for m in js.misses(zdata)[:30]]
+        return "\n".join(lines)
     page = cx.page
 
     def fb_folder():
@@ -86,7 +97,8 @@ def register(app, cx) -> None:
         log = tail()
         if log:
             errors.append("Журнал программы, последние строки:\n" + log)
-        meta = {"who": str(data.get("who", ""))[:80], "competition": competition, "page": page_line,
+        meta = {"misses": judge_misses(competition),
+                "who": str(data.get("who", ""))[:80], "competition": competition, "page": page_line,
                 "place": str(data.get("place", ""))[:300], "version": where(),
                 "browser": str(request.headers.get("user-agent", ""))[:200], "window": str(pg.get("window", ""))[:20],
                 "page_title": str(pg.get("title", ""))[:120], "path": _lines(data.get("path"), 10),

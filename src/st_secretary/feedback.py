@@ -118,7 +118,7 @@ def parse(path: Path) -> Message:
 
 def save(folder: Path, kind: str, text: str, meta: dict, png: bytes | None = None,
          now: datetime | None = None, host: str | None = None) -> Message:
-    """Сохранить сообщение: .md (и .png). meta — собранное само: who, competition, page, place, version, browser,
+    """Сохранить сообщение: .md (и .png). meta — собранное само: who, competition, page, place, version, browser, misses,
     window, page_title, path (список строк), errors (текст)."""
     now = now or datetime.now()
     host = host or computer()
@@ -137,6 +137,8 @@ def save(folder: Path, kind: str, text: str, meta: dict, png: bytes | None = Non
             "Окно": meta.get("window", ""), "Снимок": f"{stem}.png" if png else ""}
     sections = {"Что произошло": text.strip(), "Перед этим": "\n".join(meta.get("path", [])),
                 "Ошибки и журнал": meta.get("errors", "")}
+    if meta.get("misses"):  # телефоны судей: поиск штрафа без результата (Правки, п. 62)
+        sections["Судьи искали и не нашли"] = meta["misses"]
     title = f"{kind} · {meta.get('page_title') or 'страница'} · {now:%d.%m.%Y %H:%M}"
     path = folder / f"{stem}.md"
     path.write_text(render(title, head, sections), encoding="utf-8")

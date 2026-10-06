@@ -174,6 +174,7 @@
   var st;
   try { st = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { st = {}; }
   st.records = st.records || {}; st.sent = st.sent || {};
+  st.misses = st.misses || {}; st.missSent = st.missSent || {};  // поиск штрафа без результата → ноутбуку (п. 62)
   // с ноутбука — то, что уже принято (например, с другого телефона); своё более новое — не затираем
   Object.keys(info.records).forEach(function (f) {
     var s = info.records[f], l = st.records[f];
@@ -194,6 +195,10 @@
   function rec(f) { return st.records[f] || (st.records[f] = { file: f, points: "", arrive: "", leave: "", removed: false, reason: "", note: "", updated: 0, cutoff: "", cut_on: "", started: "", pens: [], pmanual: false }); }
   function pending() { return Object.keys(st.records).map(function (f) { return st.records[f]; })
     .filter(function (r) { return (st.sent[r.file] || 0) < (r.updated || 0); }); }
+  function missesToSend() {
+    return Object.keys(st.misses).filter(function (q) { return (st.misses[q] || 0) > (st.missSent[q] || 0); })
+      .map(function (q) { return { q: q, n: st.misses[q] - (st.missSent[q] || 0) }; });
+  }
   function stateOf(r) { return r.leave || r.removed || r.points ? "done" : r.arrive ? "on" : "wait"; }
   function nowSecs() { var n = new Date(); return n.getHours() * 3600 + n.getMinutes() * 60 + n.getSeconds(); }
   function since(t) { var d = nowSecs() - secs(t); return d < 0 ? d + 86400 : d; }
@@ -266,12 +271,12 @@
     el.className = "ok"; el.textContent = "✓ Всё отправлено на ноутбук" + (st.lastSent ? " в " + st.lastSent : "");
   }
   function sync() {
-    var list = pending();
+    var list = pending(), miss = missesToSend();
     status();
-    if (busy || !list.length) return;
+    if (busy || (!list.length && !miss.length)) return;
     busy = true;
     // что именно уходит: пока идёт запрос, судья может ещё поменять запись — отправленной считать только эту версию
-    var body = JSON.stringify({ device: device, judge: me || {}, records: list }), sentAt = {}, done = false;
+    var body = JSON.stringify({ device: device, judge: me || {}, records: list, misses: miss }), sentAt = {}, done = false;
     list.forEach(function (r) { sentAt[r.file] = r.updated || 0; });
     fetch(info.sync_url, { method: "POST", headers: { "Content-Type": "application/json" }, body: body })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
@@ -279,6 +284,7 @@
         if (x.ok && x.j.ok) {
           if (x.j.contacts) { st.contacts = x.j.contacts; renderContacts(); }
           Object.keys(sentAt).forEach(function (f) { if ((st.sent[f] || 0) < sentAt[f]) st.sent[f] = sentAt[f]; });
+          miss.forEach(function (m) { st.missSent[m.q] = (st.missSent[m.q] || 0) + m.n; });
           st.lastSent = x.j.time; lastError = ""; save(); done = true;
           Object.keys(sentAt).forEach(function (f) { paint(f); });  // «✓ на ноутбуке» у отправленных команд
         } else { lastError = (x.j && x.j.error) || "ноутбук не принял записи"; }
@@ -660,6 +666,14 @@
     document.getElementById("pen-src").textContent = PEN.title + (PEN.source ? " · " + PEN.source : "");
     var low = function (s) { return String(s || "").toLowerCase().replace(/ё/g, "е"); };
     PEN.rows.forEach(function (r) { r.hay = low([r.code, r.section, r.title, r.note].join(" ")); });
+    // искал и не нашёл (п. 62): запрос — один раз за поиск (пауза 2,5 с, закрыл таблицу или записал своими словами);
+    // уходит на ноутбук вместе с записями — секретарь добавит слова судей
+    var missTimer = null, lastMiss = "", penEmpty = false;
+    var noteMiss = function (text) {
+      var q = low(text).replace(/\s+/g, " ").trim().slice(0, 60);
+      if (q.length < 2 || /^[\d.]+$/.test(q) || q === lastMiss) return;
+      lastMiss = q; st.misses[q] = (st.misses[q] || 0) + 1; save(); sync();
+    };
     var renderPen = function () {
       var q = low(penQ.value).trim(), num = /^\d+(\.\d+)*\.?$/.test(q), words = q.split(/[\s,;]+/).filter(Boolean);
       var alts = [words];  // как сказал судья и то же словами таблицы
@@ -674,6 +688,9 @@
         if (num) return r.code === q.replace(/\.$/, "") || r.code.indexOf(q.replace(/\.$/, "") + ".") === 0;
         return alts.some(function (ws) { return ws.every(function (w) { return r.hay.indexOf(w) >= 0; }); });
       });
+      clearTimeout(missTimer);
+      penEmpty = !!q && !num && !hits.length;
+      if (penEmpty) missTimer = setTimeout(function () { noteMiss(q); }, 2500);
       penList.textContent = "";
       hits.slice(0, 80).forEach(function (r) {
         var d = document.createElement("div"); d.className = "pr" + (r.group ? " grp" : ""); d.dataset.code = r.code;
@@ -689,7 +706,7 @@
       if (pickFor && q && !num) {  // нет в таблице — записать своими словами: главный судья сопоставит пункт
         var fb = document.createElement("button"); fb.type = "button"; fb.className = "btn pen-free";
         fb.textContent = "Нет в таблице — записать «" + penQ.value.trim() + "» без пункта";
-        fb.addEventListener("click", function () { addPen(pickFor, null, penQ.value.trim()); closePen(); });
+        fb.addEventListener("click", function () { noteMiss(penQ.value); addPen(pickFor, null, penQ.value.trim()); closePen(); });
         penList.appendChild(fb);
       }
       if (!hits.length || hits.length > 80) {
@@ -704,9 +721,13 @@
       pickFor = f || null; penBox.classList.toggle("pick", !!pickFor); penQ.value = "";
       document.getElementById("pen-src").textContent = pickFor ? "Штраф для «" + teamName(pickFor) + "»: найдите пункт и "
         + "нажмите на него" : srcText;
-      penBox.hidden = false; renderPen(); penQ.focus();
+      lastMiss = ""; penBox.hidden = false; renderPen(); penQ.focus();
     };
-    var closePen = function () { penBox.hidden = true; pickFor = null; };
+    var closePen = function () {
+      clearTimeout(missTimer);
+      if (penEmpty) noteMiss(penQ.value);
+      penBox.hidden = true; pickFor = null;
+    };
     openPen = openPenFor;
     document.getElementById("pen-open").addEventListener("click", function () { openPenFor(null); });
     document.getElementById("pen-close").addEventListener("click", closePen);
