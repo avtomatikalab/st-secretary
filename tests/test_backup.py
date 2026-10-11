@@ -2,7 +2,6 @@
 
 import io
 import os
-import time
 import zipfile
 from datetime import datetime
 
@@ -74,8 +73,9 @@ def test_restore_not_a_zip(tmp_path):
 
 def test_auto_only_when_changed_and_keeps_last(comp, tmp_path):
     dest = tmp_path / "Резервные копии"
-    manual = bk.make(comp, dest, datetime(2026, 10, 1, 9, 0))
-    old = time.time() - 10 * 86400
+    made_at = datetime(2026, 10, 1, 9, 0)
+    manual = bk.make(comp, dest, made_at)
+    old = made_at.timestamp() - 10 * 86400
     for p in comp.rglob("*"):
         os.utime(p, (old, old))  # ничего не менялось после ручной копии
     assert bk.auto([comp], dest, NOW) == []
