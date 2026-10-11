@@ -3,7 +3,9 @@
 Папка «Правки и ошибки» рядом с папкой «данные» (в резервные копии и облако не входит). Одно сообщение — два файла
 с общим именем: `2026-10-01 15-42-07 Ошибка.md` (шапка «ключ: значение» и разделы — читают и человек, и Claude) и
 `….png` (снимок с пометками, если есть). «Отправить разработчику» собирает неотправленные в один zip с
-`manifest.json` и открывает письмо на SUPPORT_EMAIL; «Загрузить файл сообщений» добавляет чужой zip без повторов.
+`manifest.json` и отправляет его сам на сервер разработчика (upload, решение 050); не вышло (нет интернета, сервер
+недоступен) — как раньше: открывает папку с файлом и письмо на SUPPORT_EMAIL. «Загрузить файл сообщений» добавляет
+чужой zip без повторов.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import platform
 import re
 import shutil
 import socket
+import urllib.request
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,6 +25,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 SUPPORT_EMAIL = "support.st.secretary@gmail.com"  # сюда присылают сообщения (п. 43, 45); менять — только здесь
+FEEDBACK_URL = "https://st-secretary.udnikov.ru/api/feedback"  # приём на сервере (решение 050); менять — только здесь
+UPLOAD_TIMEOUT = 30
 MAIL_SUBJECT = "СТ-Секретарь: сообщения"  # по началу темы письма их находит ежедневная проверка (п. 45)
 KINDS = ("Ошибка", "Неудобно", "Предложение")
 FOLDER = "Правки и ошибки"
@@ -274,6 +279,29 @@ def import_bundle(folder: Path, data: bytes) -> tuple[int, int]:
             have.add(m.number)
             added += 1
     return added, skipped
+
+
+def upload(path: Path, url: str = FEEDBACK_URL, timeout: float = UPLOAD_TIMEOUT,
+           opener=urllib.request.urlopen) -> str | None:
+    """Отправить собранный zip на сервер разработчика сам (решение 050). Номер приёма — или None: нет интернета,
+    сервер недоступен или не принял (тогда — письмом, как раньше). Пароли не нужны: сервер только принимает."""
+    from st_secretary import __version__
+
+    req = urllib.request.Request(url, data=path.read_bytes(), method="POST",
+                                 headers={"Content-Type": "application/zip", "User-Agent": f"st-secretary/{__version__}"})
+    try:
+        with opener(req, timeout=timeout) as r:
+            res = json.loads(r.read().decode("utf-8"))
+    except (OSError, ValueError):  # нет сети, таймаут, HTTP-ошибка (HTTPError — тоже OSError), не JSON
+        return None
+    return str(res["id"]) if isinstance(res, dict) and res.get("ok") and res.get("id") else None
+
+
+def mark_uploaded(folder: Path, ident: str, now: datetime) -> None:
+    """Последний собранный файл ушёл на сервер — запомнить (страница не предлагает письмо)."""
+    last = last_bundle(folder) or {}
+    last["uploaded"] = {"id": ident, "when": now.strftime("%d.%m.%Y %H:%M")}
+    (folder / OUTBOX / "последняя.json").write_text(json.dumps(last, ensure_ascii=False), encoding="utf-8")
 
 
 def subject(n: int, version: str) -> str:

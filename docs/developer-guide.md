@@ -284,7 +284,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `money.py`, `names.py` | суммы прописью; склонение ФИО и должностей |
 | `training.py` | учебное соревнование на выдуманных данных; примеры для «Заполнить примером» (команда под зачёт карточки, личные данные с верными контрольными цифрами) |
 | `stub_docs.py` | заглушки документов команды в SVG («ОБРАЗЕЦ — НЕ ДОКУМЕНТ») — учебный режим и `tools/make_stub_docs.py` |
-| `feedback.py` | «Сообщить»: сообщения пользователей (.md + снимок) в «Правки и ошибки», zip для разработчика, `SUPPORT_EMAIL` |
+| `feedback.py` | «Сообщить»: сообщения пользователей (.md + снимок) в «Правки и ошибки», zip для разработчика — на сервер (`FEEDBACK_URL`, `upload`), без связи — письмом на `SUPPORT_EMAIL` |
 
 ### Справочники — `reference/`
 
@@ -377,6 +377,7 @@ run_ctx(f, comp, z)  [web/pages/results.py]     → psr_run.compute или time_
 | `tools/make_manual.py` | инструкция секретаря (Word, PDF) со снимками учебного соревнования |
 | `tools/make_stub_docs.py` | заглушки сканов «ОБРАЗЕЦ» для проверки комиссии без настоящих документов |
 | `tools/import_1101.py` | таблица баллов судей из Excel ФСТР → `judge_points_1101.json` |
+| `tools/feedback_server/receiver.py` | приём «Сообщить» на сервере (решение 050); установка — `tools/feedback_server/README.md`, служба `tools/feedback_server/st-feedback.service`, кусок nginx `tools/feedback_server/nginx.conf` |
 | `tools/reconcile_psr2024.py` | пересчёт настоящего ПСР-2024 ядром и сверка с протоколом (данные — вне репозитория) |
 | `tools/verify_speleo_2021.py` | пересчёт протоколов спелео ЧК и ПК края 2021 и отчёт о сверке (данные — через ST_REF_DATA) |
 | `СТ-Секретарь.bat` | запуск из исходников в Windows (для разработчика); у переносной версии свои файлы запуска |

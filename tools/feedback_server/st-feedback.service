@@ -1,0 +1,32 @@
+# Приём «Сообщить» (решение 050). Ставится так: README.md рядом.
+[Unit]
+Description=СТ-Секретарь: приём сообщений пользователей
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/st-feedback/receiver.py --dir /var/lib/st-feedback --token-file ${CREDENTIALS_DIRECTORY}/token --port 8090
+LoadCredential=token:/etc/st-feedback/token
+DynamicUser=yes
+StateDirectory=st-feedback
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+MemoryMax=96M
+TasksMax=64
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

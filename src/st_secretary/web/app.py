@@ -78,6 +78,7 @@ def create_app(data_dir: str | Path, opener=None, shutdown=None, docs_dir: str |
     root = updates.portable_root()
     app.state.installer = updates.Installer(root) if root else None
     app.state.restart = False  # выключиться с кодом «перезапустить» (новая версия распакована)
+    app.state.fb_upload = None  # отправка «Сообщить» на сервер (feedback.upload) — включает cli.py; в тестах выключена
     app.state.journal = None  # журнал программы в файл (journal.py) — подключает cli.py
     run_lock = threading.RLock()  # Результаты_дистанции.json: пишут и страница секретаря, и телефоны судей
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")

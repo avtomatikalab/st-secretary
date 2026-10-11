@@ -303,6 +303,10 @@ def cmd_web(a) -> int:
 
         app = create_app(data, shutdown=shutdown, docs_dir=a.docs)
         app.state.journal = journal
+        if not os.environ.get("ST_NO_FEEDBACK_UPLOAD"):  # «Отправить разработчику» — сразу на сервер (решение 050)
+            from st_secretary import feedback
+
+            app.state.fb_upload = feedback.upload
         server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="warning"))
         journal.attach_uvicorn()  # uvicorn.Config перенастраивает свои журналы — подключить файл после него
         servers.append(server)

@@ -1,5 +1,6 @@
 """«Сообщить» и «Мои сообщения» (Правки, п. 43; решение 044): приём сообщения с панели на любой странице, список,
-отправка разработчику одним файлом (письмо mailto:), загрузка чужого файла сообщений."""
+отправка разработчику одним файлом — сразу на сервер, без связи — письмом (mailto:; решение 050), загрузка чужого
+файла сообщений."""
 
 from __future__ import annotations
 
@@ -113,7 +114,7 @@ def register(app, cx) -> None:
         items = fb.messages(folder)
         last = fb.last_bundle(folder)
         mail_link = ""
-        if last:
+        if last and not last.get("uploaded"):
             mail_link = fb.mailto(len(last.get("numbers", [])), version(), last.get("file", ""))
         return page(request, "feedback.html", items=items, folder=None, fb_dir=folder, unsent=unsent(),
                     last=last, mail_link=mail_link, auto_mail=mail == "1", email=fb.SUPPORT_EMAIL,
@@ -125,17 +126,22 @@ def register(app, cx) -> None:
         if made is None:
             return redirect("/feedback?done=fb_nothing")
         path, _ = made
+        upload = app.state.fb_upload
+        ident = upload(path) if upload else None
+        if ident:
+            fb.mark_uploaded(fb_folder(), ident, app.state.clock())
+            return redirect("/feedback?done=fb_uploaded")
         app.state.opener(path.parent)  # папка с файлом — перетащить его в письмо
         return redirect("/feedback?done=fb_sent&mail=1")
 
     @app.post("/feedback/send")
     def feedback_send():
-        """«Отправить разработчику»: неотправленные — одним zip, письмо с адресом и темой."""
+        """«Отправить разработчику»: неотправленные — одним zip на сервер; не вышло — письмо с адресом и темой."""
         return send()
 
     @app.post("/feedback/again")
     def feedback_again():
-        """«Собрать заново» — тот же набор, если письмо не ушло."""
+        """«Собрать заново» — тот же набор, если письмо не ушло (снова пробует сервер)."""
         last = fb.last_bundle(fb_folder())
         return send(list(last.get("numbers", []))) if last else redirect("/feedback?done=fb_nothing")
 
